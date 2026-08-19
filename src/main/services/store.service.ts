@@ -5,6 +5,12 @@ import { safeStorage } from 'electron';
 // RCON/OBS, clé d'événement) chiffrés via safeStorage (DPAPI Windows / Keychain).
 // Le renderer n'accède JAMAIS aux secrets en lecture (bridge write-only).
 
+export interface InstalledBundle {
+    slug: string;
+    version: string;
+    contentHash: string;
+}
+
 interface Schema {
     accessToken?: string; // chiffré
     refreshToken?: string; // chiffré
@@ -18,7 +24,7 @@ interface Schema {
     hostAllowlist?: string[];
     secrets?: Record<string, string>; // valeurs chiffrées (rconHost, rconPassword, obsUrl, ...)
     vars?: Record<string, string>; // variables non secrètes ({player}, ...)
-    installedBundles?: Array<{ slug: string; version: string; contentHash: string }>;
+    installedBundles?: InstalledBundle[];
     activeBundleSlug?: string;
 }
 
@@ -134,10 +140,10 @@ export class StoreService {
     }
 
     // ── Bundles installés ──
-    getInstalled() {
-        return this.store.get('installedBundles', [] as Schema['installedBundles']) || [];
+    getInstalled(): InstalledBundle[] {
+        return this.store.get('installedBundles', [] as InstalledBundle[]);
     }
-    setInstalled(list: NonNullable<Schema['installedBundles']>) {
+    setInstalled(list: InstalledBundle[]) {
         this.store.set('installedBundles', list);
     }
     getActiveBundleSlug() {
