@@ -1,7 +1,7 @@
 {
   "name": "houla-connect-app",
   "productName": "Hou.la Connect",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Hub de bureau qui transforme les événements live Hou.la (cadeaux, chat, follows) en actions in-game et externes via des Pack Bundles installables.",
   "author": "Hou.la",
   "license": "Apache-2.0",
