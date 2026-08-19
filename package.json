@@ -73,7 +73,8 @@
     "publish": {
       "provider": "github",
       "owner": "Hou-la",
-      "repo": "houla-connect-app"
+      "repo": "houla-connect-app",
+      "releaseType": "release"
     }
   }
 }
