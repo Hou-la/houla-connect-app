@@ -1,0 +1,77 @@
+{
+  "name": "houla-connect-app",
+  "productName": "Hou.la Connect",
+  "version": "0.1.0",
+  "description": "Hub de bureau qui transforme les événements live Hou.la (cadeaux, chat, follows) en actions in-game et externes via des Pack Bundles installables.",
+  "author": "Hou.la",
+  "license": "Apache-2.0",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "build:main": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json",
+    "build:renderer": "node scripts/copy-renderer.js",
+    "build": "npm run build:main && npm run build:renderer",
+    "start": "npm run build:main && electron .",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux"
+  },
+  "dependencies": {
+    "@houla/live-connector": "^0.5.0",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.3.9",
+    "obs-websocket-js": "^5.0.6",
+    "rcon-client": "^4.2.4",
+    "@nut-tree-fork/nut-js": "^4.2.6"
+  },
+  "optionalDependencies": {
+    "vigemclient": "^1.0.0"
+  },
+  "devDependencies": {
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  },
+  "build": {
+    "appId": "com.houla.connect",
+    "productName": "Hou.la Connect",
+    "artifactName": "Houla-Connect-${version}.${ext}",
+    "protocols": [
+      {
+        "name": "Hou.la Connect",
+        "schemes": ["houla-connect"]
+      }
+    ],
+    "files": [
+      "dist/**/*",
+      "resources/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/sidecar",
+        "to": "sidecar"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "resources/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "resources/icon.icns",
+      "hardenedRuntime": true,
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "resources/icon.png",
+      "category": "Utility"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Hou-la",
+      "repo": "houla-connect-app"
+    }
+  }
+}

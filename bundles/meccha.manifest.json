@@ -1,0 +1,57 @@
+{
+  "schema": 2,
+  "slug": "meccha-chameleon",
+  "game": "meccha",
+  "rules": [
+    {
+      "id": "taunt",
+      "on": { "type": "gift", "slot": "ix_slot_01" },
+      "effect": { "type": "keyboard", "backend": "interception", "keys": "1", "cooldownMs": 1500 },
+      "label": "Taunt : le sifflement qui te dénonce",
+      "followersOnly": true
+    },
+    {
+      "id": "pose",
+      "on": { "type": "gift", "slot": "ix_slot_05" },
+      "effect": { "type": "keyboard", "backend": "interception", "keys": "r", "cooldownMs": 1200 },
+      "label": "Force une pose"
+    },
+    {
+      "id": "paint",
+      "on": { "type": "gift", "slot": "ix_slot_09" },
+      "effect": { "type": "keyboard", "backend": "interception", "keys": "f", "cooldownMs": 1500 },
+      "label": "Mode peinture (chaos de couleur)"
+    },
+    {
+      "id": "jump",
+      "on": { "type": "gift", "slot": "ix_slot_12" },
+      "effect": { "type": "keyboard", "backend": "interception", "keys": "space", "cooldownMs": 600 },
+      "label": "Saut forcé"
+    },
+    {
+      "id": "release",
+      "on": { "type": "gift", "slot": "ix_slot_20" },
+      "effect": { "type": "keyboard", "backend": "interception", "keys": "shift", "cooldownMs": 1500 },
+      "label": "Casse ton camouflage (relâche la pose)"
+    },
+    {
+      "id": "help-pose",
+      "on": { "type": "gift", "slot": "ix_slot_15" },
+      "effect": { "type": "keyboard", "backend": "interception", "keys": "r", "cooldownMs": 2000 },
+      "label": "Un mod te sauve : bonne pose",
+      "moderatorsOnly": true
+    },
+    {
+      "id": "panic",
+      "on": { "type": "gift", "slot": "ix_slot_30" },
+      "effect": { "type": "keyboard", "backend": "interception", "keys": "shift,space,1", "cooldownMs": 8000 },
+      "label": "Panique : relâche + saut + taunt (totalement exposé)"
+    },
+    {
+      "id": "follow-jump",
+      "on": { "type": "follow" },
+      "effect": { "type": "keyboard", "backend": "interception", "keys": "space", "cooldownMs": 3000 },
+      "label": "Nouvel abonné : petit saut de joie"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+out/
+*.log
+.DS_Store
+resources/sidecar/*.exe
+resources/sidecar/build/
+resources/sidecar/dist/
+resources/sidecar/__pycache__/

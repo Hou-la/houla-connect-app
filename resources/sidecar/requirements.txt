@@ -1,0 +1,7 @@
+# Sidecar Hou.la Connect (Windows). Figé en houla-sidecar.exe via :
+#   pip install -r requirements.txt pyinstaller
+#   pyinstaller --onefile --name houla-sidecar houla_sidecar.py
+# Le driver ViGEmBus (manette) et/ou Interception (clavier) doivent être installés
+# sur la machine (flux guidé dans l'app). Windows uniquement.
+interception-python>=1.6.1
+vgamepad>=0.1.0

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'none';" />
+    <title>Hou.la Connect</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-theme="dark">
+    <!-- Titlebar custom (frameless) -->
+    <header class="titlebar">
+        <div class="titlebar__brand">
+            <span class="logo">Hou.la<b>Connect</b></span>
+        </div>
+        <div class="titlebar__drag"></div>
+        <div class="titlebar__controls">
+            <button id="win-min" title="Réduire">&#8211;</button>
+            <button id="win-max" title="Agrandir">&#9633;</button>
+            <button id="win-close" class="close" title="Fermer">&#10005;</button>
+        </div>
+    </header>
+
+    <div class="app">
+        <!-- Vue AUTH -->
+        <section id="view-auth" class="view auth">
+            <div class="auth__card">
+                <h1>Hou.la <b>Connect</b></h1>
+                <p>Transforme les cadeaux, messages et follows de ton live en actions réelles.</p>
+                <button id="btn-login" class="btn btn--primary">Se connecter avec Hou.la</button>
+                <div id="ws-picker" class="ws-picker hidden">
+                    <p>Choisis ton identité :</p>
+                    <div id="ws-list"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- App connectée -->
+        <div id="app-main" class="hidden">
+            <nav class="sidebar">
+                <button class="nav" data-view="capture">Capture</button>
+                <button class="nav" data-view="store">Store</button>
+                <button class="nav" data-view="lab">Lab</button>
+                <button class="nav" data-view="mine">Mes bundles</button>
+                <button class="nav" data-view="settings">Réglages</button>
+                <div class="sidebar__foot">
+                    <button id="btn-panic" class="btn btn--panic">PANIC</button>
+                    <button id="btn-logout" class="btn btn--ghost">Déconnexion</button>
+                </div>
+            </nav>
+
+            <main class="content">
+                <!-- CAPTURE -->
+                <section id="view-capture" class="view">
+                    <div class="row between">
+                        <h2>Capture</h2>
+                        <span id="conn-badge" class="badge badge--off">Déconnecté</span>
+                    </div>
+                    <div class="card">
+                        <label>Pack actif</label>
+                        <select id="active-bundle"></select>
+                        <div class="row gap">
+                            <button id="btn-start" class="btn btn--primary">Démarrer</button>
+                            <button id="btn-stop" class="btn btn--ghost">Arrêter</button>
+                            <button id="btn-test" class="btn btn--ghost">Tester (ix_slot_01)</button>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <label>Journal en direct</label>
+                        <div id="log" class="log"></div>
+                    </div>
+                </section>
+
+                <!-- STORE -->
+                <section id="view-store" class="view hidden">
+                    <h2>Store</h2>
+                    <div id="store-list" class="grid"></div>
+                </section>
+
+                <!-- LAB -->
+                <section id="view-lab" class="view hidden">
+                    <h2>Lab</h2>
+                    <p class="muted">Crée un Pack Bundle (titre, description, bannière, versions, interactions), puis publie-le au store après modération.</p>
+                    <div class="card"><p class="muted">Éditeur de bundle : à venir dans cette vue (le back est prêt : /api/manager/bundles).</p></div>
+                </section>
+
+                <!-- MES BUNDLES -->
+                <section id="view-mine" class="view hidden">
+                    <h2>Mes bundles</h2>
+                    <div id="mine-list"></div>
+                </section>
+
+                <!-- REGLAGES -->
+                <section id="view-settings" class="view hidden">
+                    <h2>Réglages</h2>
+                    <div class="card">
+                        <label>Capacités (tout désactivé par défaut)</label>
+                        <div id="caps"></div>
+                    </div>
+                    <div class="card">
+                        <label>Langue</label>
+                        <select id="lang">
+                            <option value="fr">Français</option>
+                            <option value="en">English</option>
+                            <option value="it">Italiano</option>
+                            <option value="es">Español</option>
+                            <option value="pt">Português</option>
+                        </select>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>
