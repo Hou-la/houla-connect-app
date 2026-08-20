@@ -7,16 +7,16 @@ import { StoreService } from './store.service';
 // OAuth 2.0 Authorization Code + PKCE (S256), ouvert dans le navigateur système,
 // retour via le protocole custom houla-connect://callback. Même modèle que houla-print.
 export class AuthService {
-    private codeVerifier: string | null = null;
-
     constructor(
         private readonly api: ApiService,
         private readonly store: StoreService,
     ) {}
 
     async login(): Promise<void> {
-        this.codeVerifier = randomBytes(32).toString('base64url');
-        const challenge = createHash('sha256').update(this.codeVerifier).digest().toString('base64url');
+        const codeVerifier = randomBytes(32).toString('base64url');
+        // Persisté : si le protocole relance une NOUVELLE instance, elle peut finir l'échange.
+        this.store.setPkceVerifier(codeVerifier);
+        const challenge = createHash('sha256').update(codeVerifier).digest().toString('base64url');
         const params = new URLSearchParams({
             response_type: 'code',
             client_id: CONFIG.clientId,
@@ -30,9 +30,10 @@ export class AuthService {
 
     async handleCallback(url: string): Promise<void> {
         const code = new URL(url).searchParams.get('code');
-        if (!code || !this.codeVerifier) throw new Error('callback OAuth invalide');
-        await this.api.exchangeCode(code, this.codeVerifier);
-        this.codeVerifier = null;
+        const verifier = this.store.getPkceVerifier();
+        if (!code || !verifier) throw new Error('callback OAuth invalide (verifier manquant)');
+        await this.api.exchangeCode(code, verifier);
+        this.store.clearPkceVerifier();
     }
 
     isAuthenticated(): boolean {

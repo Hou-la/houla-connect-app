@@ -27,6 +27,10 @@ $('btn-logout').onclick = async () => { await api.logout(); location.reload(); }
 api.onAuth(async (a) => { if (a.authenticated) await showWorkspaces(); });
 
 async function showWorkspaces() {
+    // Auth réussie : on masque le bouton de connexion, le choix d'identité prend le relais.
+    $('btn-login').classList.add('hidden');
+    const lead = $('auth-lead');
+    if (lead) lead.classList.add('hidden');
     const list = await api.listWorkspaces();
     const box = $('ws-list');
     box.innerHTML = '';

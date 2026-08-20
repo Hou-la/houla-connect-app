@@ -60,6 +60,7 @@ function createWindow(): void {
         frame: false, // fenêtre SANS bordure Windows (titlebar custom)
         titleBarStyle: 'hidden',
         backgroundColor: '#0e0f13',
+        icon: path.join(__dirname, '..', '..', 'resources', 'icon.png'),
         webPreferences: {
             preload: path.join(__dirname, '..', 'preload', 'index.js'),
             contextIsolation: true,
@@ -71,6 +72,12 @@ function createWindow(): void {
     win.webContents.setWindowOpenHandler(({ url }) => {
         if (/^https?:\/\//.test(url)) shell.openExternal(url);
         return { action: 'deny' };
+    });
+    // Lancement à FROID par le protocole (Windows) : l'URL est dans argv, on la
+    // traite une fois le renderer prêt (sinon le message onAuth est perdu).
+    win.webContents.once('did-finish-load', () => {
+        const coldUrl = process.argv.find((a) => a.startsWith(`${CONFIG.protocol}://`));
+        if (coldUrl) handleDeepLink(coldUrl);
     });
 }
 
@@ -183,7 +190,13 @@ if (!app.requestSingleInstanceLock()) {
     app.on('open-url', (_e, url) => handleDeepLink(url)); // macOS
 
     app.whenReady().then(() => {
-        if (!app.isDefaultProtocolClient(CONFIG.protocol)) app.setAsDefaultProtocolClient(CONFIG.protocol);
+        // En dev (electron .), il faut passer execPath + le chemin de l'app, sinon
+        // le protocole relance electron.exe sans l'app et l'auth ne revient pas.
+        if (process.defaultApp && process.argv.length >= 2) {
+            app.setAsDefaultProtocolClient(CONFIG.protocol, process.execPath, [path.resolve(process.argv[1])]);
+        } else if (!app.isDefaultProtocolClient(CONFIG.protocol)) {
+            app.setAsDefaultProtocolClient(CONFIG.protocol);
+        }
         registerIpc();
         createWindow();
         // PANIC global : Ctrl+Alt+Pause.

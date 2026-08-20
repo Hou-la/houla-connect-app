@@ -14,6 +14,7 @@ export interface InstalledBundle {
 interface Schema {
     accessToken?: string; // chiffré
     refreshToken?: string; // chiffré
+    pkceVerifier?: string; // PKCE verifier en cours (survit à une instance fraîche)
     eventKey?: string; // chiffré (hle_...)
     workspaceId?: string;
     workspaceName?: string;
@@ -75,6 +76,15 @@ export class StoreService {
     }
     clearEventKey() {
         this.store.delete('eventKey');
+    }
+    setPkceVerifier(v: string) {
+        this.store.set('pkceVerifier', v);
+    }
+    getPkceVerifier() {
+        return this.store.get('pkceVerifier');
+    }
+    clearPkceVerifier() {
+        this.store.delete('pkceVerifier');
     }
 
     // ── Prefs ──

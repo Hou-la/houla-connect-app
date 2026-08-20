@@ -32,7 +32,9 @@ body { background: var(--bg); color: var(--text); overflow: hidden; }
     -webkit-app-region: drag;
     user-select: none;
 }
-.titlebar__brand { padding: 0 14px; }
+.titlebar__brand { padding: 0 14px; display: flex; align-items: center; gap: 8px; }
+.logo-ic { width: 22px; height: 22px; -webkit-app-region: drag; }
+.auth__logo { width: 88px; height: 88px; margin: 0 auto 14px; display: block; }
 .logo { font-weight: 600; letter-spacing: .2px; }
 .logo b { color: var(--accent-2); font-weight: 700; }
 .titlebar__drag { flex: 1; height: 100%; }
