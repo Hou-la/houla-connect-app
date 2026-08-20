@@ -117,12 +117,34 @@
                         <p id="lab-msg" class="hint"></p>
                     </div>
                     <div class="card">
-                        <label>2. Version + manifeste</label>
+                        <div class="row between">
+                            <label>2. Interactions</label>
+                            <button id="lab-mode" class="btn btn--ghost">Mode avancé (JSON)</button>
+                        </div>
                         <select id="lab-bundle-sel"></select>
-                        <input id="lab-version" placeholder="version (ex. 1.0.0)" value="1.0.0" />
-                        <textarea id="lab-manifest" rows="9" spellcheck="false" placeholder='{ "schema": 2, "rules": [ { "id": "r1", "on": {"type":"gift","slot":"ix_slot_01"}, "effect": {"type":"keyboard","keys":"space"} } ] }'></textarea>
-                        <div class="row gap">
-                            <button id="lab-submit-btn" class="btn btn--ghost">Soumettre la version</button>
+
+                        <div class="lab-banner-row">
+                            <div id="lab-banner-preview" class="lab-banner"></div>
+                            <button id="lab-banner-btn" class="btn btn--ghost">Choisir une bannière (1600×900)</button>
+                        </div>
+
+                        <div id="lab-builder">
+                            <div id="lab-rules"></div>
+                            <button id="lab-add-rule" class="btn btn--ghost">+ Ajouter une interaction</button>
+                        </div>
+
+                        <div id="lab-json-mode" class="hidden">
+                            <textarea id="lab-manifest" rows="12" spellcheck="false"></textarea>
+                            <p class="hint">Format : { "schema": 2, "rules": [ … ] }. Événements : gift(slot ix_slot_01..30), follow, comment(contains), hearts(milestone), share. Effets : keyboard(keys, backend), gamepad(button), rcon(command), obs(request), http(method,url).</p>
+                        </div>
+
+                        <div class="row gap" style="margin-top: 14px">
+                            <select id="lab-bump" title="Type de changement pour la nouvelle version">
+                                <option value="patch">Correction</option>
+                                <option value="minor">Amélioration</option>
+                                <option value="major">Gros changement</option>
+                            </select>
+                            <button id="lab-submit-btn" class="btn btn--ghost">Enregistrer la version</button>
                             <button id="lab-publish-btn" class="btn btn--primary">Publier</button>
                         </div>
                         <p id="lab-msg2" class="hint"></p>

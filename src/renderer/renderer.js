@@ -193,60 +193,194 @@ function openModal(b) {
 $('modal-close').onclick = () => $('modal').classList.add('hidden');
 $('modal').onclick = (e) => { if (e.target.id === 'modal') $('modal').classList.add('hidden'); };
 
-// ── Lab ──
+// ── Lab : éditeur visuel (QUAND … ALORS …) ──
+const EVENTS = [['gift', 'Cadeau'], ['follow', 'Nouvel abonné'], ['comment', 'Message chat'], ['hearts', 'Palier de likes'], ['share', 'Partage']];
+const EXECS = [['keyboard', 'Clavier'], ['gamepad', 'Manette'], ['rcon', 'RCON'], ['obs', 'OBS'], ['http', 'HTTP']];
+const GP_BUTTONS = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'START', 'BACK', 'LS', 'RS'];
+let labRules = [];
+let labCurrentSlug = null;
+let labLatestVersion = null;
+let labJsonMode = false;
+
+function slotOptions() {
+    let o = '';
+    for (let i = 1; i <= 30; i++) o += `<option value="ix_slot_${String(i).padStart(2, '0')}">Cadeau slot ${i}</option>`;
+    return o;
+}
+function eventFieldHtml(r) {
+    if (r.event.type === 'gift') return `<select class="r-slot">${slotOptions()}</select>`;
+    if (r.event.type === 'comment') return `<input type="text" class="r-contains" placeholder="contient ce mot…" />`;
+    if (r.event.type === 'hearts') return `<input type="number" class="r-milestone" placeholder="palier (ex. 100)" min="1" />`;
+    return '';
+}
+function execFieldHtml(r) {
+    switch (r.effect.type) {
+        case 'keyboard': return `<input type="text" class="r-keys" placeholder="touches (ex. space, shift+c)" /><select class="r-backend"><option value="auto">clavier normal</option><option value="interception">bas niveau (Meccha)</option></select>`;
+        case 'gamepad': return `<select class="r-button">${GP_BUTTONS.map((b) => `<option>${b}</option>`).join('')}</select>`;
+        case 'rcon': return `<input type="text" class="r-command" placeholder="commande (ex. give {player} minecraft:diamond 1)" />`;
+        case 'obs': return `<input type="text" class="r-request" placeholder="requête OBS (ex. SetCurrentProgramScene)" />`;
+        case 'http': return `<select class="r-method"><option>GET</option><option>POST</option><option>PUT</option></select><input type="text" class="r-url" placeholder="https://…" />`;
+        default: return '';
+    }
+}
+function newRule() { return { event: { type: 'gift', slot: 'ix_slot_01' }, effect: { type: 'keyboard', keys: 'space', backend: 'auto' }, followersOnly: false, moderatorsOnly: false }; }
+
+function readRule(el, r) {
+    const q = (s) => el.querySelector(s);
+    if (r.event.type === 'gift') r.event.slot = q('.r-slot') ? q('.r-slot').value : r.event.slot;
+    if (r.event.type === 'comment') r.event.contains = q('.r-contains') ? q('.r-contains').value : '';
+    if (r.event.type === 'hearts') r.event.milestone = q('.r-milestone') ? Number(q('.r-milestone').value) || undefined : undefined;
+    if (r.effect.type === 'keyboard') { r.effect.keys = q('.r-keys') ? q('.r-keys').value : ''; r.effect.backend = q('.r-backend') ? q('.r-backend').value : 'auto'; }
+    if (r.effect.type === 'gamepad') r.effect.button = q('.r-button') ? q('.r-button').value : 'A';
+    if (r.effect.type === 'rcon') r.effect.command = q('.r-command') ? q('.r-command').value : '';
+    if (r.effect.type === 'obs') r.effect.request = q('.r-request') ? q('.r-request').value : '';
+    if (r.effect.type === 'http') { r.effect.method = q('.r-method') ? q('.r-method').value : 'POST'; r.effect.url = q('.r-url') ? q('.r-url').value : ''; }
+    r.followersOnly = q('.r-fol') ? q('.r-fol').checked : false;
+    r.moderatorsOnly = q('.r-mod') ? q('.r-mod').checked : false;
+}
+function renderRules() {
+    const box = $('lab-rules');
+    box.innerHTML = '';
+    labRules.forEach((r, i) => {
+        const el = document.createElement('div');
+        el.className = 'rule';
+        el.innerHTML = `
+            <div class="rule__part"><span class="rule__lbl">QUAND</span>
+                <select class="r-event">${EVENTS.map(([v, l]) => `<option value="${v}"${r.event.type === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
+                <span class="r-event-field">${eventFieldHtml(r)}</span></div>
+            <div class="rule__part"><span class="rule__lbl">ALORS</span>
+                <select class="r-exec">${EXECS.map(([v, l]) => `<option value="${v}"${r.effect.type === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
+                <span class="r-exec-field">${execFieldHtml(r)}</span></div>
+            <div class="rule__foot">
+                <label><input type="checkbox" class="r-fol"${r.followersOnly ? ' checked' : ''}/> abonnés</label>
+                <label><input type="checkbox" class="r-mod"${r.moderatorsOnly ? ' checked' : ''}/> mods</label>
+                <button class="r-del" title="Supprimer">&#10005;</button></div>`;
+        const q = (s) => el.querySelector(s);
+        if (r.event.type === 'gift' && q('.r-slot')) q('.r-slot').value = r.event.slot || 'ix_slot_01';
+        if (r.event.type === 'comment' && q('.r-contains')) q('.r-contains').value = r.event.contains || '';
+        if (r.event.type === 'hearts' && q('.r-milestone')) q('.r-milestone').value = r.event.milestone || '';
+        if (r.effect.type === 'keyboard') { if (q('.r-keys')) q('.r-keys').value = r.effect.keys || ''; if (q('.r-backend')) q('.r-backend').value = r.effect.backend || 'auto'; }
+        if (r.effect.type === 'gamepad' && q('.r-button')) q('.r-button').value = r.effect.button || 'A';
+        if (r.effect.type === 'rcon' && q('.r-command')) q('.r-command').value = r.effect.command || '';
+        if (r.effect.type === 'obs' && q('.r-request')) q('.r-request').value = r.effect.request || '';
+        if (r.effect.type === 'http') { if (q('.r-method')) q('.r-method').value = r.effect.method || 'POST'; if (q('.r-url')) q('.r-url').value = r.effect.url || ''; }
+        q('.r-event').onchange = (e) => { r.event = { type: e.target.value }; renderRules(); };
+        q('.r-exec').onchange = (e) => { r.effect = { type: e.target.value }; renderRules(); };
+        el.querySelectorAll('input, select').forEach((inp) => {
+            if (inp.classList.contains('r-event') || inp.classList.contains('r-exec')) return;
+            inp.addEventListener('input', () => readRule(el, r));
+        });
+        q('.r-del').onclick = () => { labRules.splice(i, 1); renderRules(); };
+        box.appendChild(el);
+    });
+}
+function buildManifest() {
+    return {
+        schema: 2,
+        rules: labRules.map((r, i) => {
+            const on = { type: r.event.type };
+            if (r.event.type === 'gift') on.slot = r.event.slot;
+            if (r.event.type === 'comment') on.contains = r.event.contains;
+            if (r.event.type === 'hearts') on.milestone = r.event.milestone;
+            const effect = { type: r.effect.type };
+            if (r.effect.type === 'keyboard') { effect.keys = r.effect.keys; if (r.effect.backend && r.effect.backend !== 'auto') effect.backend = r.effect.backend; }
+            if (r.effect.type === 'gamepad') effect.button = r.effect.button;
+            if (r.effect.type === 'rcon') effect.command = r.effect.command;
+            if (r.effect.type === 'obs') effect.request = r.effect.request;
+            if (r.effect.type === 'http') { effect.method = r.effect.method; effect.url = r.effect.url; }
+            const rule = { id: 'r' + (i + 1), on, effect };
+            if (r.followersOnly) rule.followersOnly = true;
+            if (r.moderatorsOnly) rule.moderatorsOnly = true;
+            return rule;
+        }),
+    };
+}
+function manifestToRules(m) {
+    return ((m && m.rules) || []).map((rule) => ({ event: { ...rule.on }, effect: { ...rule.effect }, followersOnly: !!rule.followersOnly, moderatorsOnly: !!rule.moderatorsOnly }));
+}
+function bumpVersion(v, type) {
+    if (!v) return '1.0.0';
+    const [maj, min, pat] = v.split('.').map(Number);
+    if (type === 'major') return `${maj + 1}.0.0`;
+    if (type === 'minor') return `${maj}.${min + 1}.0`;
+    return `${maj}.${min}.${pat + 1}`;
+}
+
+$('lab-add-rule').onclick = () => { labRules.push(newRule()); renderRules(); };
+$('lab-mode').onclick = () => {
+    labJsonMode = !labJsonMode;
+    if (labJsonMode) {
+        $('lab-manifest').value = JSON.stringify(buildManifest(), null, 2);
+        $('lab-builder').classList.add('hidden');
+        $('lab-json-mode').classList.remove('hidden');
+        $('lab-mode').textContent = 'Mode simplifié';
+    } else {
+        try { labRules = manifestToRules(JSON.parse($('lab-manifest').value)); } catch { /* garde l'existant */ }
+        renderRules();
+        $('lab-builder').classList.remove('hidden');
+        $('lab-json-mode').classList.add('hidden');
+        $('lab-mode').textContent = 'Mode avancé (JSON)';
+    }
+};
+
 async function loadLab() {
     const mine = (await api.lab.myBundles()) || [];
     const sel = $('lab-bundle-sel');
-    sel.innerHTML = '';
-    mine.forEach((b) => {
-        const o = document.createElement('option');
-        o.value = b.slug;
-        o.textContent = `${b.slug} (${b.visibility})`;
-        sel.appendChild(o);
-    });
+    sel.innerHTML = mine.map((b) => `<option value="${esc(b.slug)}">${esc(b.slug)} (${esc(b.visibility)})</option>`).join('');
+    sel.onchange = () => loadLabBundle(sel.value);
+    if (mine.length) await loadLabBundle(sel.value);
+    else { labRules = []; renderRules(); $('lab-banner-preview').style.backgroundImage = ''; }
 }
+async function loadLabBundle(slug) {
+    labCurrentSlug = slug;
+    if (!slug) return;
+    const detail = await api.lab.detail(slug);
+    const versions = (detail && detail.versions) || [];
+    labLatestVersion = versions.length ? versions[0].version : null; // triées DESC
+    const bundle = detail && detail.bundle;
+    $('lab-banner-preview').style.backgroundImage = bundle && bundle.bannerUrl ? `url('${bundle.bannerUrl}')` : '';
+    labRules = versions.length ? manifestToRules(versions[0].manifestJson) : [];
+    if (labJsonMode) $('lab-manifest').value = JSON.stringify(buildManifest(), null, 2);
+    else renderRules();
+}
+
 $('lab-create-btn').onclick = async () => {
-    const dto = {
-        slug: $('lab-slug').value.trim(),
-        title: $('lab-title').value.trim(),
-        game: $('lab-game').value.trim() || undefined,
-        theme: $('lab-theme').value,
-    };
+    const dto = { slug: $('lab-slug').value.trim(), title: $('lab-title').value.trim(), game: $('lab-game').value.trim() || undefined, theme: $('lab-theme').value };
     try {
         await api.lab.create(dto);
-        $('lab-msg').textContent = 'Bundle créé : ' + dto.slug;
+        $('lab-msg').textContent = 'Pack créé : ' + dto.slug;
         $('lab-slug').value = '';
         $('lab-title').value = '';
-        await loadLab();
+        await loadLab(); // le nouveau (le plus récent) est auto-sélectionné
     } catch (e) {
         $('lab-msg').textContent = 'Erreur : ' + e.message;
     }
 };
+$('lab-banner-btn').onclick = async () => {
+    if (!labCurrentSlug) return ($('lab-msg2').textContent = "Crée/choisis un pack d'abord.");
+    try {
+        const r = await api.lab.uploadBanner(labCurrentSlug);
+        if (r && r.bannerUrl) { $('lab-banner-preview').style.backgroundImage = `url('${r.bannerUrl}')`; $('lab-msg2').textContent = 'Bannière mise à jour ✓'; }
+    } catch (e) { $('lab-msg2').textContent = 'Bannière : ' + e.message; }
+};
 $('lab-submit-btn').onclick = async () => {
     const slug = $('lab-bundle-sel').value;
-    if (!slug) return ($('lab-msg2').textContent = "Crée d'abord un bundle.");
+    if (!slug) return ($('lab-msg2').textContent = "Crée un pack d'abord.");
     let manifest;
+    if (labJsonMode) { try { manifest = JSON.parse($('lab-manifest').value); } catch { return ($('lab-msg2').textContent = 'JSON invalide.'); } }
+    else manifest = buildManifest();
+    const version = labLatestVersion ? bumpVersion(labLatestVersion, $('lab-bump').value) : '1.0.0';
     try {
-        manifest = JSON.parse($('lab-manifest').value);
-    } catch {
-        return ($('lab-msg2').textContent = 'Manifeste JSON invalide.');
-    }
-    try {
-        await api.lab.submitVersion(slug, { version: $('lab-version').value.trim(), manifest });
-        $('lab-msg2').textContent = 'Version soumise ✓';
-    } catch (e) {
-        $('lab-msg2').textContent = 'Refusé : ' + e.message;
-    }
+        await api.lab.submitVersion(slug, { version, manifest });
+        labLatestVersion = version;
+        $('lab-msg2').textContent = `Version ${version} enregistrée ✓`;
+    } catch (e) { $('lab-msg2').textContent = 'Refusé : ' + e.message; }
 };
 $('lab-publish-btn').onclick = async () => {
     const slug = $('lab-bundle-sel').value;
     if (!slug) return;
-    try {
-        await api.lab.publish(slug);
-        $('lab-msg2').textContent = 'Publié (en modération) ✓';
-    } catch (e) {
-        $('lab-msg2').textContent = 'Erreur : ' + e.message;
-    }
+    try { await api.lab.publish(slug); $('lab-msg2').textContent = 'Publié (en modération) ✓'; }
+    catch (e) { $('lab-msg2').textContent = 'Erreur : ' + e.message; }
 };
 
 // ── Mes bundles ──

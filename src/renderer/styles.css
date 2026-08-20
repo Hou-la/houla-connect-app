@@ -151,3 +151,16 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
     background-position: center; border-radius: 14px 14px 0 0; }
 .modal__body { padding: 22px; }
 .modal__body h2 { margin-bottom: 6px; }
+
+/* Lab builder */
+.lab-banner-row { display: flex; align-items: center; gap: 12px; margin: 10px 0 14px; }
+.lab-banner { width: 160px; height: 90px; border-radius: 8px; border: 1px solid var(--border);
+    background: linear-gradient(135deg, #1e2740, #33244a) center/cover; flex-shrink: 0; }
+.rule { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+.rule__part { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.rule__lbl { font-size: 11px; font-weight: 700; color: var(--accent-2); min-width: 46px; }
+.rule select, .rule input[type="text"], .rule input[type="number"] { margin-bottom: 0; width: auto; flex: 1; min-width: 110px; }
+.rule__foot { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--muted); }
+.rule__foot label { display: flex; align-items: center; gap: 5px; }
+.rule__foot input[type="checkbox"] { width: auto; flex: none; margin: 0; }
+.r-del { margin-left: auto; background: transparent; border: 0; color: var(--danger); cursor: pointer; font-size: 15px; }

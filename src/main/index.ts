@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, globalShortcut, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, globalShortcut, shell, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import { CONFIG } from './config';
@@ -151,6 +151,14 @@ function registerIpc(): void {
     ipcMain.handle('lab:detail', (_e, slug: string) => api.myBundleDetail(slug));
     ipcMain.handle('lab:version', (_e, slug: string, dto) => api.submitVersion(slug, dto));
     ipcMain.handle('lab:publish', (_e, slug: string) => api.publishBundle(slug));
+    ipcMain.handle('lab:banner', async (_e, slug: string) => {
+        const r = await dialog.showOpenDialog({
+            properties: ['openFile'],
+            filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+        });
+        if (r.canceled || !r.filePaths[0]) return null;
+        return api.uploadBanner(slug, r.filePaths[0]);
+    });
     ipcMain.handle('store:uninstall', (_e, slug: string) => {
         store.setInstalled(store.getInstalled().filter((b) => b.slug !== slug));
         if (store.getActiveBundleSlug() === slug) store.setActiveBundleSlug(undefined);
