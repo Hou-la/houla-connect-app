@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, globalShortcut, shell } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import { CONFIG } from './config';
 import { StoreService } from './services/store.service';
@@ -208,6 +209,8 @@ if (!app.requestSingleInstanceLock()) {
         }
         registerIpc();
         createWindow();
+        // Auto-update depuis GitHub Releases (les prochaines versions s'installent seules).
+        if (app.isPackaged) autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
         // PANIC global : Ctrl+Alt+Pause.
         globalShortcut.register('Control+Alt+Pause', () => {
             conn.disconnect();
