@@ -25,6 +25,13 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         installed: () => invoke('store:installed'),
         uninstall: (slug: string) => invoke('store:uninstall', slug),
     },
+    lab: {
+        create: (dto: unknown) => invoke('lab:create', dto),
+        myBundles: () => invoke('lab:mybundles'),
+        detail: (slug: string) => invoke('lab:detail', slug),
+        submitVersion: (slug: string, dto: unknown) => invoke('lab:version', slug, dto),
+        publish: (slug: string) => invoke('lab:publish', slug),
+    },
     caps: {
         get: () => invoke('caps:get'),
         grant: (cap: string) => invoke('caps:grant', cap),

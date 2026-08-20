@@ -84,6 +84,42 @@ export class ApiService {
         return res.ok ? res.json() : [];
     }
 
+    // ── Lab (créateur) ──
+    async createBundle(dto: any): Promise<any> {
+        const res = await this.authFetch('/api/manager/bundles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dto),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || `create ${res.status}`);
+        return res.json();
+    }
+    async myBundles(): Promise<any[]> {
+        const res = await this.authFetch('/api/manager/bundles');
+        return res.ok ? res.json() : [];
+    }
+    async myBundleDetail(slug: string): Promise<any> {
+        const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}`);
+        return res.ok ? res.json() : null;
+    }
+    async submitVersion(slug: string, dto: any): Promise<any> {
+        const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}/versions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dto),
+        });
+        if (!res.ok) {
+            const e = await res.json().catch(() => ({}));
+            throw new Error((e.rejectionCodes ? e.rejectionCodes.join(', ') + ' : ' : '') + (e.message || `version ${res.status}`));
+        }
+        return res.json();
+    }
+    async publishBundle(slug: string): Promise<any> {
+        const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}/publish`, { method: 'POST' });
+        if (!res.ok) throw new Error(`publish ${res.status}`);
+        return res.json();
+    }
+
     async previewBundle(slug: string): Promise<any> {
         const res = await fetch(`${CONFIG.apiUrl}/api/bundles/${encodeURIComponent(slug)}`);
         if (!res.ok) throw new Error('preview failed');

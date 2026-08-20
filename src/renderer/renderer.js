@@ -68,7 +68,8 @@ function switchView(name) {
         $('view-' + v).classList.toggle('hidden', v !== name),
     );
     if (name === 'store') loadStore();
-    if (name === 'mine') loadInstalled(true);
+    if (name === 'mine') loadMyBundles();
+    if (name === 'lab') loadLab();
 }
 document.querySelectorAll('.nav').forEach((n) => (n.onclick = () => switchView(n.dataset.view)));
 
@@ -93,11 +94,6 @@ async function loadInstalled(toMine) {
             o.textContent = `${b.slug} (v${b.version})`;
             sel.appendChild(o);
         });
-    }
-    if (toMine) {
-        $('mine-list').innerHTML = installed.length
-            ? installed.map((b) => `<div class="card"><b>${b.slug}</b> — v${b.version}</div>`).join('')
-            : '<p class="muted">Aucun bundle installé.</p>';
     }
 }
 $('btn-start').onclick = async () => {
@@ -149,6 +145,75 @@ async function loadStore() {
         };
         $('store-list').appendChild(card);
     });
+}
+
+// ── Lab ──
+async function loadLab() {
+    const mine = (await api.lab.myBundles()) || [];
+    const sel = $('lab-bundle-sel');
+    sel.innerHTML = '';
+    mine.forEach((b) => {
+        const o = document.createElement('option');
+        o.value = b.slug;
+        o.textContent = `${b.slug} (${b.visibility})`;
+        sel.appendChild(o);
+    });
+}
+$('lab-create-btn').onclick = async () => {
+    const dto = {
+        slug: $('lab-slug').value.trim(),
+        title: $('lab-title').value.trim(),
+        game: $('lab-game').value.trim() || undefined,
+        theme: $('lab-theme').value,
+    };
+    try {
+        await api.lab.create(dto);
+        $('lab-msg').textContent = 'Bundle créé : ' + dto.slug;
+        $('lab-slug').value = '';
+        $('lab-title').value = '';
+        await loadLab();
+    } catch (e) {
+        $('lab-msg').textContent = 'Erreur : ' + e.message;
+    }
+};
+$('lab-submit-btn').onclick = async () => {
+    const slug = $('lab-bundle-sel').value;
+    if (!slug) return ($('lab-msg2').textContent = "Crée d'abord un bundle.");
+    let manifest;
+    try {
+        manifest = JSON.parse($('lab-manifest').value);
+    } catch {
+        return ($('lab-msg2').textContent = 'Manifeste JSON invalide.');
+    }
+    try {
+        await api.lab.submitVersion(slug, { version: $('lab-version').value.trim(), manifest });
+        $('lab-msg2').textContent = 'Version soumise ✓';
+    } catch (e) {
+        $('lab-msg2').textContent = 'Refusé : ' + e.message;
+    }
+};
+$('lab-publish-btn').onclick = async () => {
+    const slug = $('lab-bundle-sel').value;
+    if (!slug) return;
+    try {
+        await api.lab.publish(slug);
+        $('lab-msg2').textContent = 'Publié (en modération) ✓';
+    } catch (e) {
+        $('lab-msg2').textContent = 'Erreur : ' + e.message;
+    }
+};
+
+// ── Mes bundles ──
+async function loadMyBundles() {
+    const mine = (await api.lab.myBundles()) || [];
+    $('mine-list').innerHTML = mine.length
+        ? mine
+              .map(
+                  (b) =>
+                      `<div class="card"><div class="row between"><b>${b.title || b.slug}</b><span class="badge badge--off">${b.visibility}</span></div><p class="muted">${b.slug}${b.official ? ' · officiel' : ''} · installs ${b.installCount || 0}</p></div>`,
+              )
+              .join('')
+        : '<p class="muted">Aucun bundle créé. Va dans le Lab pour en créer un.</p>';
 }
 
 // ── Settings ──

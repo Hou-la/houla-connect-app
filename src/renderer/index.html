@@ -92,8 +92,36 @@
                 <!-- LAB -->
                 <section id="view-lab" class="view hidden">
                     <h2>Lab</h2>
-                    <p class="muted">Crée un Pack Bundle (titre, description, bannière, versions, interactions), puis publie-le au store après modération.</p>
-                    <div class="card"><p class="muted">Éditeur de bundle : à venir dans cette vue (le back est prêt : /api/manager/bundles).</p></div>
+                    <p class="muted">Crée un pack, ajoute une version (le manifeste des interactions), puis publie-le (modération).</p>
+                    <div class="card">
+                        <label>1. Créer un bundle</label>
+                        <input id="lab-slug" placeholder="slug (minuscules-tirets, ex. mon-pack)" />
+                        <input id="lab-title" placeholder="Titre (anglais)" />
+                        <div class="row gap">
+                            <input id="lab-game" placeholder="jeu (optionnel)" />
+                            <select id="lab-theme">
+                                <option value="gaming">gaming</option>
+                                <option value="asmr">asmr</option>
+                                <option value="studio-fx">studio-fx</option>
+                                <option value="irl">irl</option>
+                                <option value="music">music</option>
+                                <option value="other">other</option>
+                            </select>
+                        </div>
+                        <button id="lab-create-btn" class="btn btn--primary">Créer</button>
+                        <p id="lab-msg" class="hint"></p>
+                    </div>
+                    <div class="card">
+                        <label>2. Version + manifeste</label>
+                        <select id="lab-bundle-sel"></select>
+                        <input id="lab-version" placeholder="version (ex. 1.0.0)" value="1.0.0" />
+                        <textarea id="lab-manifest" rows="9" spellcheck="false" placeholder='{ "schema": 2, "rules": [ { "id": "r1", "on": {"type":"gift","slot":"ix_slot_01"}, "effect": {"type":"keyboard","keys":"space"} } ] }'></textarea>
+                        <div class="row gap">
+                            <button id="lab-submit-btn" class="btn btn--ghost">Soumettre la version</button>
+                            <button id="lab-publish-btn" class="btn btn--primary">Publier</button>
+                        </div>
+                        <p id="lab-msg2" class="hint"></p>
+                    </div>
                 </section>
 
                 <!-- MES BUNDLES -->

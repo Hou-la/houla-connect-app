@@ -119,6 +119,13 @@ function registerIpc(): void {
         return { ok: true, capabilities: d.capabilities, hosts: d.hosts };
     });
     ipcMain.handle('store:installed', () => store.getInstalled());
+
+    // Lab (créateur)
+    ipcMain.handle('lab:create', (_e, dto) => api.createBundle(dto));
+    ipcMain.handle('lab:mybundles', () => api.myBundles());
+    ipcMain.handle('lab:detail', (_e, slug: string) => api.myBundleDetail(slug));
+    ipcMain.handle('lab:version', (_e, slug: string, dto) => api.submitVersion(slug, dto));
+    ipcMain.handle('lab:publish', (_e, slug: string) => api.publishBundle(slug));
     ipcMain.handle('store:uninstall', (_e, slug: string) => {
         store.setInstalled(store.getInstalled().filter((b) => b.slug !== slug));
         if (store.getActiveBundleSlug() === slug) store.setActiveBundleSlug(undefined);

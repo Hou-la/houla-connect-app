@@ -81,11 +81,12 @@ body { background: var(--bg); color: var(--text); overflow: hidden; }
 .card > label { display: block; font-size: 12px; text-transform: uppercase;
     letter-spacing: .6px; color: var(--muted); margin-bottom: 10px; }
 
-select, input {
+select, input, textarea {
     width: 100%; padding: 10px 12px; background: var(--bg-3);
     border: 1px solid var(--border); border-radius: 8px; color: var(--text);
-    margin-bottom: 12px;
+    margin-bottom: 12px; font-size: 14px;
 }
+textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 1.5; }
 
 .btn { padding: 10px 16px; border: 0; border-radius: 8px; cursor: pointer;
     font-size: 14px; font-weight: 500; }
