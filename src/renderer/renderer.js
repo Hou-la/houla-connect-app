@@ -236,7 +236,32 @@ async function loadCaps() {
 }
 $('lang').onchange = (e) => api.language(e.target.value);
 
+// ── Mises à jour ──
+function renderUpdate(u) {
+    const s = $('update-status');
+    const install = $('update-install');
+    if (!s) return;
+    switch (u.status) {
+        case 'checking': s.textContent = 'Vérification…'; break;
+        case 'available': s.textContent = `Mise à jour ${u.version || ''} trouvée, téléchargement…`; break;
+        case 'downloading': s.textContent = `Téléchargement… ${u.percent || 0}%`; break;
+        case 'downloaded':
+            s.textContent = `Mise à jour ${u.version || ''} prête à installer.`;
+            install.classList.remove('hidden');
+            $('app-ver').textContent = 'v' + (u.version || '') + ' · maj prête';
+            break;
+        case 'none': s.textContent = 'Tu es à jour.'; break;
+        case 'dev': s.textContent = 'Mode dev (pas de mise à jour).'; break;
+        case 'error': s.textContent = 'Erreur : ' + (u.message || ''); break;
+        default: s.textContent = '—';
+    }
+}
+api.onUpdate(renderUpdate);
+$('update-check').onclick = () => api.update.check();
+$('update-install').onclick = () => api.update.install();
+
 // ── Boot ──
 refreshAuth();
 api.language().then((l) => ($('lang').value = l));
 api.appVersion().then((v) => ($('app-ver').textContent = 'v' + v));
+api.update.check(); // check silencieux au démarrage (installe en tâche de fond)

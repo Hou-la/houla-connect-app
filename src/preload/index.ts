@@ -51,6 +51,10 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         status: () => invoke('engine:status'),
     },
     language: (lang?: string) => invoke('prefs:language', lang),
+    update: {
+        check: () => invoke('update:check'),
+        install: () => invoke('update:install'),
+    },
 
     // frameless window controls
     win: {
@@ -63,4 +67,5 @@ contextBridge.exposeInMainWorld('houlaConnect', {
     onState: (cb: (s: any) => void) => on('onState', cb),
     onLog: (cb: (l: any) => void) => on('onLog', cb),
     onAuth: (cb: (a: any) => void) => on('onAuth', cb),
+    onUpdate: (cb: (u: any) => void) => on('onUpdate', cb),
 });

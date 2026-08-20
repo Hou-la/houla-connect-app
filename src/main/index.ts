@@ -35,6 +35,19 @@ function send(channel: string, payload: unknown): void {
     win?.webContents.send(channel, payload);
 }
 
+// Auto-update depuis GitHub Releases (dépôt public). On câble les événements ;
+// le renderer déclenche le check (pour qu'il écoute déjà) et propose Installer.
+function setupAutoUpdate(): void {
+    if (!app.isPackaged) return;
+    autoUpdater.autoDownload = true;
+    autoUpdater.on('checking-for-update', () => send('onUpdate', { status: 'checking' }));
+    autoUpdater.on('update-available', (i: any) => send('onUpdate', { status: 'available', version: i?.version }));
+    autoUpdater.on('update-not-available', () => send('onUpdate', { status: 'none' }));
+    autoUpdater.on('download-progress', (p: any) => send('onUpdate', { status: 'downloading', percent: Math.round(p?.percent || 0) }));
+    autoUpdater.on('update-downloaded', (i: any) => send('onUpdate', { status: 'downloaded', version: i?.version }));
+    autoUpdater.on('error', (e: any) => send('onUpdate', { status: 'error', message: String(e?.message || e) }));
+}
+
 // ── Moteur : le renderer n'envoie que du déclaratif, MAIN exécute ──
 const engine = new Engine({
     getCapabilities: () => store.getCapabilities(),
@@ -103,6 +116,17 @@ function registerIpc(): void {
     ipcMain.handle('workspaces:list', () => api.listWorkspaces());
     ipcMain.handle('workspaces:current', () => ({ id: store.getWorkspaceId(), name: store.getWorkspaceName() }));
     ipcMain.handle('app:version', () => app.getVersion());
+    ipcMain.handle('update:check', () => {
+        if (!app.isPackaged) {
+            send('onUpdate', { status: 'dev' });
+            return { ok: false };
+        }
+        autoUpdater
+            .checkForUpdates()
+            .catch((e: any) => send('onUpdate', { status: 'error', message: String(e?.message || e) }));
+        return { ok: true };
+    });
+    ipcMain.handle('update:install', () => autoUpdater.quitAndInstall());
     ipcMain.handle('workspaces:select', (_e, ws: { id: string; name: string }) => {
         store.setWorkspace(ws.id, ws.name);
         store.clearEventKey(); // la clé event est par-workspace : la re-minter
@@ -209,8 +233,7 @@ if (!app.requestSingleInstanceLock()) {
         }
         registerIpc();
         createWindow();
-        // Auto-update depuis GitHub Releases (les prochaines versions s'installent seules).
-        if (app.isPackaged) autoUpdater.checkForUpdatesAndNotify().catch(() => undefined);
+        setupAutoUpdate();
         // PANIC global : Ctrl+Alt+Pause.
         globalShortcut.register('Control+Alt+Pause', () => {
             conn.disconnect();
