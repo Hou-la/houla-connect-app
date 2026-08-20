@@ -1,6 +1,8 @@
 'use strict';
 const api = window.houlaConnect;
 const $ = (id) => document.getElementById(id);
+const TRANSPARENT = 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=';
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const CAPS = [
     ['allowKeyboard', 'Clavier (nut.js)'],
     ['allowGamepad', 'Manette virtuelle (ViGEm)'],
@@ -28,29 +30,38 @@ api.onAuth(async (a) => { if (a.authenticated) await showApp(); });
 
 // Switch d'identité DANS l'app (multi-workspace) : on utilise le workspace choisi
 // à l'auth par défaut, et on peut en changer. Plus de double sélection.
+function setCurrentWs(ws) {
+    if (!ws) return;
+    $('ws-current-av').src = ws.avatarUrl || TRANSPARENT;
+    $('ws-current-name').textContent = ws.name || ws.slug || ws.id;
+}
 async function loadWorkspaces() {
     const [list, current] = await Promise.all([api.listWorkspaces(), api.currentWorkspace()]);
-    const sel = $('ws-select');
-    sel.innerHTML = '';
-    (list || []).forEach((ws) => {
-        const o = document.createElement('option');
-        o.value = ws.id;
-        o.textContent = ws.name || ws.slug || ws.id;
-        sel.appendChild(o);
-    });
-    if (current && current.id && [...sel.options].some((o) => o.value === current.id)) {
-        sel.value = current.id;
-    } else if (list && list.length) {
-        sel.value = list[0].id;
-        await api.selectWorkspace({ id: list[0].id, name: list[0].name || '' });
+    const menu = $('ws-menu');
+    menu.innerHTML = '';
+    let currentWs = (list || []).find((w) => w.id === (current && current.id)) || (list && list[0]);
+    if (currentWs && (!current || current.id !== currentWs.id)) {
+        await api.selectWorkspace({ id: currentWs.id, name: currentWs.name || '' });
     }
-    sel.onchange = async () => {
-        const ws = (list || []).find((w) => w.id === sel.value);
-        await api.selectWorkspace({ id: sel.value, name: (ws && ws.name) || '' });
-        api.engine.stop();
-        await loadInstalled();
-    };
+    setCurrentWs(currentWs);
+    (list || []).forEach((ws) => {
+        const item = document.createElement('div');
+        item.className = 'ws-item';
+        item.innerHTML = `<img class="av" src="${esc(ws.avatarUrl || TRANSPARENT)}" alt=""/><span>${esc(ws.name || ws.slug || ws.id)}</span>`;
+        item.onclick = async () => {
+            menu.classList.add('hidden');
+            await api.selectWorkspace({ id: ws.id, name: ws.name || '' });
+            setCurrentWs(ws);
+            api.engine.stop();
+            await loadInstalled();
+        };
+        menu.appendChild(item);
+    });
 }
+$('ws-current').onclick = () => $('ws-menu').classList.toggle('hidden');
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.ws-switch')) $('ws-menu').classList.add('hidden');
+});
 
 async function showApp() {
     $('view-auth').classList.add('hidden');
@@ -122,30 +133,65 @@ function logLine(l) {
 }
 
 // ── Store ──
+function publisherHtml(pub, installs) {
+    pub = pub || {};
+    return `<img class="av" src="${esc(pub.avatarUrl || TRANSPARENT)}" alt=""/>
+        <span>${esc(pub.name || 'Hou.la')}</span>
+        ${pub.isVerified ? '<span class="verified" title="Vérifié">✓</span>' : ''}
+        <span>· ${installs || 0} installs</span>`;
+}
+function installBundle(slug, btn) {
+    if (btn) btn.textContent = '…';
+    api.store
+        .install(slug)
+        .then(() => { if (btn) btn.textContent = 'Installé ✓'; return loadInstalled(); })
+        .catch(() => { if (btn) btn.textContent = 'Échec'; });
+}
 async function loadStore() {
     const list = (await api.store.list()) || [];
-    $('store-list').innerHTML = '';
+    const el = $('store-list');
+    el.innerHTML = '';
+    if (!list.length) { el.innerHTML = '<p class="muted">Le store est vide pour l\'instant.</p>'; return; }
     list.forEach((b) => {
         const card = document.createElement('div');
         card.className = 'bundle-card';
-        card.innerHTML = `<div class="bundle-card__body">
-            <h3>${b.title || b.slug}</h3>
-            <p class="muted">${b.game || b.theme || ''}</p>
-            <button class="btn btn--primary" data-slug="${b.slug}">Installer</button>
-        </div>`;
-        card.querySelector('button').onclick = async (e) => {
-            e.target.textContent = '…';
-            try {
-                const r = await api.store.install(b.slug);
-                e.target.textContent = 'Installé';
-                await loadInstalled();
-            } catch (err) {
-                e.target.textContent = 'Échec';
-            }
-        };
-        $('store-list').appendChild(card);
+        const banner = b.bannerUrl ? ` style="background-image:url('${esc(b.bannerUrl)}')"` : '';
+        card.innerHTML = `
+            <div class="bundle-card__banner"${banner}></div>
+            <div class="bundle-card__body">
+                <h3>${esc(b.title || b.slug)}</h3>
+                <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
+                <div class="row gap">
+                    <button class="btn btn--primary install">Installer</button>
+                    <button class="btn btn--ghost more">Voir plus</button>
+                </div>
+            </div>`;
+        card.querySelector('.install').onclick = (e) => installBundle(b.slug, e.target);
+        card.querySelector('.more').onclick = () => openModal(b);
+        el.appendChild(card);
     });
 }
+
+// ── Modal détail ──
+function openModal(b) {
+    $('modal-banner').style.backgroundImage = b.bannerUrl ? `url('${b.bannerUrl}')` : '';
+    $('modal-title').textContent = b.title || b.slug;
+    $('modal-publisher').innerHTML = publisherHtml(b.publisher, b.installCount);
+    $('modal-desc').textContent = b.description || 'Aucune description.';
+    $('modal-caps').innerHTML = '';
+    api.store
+        .preview(b.slug)
+        .then((p) => {
+            const caps = (p && p.capabilities) || [];
+            $('modal-caps').innerHTML = caps.map((c) => `<span class="chip">${esc(c)}</span>`).join('');
+        })
+        .catch(() => {});
+    $('modal-install').onclick = () => installBundle(b.slug, $('modal-install'));
+    $('modal-install').textContent = 'Installer';
+    $('modal').classList.remove('hidden');
+}
+$('modal-close').onclick = () => $('modal').classList.add('hidden');
+$('modal').onclick = (e) => { if (e.target.id === 'modal') $('modal').classList.add('hidden'); };
 
 // ── Lab ──
 async function loadLab() {

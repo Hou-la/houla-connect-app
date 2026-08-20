@@ -121,3 +121,33 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
 .empty { padding: 22px; text-align: center; color: var(--muted); background: var(--bg); border-radius: 8px; margin-bottom: 12px; }
 .hint { font-size: 12px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
 .row.wrap { flex-wrap: wrap; }
+
+/* Dropdown identité */
+.ws-current { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px;
+    background: var(--bg-3); border: 1px solid var(--border); border-radius: 8px; color: var(--text); cursor: pointer; text-align: left; }
+.ws-current #ws-current-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-current .caret { color: var(--muted); }
+.av { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; background: var(--bg); border: 1px solid var(--border); }
+.ws-menu { margin-top: 6px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; max-height: 260px; overflow-y: auto; }
+.ws-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; }
+.ws-item:hover { background: var(--bg-3); }
+.ws-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Cartes store + éditeur */
+.bundle-card__banner { height: 110px; background: linear-gradient(135deg, #1e2740, #33244a); background-size: cover; background-position: center; }
+.publisher { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin: 4px 0 8px; }
+.publisher .av { width: 18px; height: 18px; }
+.publisher .verified { color: var(--accent-2); font-weight: 700; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.chip { font-size: 12px; padding: 3px 10px; border-radius: 14px; background: var(--bg-3); border: 1px solid var(--border); color: var(--text); }
+
+/* Modal détail */
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.65); display: grid; place-items: center; z-index: 50; }
+.modal__box { width: 520px; max-width: 92vw; max-height: 88vh; overflow-y: auto; background: var(--bg-2);
+    border: 1px solid var(--border); border-radius: 14px; position: relative; }
+.modal__close { position: absolute; top: 10px; right: 10px; z-index: 2; width: 30px; height: 30px; border: 0;
+    border-radius: 8px; background: rgba(0,0,0,.45); color: #fff; cursor: pointer; }
+.modal__banner { height: 200px; background: linear-gradient(135deg, #1e2740, #33244a); background-size: cover;
+    background-position: center; border-radius: 14px 14px 0 0; }
+.modal__body { padding: 22px; }
+.modal__body h2 { margin-bottom: 6px; }

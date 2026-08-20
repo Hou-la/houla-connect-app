@@ -44,8 +44,13 @@
                 <button class="nav" data-view="settings">Réglages</button>
                 <div class="sidebar__foot">
                     <div class="ws-switch">
-                        <label for="ws-select">Identité active</label>
-                        <select id="ws-select"></select>
+                        <label>Identité active</label>
+                        <button id="ws-current" class="ws-current">
+                            <img id="ws-current-av" class="av" alt="" />
+                            <span id="ws-current-name">…</span>
+                            <span class="caret">▾</span>
+                        </button>
+                        <div id="ws-menu" class="ws-menu hidden"></div>
                     </div>
                     <button id="btn-logout" class="btn btn--ghost">Déconnexion</button>
                 </div>
@@ -159,6 +164,21 @@
                     </div>
                 </section>
             </main>
+        </div>
+    </div>
+
+    <!-- Fiche détail d'un pack (Voir plus) -->
+    <div id="modal" class="modal hidden">
+        <div class="modal__box">
+            <button id="modal-close" class="modal__close">&#10005;</button>
+            <div id="modal-banner" class="modal__banner"></div>
+            <div class="modal__body">
+                <h2 id="modal-title"></h2>
+                <div id="modal-publisher" class="publisher"></div>
+                <p id="modal-desc" class="muted"></p>
+                <div id="modal-caps" class="chips"></div>
+                <button id="modal-install" class="btn btn--primary">Installer</button>
+            </div>
         </div>
     </div>
 
