@@ -100,6 +100,8 @@ function registerIpc(): void {
     });
     ipcMain.handle('auth:status', () => ({ authenticated: auth.isAuthenticated() }));
     ipcMain.handle('workspaces:list', () => api.listWorkspaces());
+    ipcMain.handle('workspaces:current', () => ({ id: store.getWorkspaceId(), name: store.getWorkspaceName() }));
+    ipcMain.handle('app:version', () => app.getVersion());
     ipcMain.handle('workspaces:select', (_e, ws: { id: string; name: string }) => {
         store.setWorkspace(ws.id, ws.name);
         store.clearEventKey(); // la clé event est par-workspace : la re-minter

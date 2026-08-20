@@ -13,6 +13,7 @@
         <div class="titlebar__brand">
             <img src="logo.png" class="logo-ic" alt="" />
             <span class="logo">Hou.la <b>Connect</b></span>
+            <span class="ver" id="app-ver"></span>
         </div>
         <div class="titlebar__drag"></div>
         <div class="titlebar__controls">
@@ -30,10 +31,6 @@
                 <h1>Hou.la <b>Connect</b></h1>
                 <p id="auth-lead">Transforme les cadeaux, messages et follows de ton live en actions réelles.</p>
                 <button id="btn-login" class="btn btn--primary">Se connecter avec Hou.la</button>
-                <div id="ws-picker" class="ws-picker hidden">
-                    <p>Choisis ton identité :</p>
-                    <div id="ws-list"></div>
-                </div>
             </div>
         </section>
 
@@ -46,7 +43,10 @@
                 <button class="nav" data-view="mine">Mes bundles</button>
                 <button class="nav" data-view="settings">Réglages</button>
                 <div class="sidebar__foot">
-                    <button id="btn-panic" class="btn btn--panic">PANIC</button>
+                    <div class="ws-switch">
+                        <label for="ws-select">Identité active</label>
+                        <select id="ws-select"></select>
+                    </div>
                     <button id="btn-logout" class="btn btn--ghost">Déconnexion</button>
                 </div>
             </nav>
@@ -60,12 +60,22 @@
                     </div>
                     <div class="card">
                         <label>Pack actif</label>
+                        <div id="no-pack" class="empty hidden">
+                            Aucun pack actif. Installe un pack depuis le
+                            <b>Store</b> pour commencer.
+                        </div>
                         <select id="active-bundle"></select>
-                        <div class="row gap">
+                        <div class="row gap wrap">
                             <button id="btn-start" class="btn btn--primary">Démarrer</button>
                             <button id="btn-stop" class="btn btn--ghost">Arrêter</button>
                             <button id="btn-test" class="btn btn--ghost">Tester (ix_slot_01)</button>
+                            <button id="btn-panic" class="btn btn--panic" title="Arrêt d'urgence">PANIC</button>
                         </div>
+                        <p class="hint">
+                            PANIC = arrêt d'urgence : relâche toutes les touches /
+                            boutons maintenus et coupe la connexion. Raccourci
+                            global : Ctrl+Alt+Pause.
+                        </p>
                     </div>
                     <div class="card">
                         <label>Journal en direct</label>

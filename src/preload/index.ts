@@ -14,7 +14,9 @@ contextBridge.exposeInMainWorld('houlaConnect', {
     logout: () => invoke('auth:logout'),
     authStatus: () => invoke('auth:status'),
     listWorkspaces: () => invoke('workspaces:list'),
+    currentWorkspace: () => invoke('workspaces:current'),
     selectWorkspace: (ws: { id: string; name: string }) => invoke('workspaces:select', ws),
+    appVersion: () => invoke('app:version'),
 
     store: {
         list: (q?: Record<string, string>) => invoke('store:list', q),

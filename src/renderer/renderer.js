@@ -24,32 +24,38 @@ async function refreshAuth() {
 }
 $('btn-login').onclick = () => api.login();
 $('btn-logout').onclick = async () => { await api.logout(); location.reload(); };
-api.onAuth(async (a) => { if (a.authenticated) await showWorkspaces(); });
+api.onAuth(async (a) => { if (a.authenticated) await showApp(); });
 
-async function showWorkspaces() {
-    // Auth réussie : on masque le bouton de connexion, le choix d'identité prend le relais.
-    $('btn-login').classList.add('hidden');
-    const lead = $('auth-lead');
-    if (lead) lead.classList.add('hidden');
-    const list = await api.listWorkspaces();
-    const box = $('ws-list');
-    box.innerHTML = '';
+// Switch d'identité DANS l'app (multi-workspace) : on utilise le workspace choisi
+// à l'auth par défaut, et on peut en changer. Plus de double sélection.
+async function loadWorkspaces() {
+    const [list, current] = await Promise.all([api.listWorkspaces(), api.currentWorkspace()]);
+    const sel = $('ws-select');
+    sel.innerHTML = '';
     (list || []).forEach((ws) => {
-        const b = document.createElement('button');
-        b.className = 'btn btn--ghost';
-        b.textContent = ws.name || ws.slug || ws.id;
-        b.onclick = async () => {
-            await api.selectWorkspace({ id: ws.id, name: ws.name || '' });
-            showApp();
-        };
-        box.appendChild(b);
+        const o = document.createElement('option');
+        o.value = ws.id;
+        o.textContent = ws.name || ws.slug || ws.id;
+        sel.appendChild(o);
     });
-    $('ws-picker').classList.remove('hidden');
+    if (current && current.id && [...sel.options].some((o) => o.value === current.id)) {
+        sel.value = current.id;
+    } else if (list && list.length) {
+        sel.value = list[0].id;
+        await api.selectWorkspace({ id: list[0].id, name: list[0].name || '' });
+    }
+    sel.onchange = async () => {
+        const ws = (list || []).find((w) => w.id === sel.value);
+        await api.selectWorkspace({ id: sel.value, name: (ws && ws.name) || '' });
+        api.engine.stop();
+        await loadInstalled();
+    };
 }
 
 async function showApp() {
     $('view-auth').classList.add('hidden');
     $('app-main').classList.remove('hidden');
+    await loadWorkspaces();
     await loadInstalled();
     await loadCaps();
     switchView('capture');
@@ -70,12 +76,24 @@ document.querySelectorAll('.nav').forEach((n) => (n.onclick = () => switchView(n
 async function loadInstalled(toMine) {
     const installed = (await api.store.installed()) || [];
     const sel = $('active-bundle');
-    sel.innerHTML = '';
-    installed.forEach((b) => {
-        const o = document.createElement('option');
-        o.value = b.slug; o.textContent = `${b.slug} (v${b.version})`;
-        sel.appendChild(o);
-    });
+    const noPack = $('no-pack');
+    if (!installed.length) {
+        // Aucun pack : on cache le select et on affiche l'état vide.
+        sel.classList.add('hidden');
+        noPack.classList.remove('hidden');
+        $('btn-start').disabled = true;
+    } else {
+        sel.classList.remove('hidden');
+        noPack.classList.add('hidden');
+        $('btn-start').disabled = false;
+        sel.innerHTML = '';
+        installed.forEach((b) => {
+            const o = document.createElement('option');
+            o.value = b.slug;
+            o.textContent = `${b.slug} (v${b.version})`;
+            sel.appendChild(o);
+        });
+    }
     if (toMine) {
         $('mine-list').innerHTML = installed.length
             ? installed.map((b) => `<div class="card"><b>${b.slug}</b> — v${b.version}</div>`).join('')
@@ -156,3 +174,4 @@ $('lang').onchange = (e) => api.language(e.target.value);
 // ── Boot ──
 refreshAuth();
 api.language().then((l) => ($('lang').value = l));
+api.appVersion().then((v) => ($('app-ver').textContent = 'v' + v));

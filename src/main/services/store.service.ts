@@ -70,6 +70,9 @@ export class StoreService {
     getWorkspaceId() {
         return this.store.get('workspaceId');
     }
+    getWorkspaceName() {
+        return this.store.get('workspaceName');
+    }
     clearAuth() {
         for (const k of ['accessToken', 'refreshToken', 'eventKey', 'workspaceId', 'workspaceName'] as const)
             this.store.delete(k);
