@@ -151,6 +151,15 @@ export class StoreService {
         if (!v.obsUrl) return null;
         return { url: String(v.obsUrl), password: v.obsPassword ? String(v.obsPassword) : undefined };
     }
+    getMqttConfig() {
+        const v = this.resolveVars();
+        if (!v.mqttUrl) return null;
+        return {
+            url: String(v.mqttUrl),
+            username: v.mqttUsername ? String(v.mqttUsername) : undefined,
+            password: v.mqttPassword ? String(v.mqttPassword) : undefined,
+        };
+    }
 
     // ── Bundles installés ──
     getInstalled(): InstalledBundle[] {

@@ -55,6 +55,7 @@ const engine = new Engine({
     getHostAllowlist: () => store.getHostAllowlist(),
     getRconConfig: () => store.getRconConfig(),
     getObsConfig: () => store.getObsConfig(),
+    getMqttConfig: () => store.getMqttConfig(),
     sidecar,
     // TODO focus-guard natif (fenêtre au premier plan). Permissif tant que non implémenté.
     isTargetFocused: () => true,

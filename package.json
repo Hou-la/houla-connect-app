@@ -18,20 +18,24 @@
   },
   "dependencies": {
     "@houla/live-connector": "^0.5.0",
+    "@nut-tree-fork/nut-js": "^4.2.6",
+    "@types/ws": "^8.18.1",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.3.9",
+    "mqtt": "^5.15.2",
     "obs-websocket-js": "^5.0.6",
+    "osc-min": "^1.1.2",
     "rcon-client": "^4.2.4",
-    "@nut-tree-fork/nut-js": "^4.2.6"
+    "ws": "^8.21.3"
   },
   "optionalDependencies": {
     "vigemclient": "^1.0.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "electron": "^33.3.1",
     "electron-builder": "^25.1.8",
-    "typescript": "^5.7.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.7.0"
   },
   "build": {
     "appId": "com.houla.connect",

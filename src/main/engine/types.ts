@@ -1,7 +1,7 @@
 // Types du manifeste v2 (miroir du plan exécutable côté API). DONNÉE PURE :
 // des règles trigger -> effet interprétées par les exécuteurs INTÉGRÉS de l'app.
 
-export type ExecutorType = 'keyboard' | 'gamepad' | 'rcon' | 'obs' | 'http' | 'python';
+export type ExecutorType = 'keyboard' | 'gamepad' | 'rcon' | 'obs' | 'http' | 'python' | 'mqtt' | 'osc' | 'ws';
 
 export interface KeyboardEffect {
     type: 'keyboard';
@@ -39,13 +39,38 @@ export interface PythonEffect {
     args?: Record<string, unknown>;
     cooldownMs?: number;
 }
+export interface MqttEffect {
+    type: 'mqtt';
+    topic: string;
+    payload: string;
+    qos?: 0 | 1 | 2;
+    retain?: boolean;
+    cooldownMs?: number;
+}
+export interface OscEffect {
+    type: 'osc';
+    address: string;
+    args?: Array<string | number | boolean>;
+    host?: string;
+    port?: number;
+    cooldownMs?: number;
+}
+export interface WsEffect {
+    type: 'ws';
+    url: string;
+    message: string;
+    cooldownMs?: number;
+}
 export type BundleEffect =
     | KeyboardEffect
     | GamepadEffect
     | RconEffect
     | ObsEffect
     | HttpEffect
-    | PythonEffect;
+    | PythonEffect
+    | MqttEffect
+    | OscEffect
+    | WsEffect;
 
 export interface BundleTrigger {
     type: 'gift' | 'follow' | 'comment' | 'share' | 'hearts';

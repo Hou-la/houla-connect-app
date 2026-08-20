@@ -6,6 +6,9 @@ import { RconExecutor, RconConfig } from './executors/rcon.executor';
 import { ObsExecutor, ObsConfig } from './executors/obs.executor';
 import { HttpExecutor } from './executors/http.executor';
 import { PythonExecutor } from './executors/python.executor';
+import { MqttExecutor, MqttConfig } from './executors/mqtt.executor';
+import { OscExecutor } from './executors/osc.executor';
+import { WsExecutor } from './executors/ws.executor';
 
 export interface AuditEntry {
     ts: number;
@@ -25,6 +28,7 @@ export interface EngineDeps {
     getHostAllowlist: () => string[];
     getRconConfig: () => RconConfig | null;
     getObsConfig: () => ObsConfig | null;
+    getMqttConfig: () => MqttConfig | null;
     sidecar: () => PythonSidecar;
     /** Fenêtre cible au premier plan ? (focus-guard clavier/manette). */
     isTargetFocused: () => boolean;
@@ -51,6 +55,9 @@ export class Engine {
             ['obs', new ObsExecutor(deps.getObsConfig)],
             ['http', new HttpExecutor(deps.getHostAllowlist)],
             ['python', new PythonExecutor(deps.sidecar)],
+            ['mqtt', new MqttExecutor(deps.getMqttConfig)],
+            ['osc', new OscExecutor()],
+            ['ws', new WsExecutor(deps.getHostAllowlist)],
         ]);
     }
 

@@ -10,6 +10,9 @@ const CAPS = [
     ['allowRcon', 'RCON (Minecraft…)'],
     ['allowObs', 'OBS'],
     ['allowHttp', 'HTTP / domotique'],
+    ['allowMqtt', 'MQTT (domotique / IoT)'],
+    ['allowOsc', 'OSC (VRChat, VJ, lumières)'],
+    ['allowWs', 'WebSocket (overlays custom)'],
 ];
 
 // ── Window controls ──
@@ -195,7 +198,8 @@ $('modal').onclick = (e) => { if (e.target.id === 'modal') $('modal').classList.
 
 // ── Lab : éditeur visuel (QUAND … ALORS …) ──
 const EVENTS = [['gift', 'Cadeau'], ['follow', 'Nouvel abonné'], ['comment', 'Message chat'], ['hearts', 'Palier de likes'], ['share', 'Partage']];
-const EXECS = [['keyboard', 'Clavier'], ['gamepad', 'Manette'], ['rcon', 'RCON'], ['obs', 'OBS'], ['http', 'HTTP']];
+const EXECS = [['keyboard', 'Clavier'], ['gamepad', 'Manette'], ['rcon', 'RCON'], ['obs', 'OBS'], ['http', 'HTTP'], ['mqtt', 'MQTT'], ['osc', 'OSC'], ['ws', 'WebSocket']];
+const ROLES = [['all', 'Tout le monde'], ['followers', 'Abonnés'], ['moderators', 'Modérateurs']];
 const GP_BUTTONS = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'START', 'BACK', 'LS', 'RS'];
 let labRules = [];
 let labCurrentSlug = null;
@@ -220,6 +224,9 @@ function execFieldHtml(r) {
         case 'rcon': return `<input type="text" class="r-command" placeholder="commande (ex. give {player} minecraft:diamond 1)" />`;
         case 'obs': return `<input type="text" class="r-request" placeholder="requête OBS (ex. SetCurrentProgramScene)" />`;
         case 'http': return `<select class="r-method"><option>GET</option><option>POST</option><option>PUT</option></select><input type="text" class="r-url" placeholder="https://…" />`;
+        case 'mqtt': return `<input type="text" class="r-topic" placeholder="topic (ex. maison/led/set)" /><input type="text" class="r-payload" placeholder="message (ex. ON)" />`;
+        case 'osc': return `<input type="text" class="r-address" placeholder="/avatar/parameters/… (VRChat)" /><input type="text" class="r-oscargs" placeholder="valeurs séparées par , (ex. 1, true)" />`;
+        case 'ws': return `<input type="text" class="r-wsurl" placeholder="wss://…" /><input type="text" class="r-wsmsg" placeholder="message à envoyer" />`;
         default: return '';
     }
 }
@@ -235,8 +242,24 @@ function readRule(el, r) {
     if (r.effect.type === 'rcon') r.effect.command = q('.r-command') ? q('.r-command').value : '';
     if (r.effect.type === 'obs') r.effect.request = q('.r-request') ? q('.r-request').value : '';
     if (r.effect.type === 'http') { r.effect.method = q('.r-method') ? q('.r-method').value : 'POST'; r.effect.url = q('.r-url') ? q('.r-url').value : ''; }
-    r.followersOnly = q('.r-fol') ? q('.r-fol').checked : false;
-    r.moderatorsOnly = q('.r-mod') ? q('.r-mod').checked : false;
+    if (r.effect.type === 'mqtt') { r.effect.topic = q('.r-topic') ? q('.r-topic').value : ''; r.effect.payload = q('.r-payload') ? q('.r-payload').value : ''; }
+    if (r.effect.type === 'osc') {
+        r.effect.address = q('.r-address') ? q('.r-address').value : '';
+        r.effect.args = q('.r-oscargs') ? parseOscArgs(q('.r-oscargs').value) : [];
+    }
+    if (r.effect.type === 'ws') { r.effect.url = q('.r-wsurl') ? q('.r-wsurl').value : ''; r.effect.message = q('.r-wsmsg') ? q('.r-wsmsg').value : ''; }
+    const role = q('.r-role') ? q('.r-role').value : 'all';
+    r.followersOnly = role === 'followers';
+    r.moderatorsOnly = role === 'moderators';
+}
+// Parse « 1, true, coucou » -> [1, true, "coucou"] (nombre, booléen, sinon chaîne).
+function parseOscArgs(raw) {
+    return String(raw || '').split(',').map((s) => s.trim()).filter((s) => s.length).map((s) => {
+        if (s === 'true') return true;
+        if (s === 'false') return false;
+        const n = Number(s);
+        return Number.isFinite(n) && s !== '' ? n : s;
+    });
 }
 function renderRules() {
     const box = $('lab-rules');
@@ -252,8 +275,8 @@ function renderRules() {
                 <select class="r-exec">${EXECS.map(([v, l]) => `<option value="${v}"${r.effect.type === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
                 <span class="r-exec-field">${execFieldHtml(r)}</span></div>
             <div class="rule__foot">
-                <label><input type="checkbox" class="r-fol"${r.followersOnly ? ' checked' : ''}/> abonnés</label>
-                <label><input type="checkbox" class="r-mod"${r.moderatorsOnly ? ' checked' : ''}/> mods</label>
+                <span class="rule__lbl">SI</span>
+                <select class="r-role" title="Qui peut déclencher cette règle ?">${ROLES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
                 <button class="r-del" title="Supprimer">&#10005;</button></div>`;
         const q = (s) => el.querySelector(s);
         if (r.event.type === 'gift' && q('.r-slot')) q('.r-slot').value = r.event.slot || 'ix_slot_01';
@@ -264,6 +287,10 @@ function renderRules() {
         if (r.effect.type === 'rcon' && q('.r-command')) q('.r-command').value = r.effect.command || '';
         if (r.effect.type === 'obs' && q('.r-request')) q('.r-request').value = r.effect.request || '';
         if (r.effect.type === 'http') { if (q('.r-method')) q('.r-method').value = r.effect.method || 'POST'; if (q('.r-url')) q('.r-url').value = r.effect.url || ''; }
+        if (r.effect.type === 'mqtt') { if (q('.r-topic')) q('.r-topic').value = r.effect.topic || ''; if (q('.r-payload')) q('.r-payload').value = r.effect.payload || ''; }
+        if (r.effect.type === 'osc') { if (q('.r-address')) q('.r-address').value = r.effect.address || ''; if (q('.r-oscargs')) q('.r-oscargs').value = (r.effect.args || []).join(', '); }
+        if (r.effect.type === 'ws') { if (q('.r-wsurl')) q('.r-wsurl').value = r.effect.url || ''; if (q('.r-wsmsg')) q('.r-wsmsg').value = r.effect.message || ''; }
+        if (q('.r-role')) q('.r-role').value = r.moderatorsOnly ? 'moderators' : r.followersOnly ? 'followers' : 'all';
         q('.r-event').onchange = (e) => { r.event = { type: e.target.value }; renderRules(); };
         q('.r-exec').onchange = (e) => { r.effect = { type: e.target.value }; renderRules(); };
         el.querySelectorAll('input, select').forEach((inp) => {
@@ -288,6 +315,9 @@ function buildManifest() {
             if (r.effect.type === 'rcon') effect.command = r.effect.command;
             if (r.effect.type === 'obs') effect.request = r.effect.request;
             if (r.effect.type === 'http') { effect.method = r.effect.method; effect.url = r.effect.url; }
+            if (r.effect.type === 'mqtt') { effect.topic = r.effect.topic; effect.payload = r.effect.payload || ''; }
+            if (r.effect.type === 'osc') { effect.address = r.effect.address; if (r.effect.args && r.effect.args.length) effect.args = r.effect.args; }
+            if (r.effect.type === 'ws') { effect.url = r.effect.url; effect.message = r.effect.message || ''; }
             const rule = { id: 'r' + (i + 1), on, effect };
             if (r.followersOnly) rule.followersOnly = true;
             if (r.moderatorsOnly) rule.moderatorsOnly = true;
