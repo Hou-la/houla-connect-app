@@ -74,6 +74,9 @@ export type BundleEffect =
 
 export interface BundleTrigger {
     type: 'gift' | 'follow' | 'comment' | 'share' | 'hearts';
+    /** Pour 'gift' : slug du cadeau déclencheur (générique ou slot réservé). Canonique. */
+    giftSlug?: string;
+    /** @deprecated alias de giftSlug restreint aux slots réservés (packs déjà signés). */
     slot?: string;
     contains?: string;
     milestone?: number;

@@ -205,14 +205,37 @@ let labRules = [];
 let labCurrentSlug = null;
 let labLatestVersion = null;
 let labJsonMode = false;
+let giftCatalog = []; // [{slug,name,thumbnailUrl,coinCost,isInteractiveSlot}] depuis GET /api/gifts
 
-function slotOptions() {
-    let o = '';
-    for (let i = 1; i <= 30; i++) o += `<option value="ix_slot_${String(i).padStart(2, '0')}">Cadeau slot ${i}</option>`;
-    return o;
+async function loadGiftCatalog() {
+    try { giftCatalog = (await api.gifts.catalog()) || []; } catch { giftCatalog = []; }
+}
+// Options du cadeau déclencheur : le catalogue RÉEL (par slug) + les slots réservés
+// (art custom d'un pack). `selected` toujours présent même hors catalogue (offline).
+function giftOptions(selected) {
+    const generic = giftCatalog.filter((g) => !g.isInteractiveSlot);
+    let known = false;
+    const gOpts = generic.map((g) => {
+        if (g.slug === selected) known = true;
+        return `<option value="${esc(g.slug)}"${g.slug === selected ? ' selected' : ''}>${esc(g.name)}</option>`;
+    }).join('');
+    let sOpts = '';
+    for (let i = 1; i <= 30; i++) {
+        const s = `ix_slot_${String(i).padStart(2, '0')}`;
+        if (s === selected) known = true;
+        sOpts += `<option value="${s}"${s === selected ? ' selected' : ''}>Slot interactif ${i}</option>`;
+    }
+    const fallback = selected && !known ? `<option value="${esc(selected)}" selected>${esc(selected)}</option>` : '';
+    const g1 = gOpts ? `<optgroup label="Cadeaux">${gOpts}</optgroup>` : '';
+    return `${fallback}${g1}<optgroup label="Slots interactifs (art custom)">${sOpts}</optgroup>`;
+}
+/** Slug de cadeau par défaut : 1er cadeau du catalogue, sinon 1er slot réservé. */
+function defaultGiftSlug() {
+    const g = giftCatalog.find((x) => !x.isInteractiveSlot);
+    return g ? g.slug : 'ix_slot_01';
 }
 function eventFieldHtml(r) {
-    if (r.event.type === 'gift') return `<select class="r-slot">${slotOptions()}</select>`;
+    if (r.event.type === 'gift') return `<select class="r-giftslug">${giftOptions(r.event.giftSlug)}</select>`;
     if (r.event.type === 'comment') return `<input type="text" class="r-contains" placeholder="contient ce mot…" />`;
     if (r.event.type === 'hearts') return `<input type="number" class="r-milestone" placeholder="palier (ex. 100)" min="1" />`;
     return '';
@@ -230,11 +253,11 @@ function execFieldHtml(r) {
         default: return '';
     }
 }
-function newRule() { return { event: { type: 'gift', slot: 'ix_slot_01' }, effect: { type: 'keyboard', keys: 'space', backend: 'auto' }, followersOnly: false, moderatorsOnly: false }; }
+function newRule() { return { event: { type: 'gift', giftSlug: defaultGiftSlug() }, effect: { type: 'keyboard', keys: 'space', backend: 'auto' }, followersOnly: false, moderatorsOnly: false }; }
 
 function readRule(el, r) {
     const q = (s) => el.querySelector(s);
-    if (r.event.type === 'gift') r.event.slot = q('.r-slot') ? q('.r-slot').value : r.event.slot;
+    if (r.event.type === 'gift') r.event.giftSlug = q('.r-giftslug') ? q('.r-giftslug').value : r.event.giftSlug;
     if (r.event.type === 'comment') r.event.contains = q('.r-contains') ? q('.r-contains').value : '';
     if (r.event.type === 'hearts') r.event.milestone = q('.r-milestone') ? Number(q('.r-milestone').value) || undefined : undefined;
     if (r.effect.type === 'keyboard') { r.effect.keys = q('.r-keys') ? q('.r-keys').value : ''; r.effect.backend = q('.r-backend') ? q('.r-backend').value : 'auto'; }
@@ -269,17 +292,18 @@ function renderRules() {
         el.className = 'rule';
         el.innerHTML = `
             <div class="rule__part"><span class="rule__lbl">QUAND</span>
-                <select class="r-event">${EVENTS.map(([v, l]) => `<option value="${v}"${r.event.type === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
-                <span class="r-event-field">${eventFieldHtml(r)}</span></div>
+                <div class="rule__fields">
+                    <select class="r-event">${EVENTS.map(([v, l]) => `<option value="${v}"${r.event.type === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
+                    ${eventFieldHtml(r)}</div></div>
             <div class="rule__part"><span class="rule__lbl">ALORS</span>
-                <select class="r-exec">${EXECS.map(([v, l]) => `<option value="${v}"${r.effect.type === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
-                <span class="r-exec-field">${execFieldHtml(r)}</span></div>
-            <div class="rule__foot">
-                <span class="rule__lbl">SI</span>
-                <select class="r-role" title="Qui peut déclencher cette règle ?">${ROLES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
-                <button class="r-del" title="Supprimer">&#10005;</button></div>`;
+                <div class="rule__fields">
+                    <select class="r-exec">${EXECS.map(([v, l]) => `<option value="${v}"${r.effect.type === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
+                    ${execFieldHtml(r)}</div></div>
+            <div class="rule__part rule__part--foot"><span class="rule__lbl">SI</span>
+                <div class="rule__fields">
+                    <select class="r-role" title="Qui peut déclencher cette règle ?">${ROLES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
+                <button class="r-del" title="Supprimer cette interaction">&#10005;</button></div>`;
         const q = (s) => el.querySelector(s);
-        if (r.event.type === 'gift' && q('.r-slot')) q('.r-slot').value = r.event.slot || 'ix_slot_01';
         if (r.event.type === 'comment' && q('.r-contains')) q('.r-contains').value = r.event.contains || '';
         if (r.event.type === 'hearts' && q('.r-milestone')) q('.r-milestone').value = r.event.milestone || '';
         if (r.effect.type === 'keyboard') { if (q('.r-keys')) q('.r-keys').value = r.effect.keys || ''; if (q('.r-backend')) q('.r-backend').value = r.effect.backend || 'auto'; }
@@ -291,7 +315,7 @@ function renderRules() {
         if (r.effect.type === 'osc') { if (q('.r-address')) q('.r-address').value = r.effect.address || ''; if (q('.r-oscargs')) q('.r-oscargs').value = (r.effect.args || []).join(', '); }
         if (r.effect.type === 'ws') { if (q('.r-wsurl')) q('.r-wsurl').value = r.effect.url || ''; if (q('.r-wsmsg')) q('.r-wsmsg').value = r.effect.message || ''; }
         if (q('.r-role')) q('.r-role').value = r.moderatorsOnly ? 'moderators' : r.followersOnly ? 'followers' : 'all';
-        q('.r-event').onchange = (e) => { r.event = { type: e.target.value }; renderRules(); };
+        q('.r-event').onchange = (e) => { const t = e.target.value; r.event = { type: t }; if (t === 'gift') r.event.giftSlug = defaultGiftSlug(); renderRules(); };
         q('.r-exec').onchange = (e) => { r.effect = { type: e.target.value }; renderRules(); };
         el.querySelectorAll('input, select').forEach((inp) => {
             if (inp.classList.contains('r-event') || inp.classList.contains('r-exec')) return;
@@ -306,7 +330,7 @@ function buildManifest() {
         schema: 2,
         rules: labRules.map((r, i) => {
             const on = { type: r.event.type };
-            if (r.event.type === 'gift') on.slot = r.event.slot;
+            if (r.event.type === 'gift') on.giftSlug = r.event.giftSlug || r.event.slot;
             if (r.event.type === 'comment') on.contains = r.event.contains;
             if (r.event.type === 'hearts') on.milestone = r.event.milestone;
             const effect = { type: r.effect.type };
@@ -326,7 +350,12 @@ function buildManifest() {
     };
 }
 function manifestToRules(m) {
-    return ((m && m.rules) || []).map((rule) => ({ event: { ...rule.on }, effect: { ...rule.effect }, followersOnly: !!rule.followersOnly, moderatorsOnly: !!rule.moderatorsOnly }));
+    return ((m && m.rules) || []).map((rule) => {
+        const event = { ...rule.on };
+        // Normalise l'alias déprécié slot -> giftSlug pour l'édition.
+        if (event.type === 'gift' && !event.giftSlug && event.slot) { event.giftSlug = event.slot; delete event.slot; }
+        return { event, effect: { ...rule.effect }, followersOnly: !!rule.followersOnly, moderatorsOnly: !!rule.moderatorsOnly };
+    });
 }
 function bumpVersion(v, type) {
     if (!v) return '1.0.0';
@@ -337,39 +366,52 @@ function bumpVersion(v, type) {
 }
 
 $('lab-add-rule').onclick = () => { labRules.push(newRule()); renderRules(); };
-$('lab-mode').onclick = () => {
-    labJsonMode = !labJsonMode;
+$('lab-mode').onchange = () => {
+    labJsonMode = $('lab-mode').checked;
     if (labJsonMode) {
         $('lab-manifest').value = JSON.stringify(buildManifest(), null, 2);
         $('lab-builder').classList.add('hidden');
         $('lab-json-mode').classList.remove('hidden');
-        $('lab-mode').textContent = 'Mode simplifié';
+        $('lab-mode-label').textContent = 'Mode simplifié';
     } else {
         try { labRules = manifestToRules(JSON.parse($('lab-manifest').value)); } catch { /* garde l'existant */ }
         renderRules();
         $('lab-builder').classList.remove('hidden');
         $('lab-json-mode').classList.add('hidden');
-        $('lab-mode').textContent = 'Mode avancé (JSON)';
+        $('lab-mode-label').textContent = 'Mode avancé (JSON)';
     }
 };
 
 async function loadLab() {
+    await loadGiftCatalog();
     const mine = (await api.lab.myBundles()) || [];
     const sel = $('lab-bundle-sel');
-    sel.innerHTML = mine.map((b) => `<option value="${esc(b.slug)}">${esc(b.slug)} (${esc(b.visibility)})</option>`).join('');
-    sel.onchange = () => loadLabBundle(sel.value);
-    if (mine.length) await loadLabBundle(sel.value);
-    else { labRules = []; renderRules(); $('lab-banner-preview').style.backgroundImage = ''; }
+    // Défaut = « — Nouveau bundle — » : on N'auto-charge PLUS un pack existant.
+    sel.innerHTML = '<option value="">— Nouveau bundle —</option>'
+        + mine.map((b) => `<option value="${esc(b.slug)}">${esc(b.slug)} (${esc(b.visibility)})</option>`).join('');
+    sel.onchange = () => (sel.value ? loadLabBundle(sel.value) : startNewLab());
+    sel.value = '';
+    startNewLab();
+}
+/** État vierge : pas de pack sélectionné, une seule interaction prête à remplir. */
+function startNewLab() {
+    labCurrentSlug = null;
+    labLatestVersion = null;
+    labRules = [newRule()];
+    $('lab-banner-preview').style.backgroundImage = '';
+    if (labJsonMode) $('lab-manifest').value = JSON.stringify(buildManifest(), null, 2);
+    else renderRules();
 }
 async function loadLabBundle(slug) {
     labCurrentSlug = slug;
-    if (!slug) return;
+    if (!slug) return startNewLab();
     const detail = await api.lab.detail(slug);
     const versions = (detail && detail.versions) || [];
     labLatestVersion = versions.length ? versions[0].version : null; // triées DESC
     const bundle = detail && detail.bundle;
     $('lab-banner-preview').style.backgroundImage = bundle && bundle.bannerUrl ? `url('${bundle.bannerUrl}')` : '';
-    labRules = versions.length ? manifestToRules(versions[0].manifestJson) : [];
+    // Pack fraîchement créé (0 version) : on démarre avec une interaction vide.
+    labRules = versions.length ? manifestToRules(versions[0].manifestJson) : [newRule()];
     if (labJsonMode) $('lab-manifest').value = JSON.stringify(buildManifest(), null, 2);
     else renderRules();
 }
@@ -378,10 +420,13 @@ $('lab-create-btn').onclick = async () => {
     const dto = { slug: $('lab-slug').value.trim(), title: $('lab-title').value.trim(), game: $('lab-game').value.trim() || undefined, theme: $('lab-theme').value };
     try {
         await api.lab.create(dto);
-        $('lab-msg').textContent = 'Pack créé : ' + dto.slug;
+        $('lab-msg').textContent = 'Pack créé : ' + dto.slug + ' — ajoute tes interactions puis publie.';
         $('lab-slug').value = '';
         $('lab-title').value = '';
-        await loadLab(); // le nouveau (le plus récent) est auto-sélectionné
+        await loadLab();
+        // Sélectionne le pack qu'on vient de créer (prêt à recevoir des interactions).
+        $('lab-bundle-sel').value = dto.slug;
+        await loadLabBundle(dto.slug);
     } catch (e) {
         $('lab-msg').textContent = 'Erreur : ' + e.message;
     }

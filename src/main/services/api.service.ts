@@ -77,6 +77,27 @@ export class ApiService {
         return d.key;
     }
 
+    // ── Catalogue de cadeaux (public, évolue -> l'app le rafraîchit toute seule) ──
+    // Sert le Lab (piocher le cadeau déclencheur par SLUG). Cache 6 h ; si l'API
+    // est injoignable, on renvoie le dernier cache connu.
+    async getGiftCatalog(force = false): Promise<any[]> {
+        const cache = this.store.getGiftCatalogCache();
+        const fresh = cache && Date.now() - cache.at < 6 * 3600 * 1000;
+        if (cache && fresh && !force) return cache.gifts;
+        try {
+            const res = await fetch(`${CONFIG.apiUrl}/api/gifts`);
+            if (!res.ok) return cache?.gifts || [];
+            const gifts = (await res.json()) as any[];
+            const slim = Array.isArray(gifts)
+                ? gifts.map((g) => ({ slug: g.slug, name: g.name, thumbnailUrl: g.thumbnailUrl, coinCost: g.coinCost, isInteractiveSlot: !!g.isInteractiveSlot }))
+                : [];
+            this.store.setGiftCatalogCache(slim);
+            return slim;
+        } catch {
+            return cache?.gifts || [];
+        }
+    }
+
     // ── Store ──
     async listStore(query: Record<string, string> = {}): Promise<any[]> {
         const qs = new URLSearchParams(query).toString();

@@ -135,6 +135,7 @@ function registerIpc(): void {
     });
 
     // Store
+    ipcMain.handle('gifts:catalog', (_e, force?: boolean) => api.getGiftCatalog(!!force));
     ipcMain.handle('store:list', (_e, q) => api.listStore(q || {}));
     ipcMain.handle('store:preview', (_e, slug: string) => api.previewBundle(slug));
     ipcMain.handle('store:install', async (_e, slug: string, version?: string) => {

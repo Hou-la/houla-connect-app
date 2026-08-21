@@ -119,8 +119,13 @@
                     <div class="card">
                         <div class="row between">
                             <label>2. Interactions</label>
-                            <button id="lab-mode" class="btn btn--ghost">Mode avancé (JSON)</button>
+                            <label class="switch">
+                                <input type="checkbox" id="lab-mode" />
+                                <span class="switch__track"><span class="switch__thumb"></span></span>
+                                <span id="lab-mode-label">Mode avancé (JSON)</span>
+                            </label>
                         </div>
+                        <span class="lab-sub">Bundle en cours d'édition</span>
                         <select id="lab-bundle-sel"></select>
 
                         <div class="lab-banner-row">
@@ -135,10 +140,10 @@
 
                         <div id="lab-json-mode" class="hidden">
                             <textarea id="lab-manifest" rows="12" spellcheck="false"></textarea>
-                            <p class="hint">Format : { "schema": 2, "rules": [ … ] }. Événements : gift(slot ix_slot_01..30), follow, comment(contains), hearts(milestone), share. Effets : keyboard(keys, backend), gamepad(button), rcon(command), obs(request), http(method,url), mqtt(topic,payload), osc(address,args), ws(url,message).</p>
+                            <p class="hint">Format : { "schema": 2, "rules": [ … ] }. Événements : gift(giftSlug — n'importe quel cadeau, ex. "licorne", ou un slot ix_slot_01..30), follow, comment(contains), hearts(milestone), share. Effets : keyboard(keys, backend), gamepad(button), rcon(command), obs(request), http(method,url), mqtt(topic,payload), osc(address,args), ws(url,message).</p>
                         </div>
 
-                        <div class="row gap" style="margin-top: 14px">
+                        <div class="row gap lab-version-row" style="margin-top: 14px">
                             <select id="lab-bump" title="Type de changement pour la nouvelle version">
                                 <option value="patch">Correction</option>
                                 <option value="minor">Amélioration</option>

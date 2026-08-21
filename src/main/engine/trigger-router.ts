@@ -36,9 +36,11 @@ export class TriggerRouter {
     }
 
     onGift(gift: any): void {
-        const slot = gift?.gift?.slug;
-        if (!slot) return;
-        for (const r of this.rules((x) => x.on.type === 'gift' && x.on.slot === slot)) {
+        // L'event porte gift.slug pour N'IMPORTE quel cadeau (générique ou slot réservé).
+        // La règle matche via giftSlug (canonique) ou slot (alias déprécié).
+        const slug = gift?.gift?.slug;
+        if (!slug) return;
+        for (const r of this.rules((x) => x.on.type === 'gift' && (x.on.giftSlug ?? x.on.slot) === slug)) {
             this.engine.dispatch(
                 r,
                 {

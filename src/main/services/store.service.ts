@@ -171,6 +171,14 @@ export class StoreService {
     getActiveBundleSlug() {
         return this.store.get('activeBundleSlug');
     }
+
+    // ── Cache du catalogue de cadeaux (rafraîchi depuis l'API publique) ──
+    getGiftCatalogCache(): { at: number; gifts: any[] } | undefined {
+        return this.store.get('giftCatalogCache') as any;
+    }
+    setGiftCatalogCache(gifts: any[]) {
+        this.store.set('giftCatalogCache', { at: Date.now(), gifts });
+    }
     setActiveBundleSlug(slug?: string) {
         if (slug) this.store.set('activeBundleSlug', slug);
         else this.store.delete('activeBundleSlug');
