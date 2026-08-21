@@ -52,7 +52,7 @@
     "files": [
       "dist/**/*",
       "resources/**/*",
-      "docs/CONDITIONS_UTILISATION.md"
+      "docs/conditions-utilisation.html"
     ],
     "extraResources": [
       {

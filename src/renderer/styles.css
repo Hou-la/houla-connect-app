@@ -235,3 +235,8 @@ input[readonly] { opacity: .6; cursor: not-allowed; }
 .cgu__content strong { color: #fff; }
 .cgu__content hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
 .cgu__actions { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); align-items: center; }
+
+/* Bouton « i » guide d'icône */
+.r-iconguide { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--bg-3); color: var(--accent-2); font-style: italic; font-weight: 700; cursor: pointer; }
+.r-iconguide:hover { border-color: var(--accent); background: var(--accent); color: #fff; }

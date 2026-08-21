@@ -189,8 +189,8 @@ function registerIpc(): void {
     // ── Légal (CGU / charte d'usage acceptable) ──
     ipcMain.handle('legal:text', () => {
         for (const p of [
-            path.join(app.getAppPath(), 'docs', 'CONDITIONS_UTILISATION.md'),
-            path.join(process.resourcesPath || '', 'docs', 'CONDITIONS_UTILISATION.md'),
+            path.join(app.getAppPath(), 'docs', 'conditions-utilisation.html'),
+            path.join(process.resourcesPath || '', 'docs', 'conditions-utilisation.html'),
         ]) {
             try {
                 return fs.readFileSync(p, 'utf8');
@@ -198,7 +198,7 @@ function registerIpc(): void {
                 /* essaie le chemin suivant */
             }
         }
-        return '# Conditions d\'utilisation\n\nTexte indisponible.';
+        return '<h1>Conditions d\'utilisation</h1><p>Texte indisponible.</p>';
     });
     ipcMain.handle('legal:status', () => ({
         version: LEGAL_VERSION,

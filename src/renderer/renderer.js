@@ -198,7 +198,7 @@ $('modal-close').onclick = () => $('modal').classList.add('hidden');
 $('modal').onclick = (e) => { if (e.target.id === 'modal') $('modal').classList.add('hidden'); };
 
 // ── Lab : éditeur visuel (QUAND … ALORS …) ──
-const EVENTS = [['gift', 'Cadeau'], ['follow', 'Nouvel abonné'], ['comment', 'Message chat'], ['hearts', 'Palier de likes'], ['share', 'Partage']];
+const EVENTS = [['gift', 'Cadeau'], ['gift-custom', 'Cadeau personnalisé'], ['follow', 'Nouvel abonné'], ['comment', 'Message chat'], ['hearts', 'Palier de likes'], ['share', 'Partage']];
 const EXECS = [['keyboard', 'Clavier'], ['gamepad', 'Manette'], ['rcon', 'RCON'], ['obs', 'OBS'], ['http', 'HTTP'], ['mqtt', 'MQTT'], ['osc', 'OSC'], ['ws', 'WebSocket']];
 const ROLES = [['all', 'Tout le monde'], ['followers', 'Abonnés'], ['moderators', 'Modérateurs']];
 const GP_BUTTONS = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'START', 'BACK', 'LS', 'RS'];
@@ -214,39 +214,42 @@ let giftCatalog = []; // [{slug,name,thumbnailUrl,coinCost,isInteractiveSlot}] d
 async function loadGiftCatalog() {
     try { giftCatalog = (await api.gifts.catalog()) || []; } catch { giftCatalog = []; }
 }
-// Options du cadeau déclencheur : le catalogue RÉEL (par slug) + les slots réservés
-// (art custom d'un pack). `selected` toujours présent même hors catalogue (offline).
-function giftOptions(selected) {
+// « Cadeau » = un cadeau du CATALOGUE réel (art par défaut, pas d'icône à fournir).
+function giftOptionsGeneric(selected) {
     const generic = giftCatalog.filter((g) => !g.isInteractiveSlot);
     let known = false;
-    const gOpts = generic.map((g) => {
+    const opts = generic.map((g) => {
         if (g.slug === selected) known = true;
         return `<option value="${esc(g.slug)}"${g.slug === selected ? ' selected' : ''}>${esc(g.name)}</option>`;
     }).join('');
-    let sOpts = '';
-    for (let i = 1; i <= 30; i++) {
-        const s = `ix_slot_${String(i).padStart(2, '0')}`;
-        if (s === selected) known = true;
-        sOpts += `<option value="${s}"${s === selected ? ' selected' : ''}>Slot interactif ${i}</option>`;
-    }
     const fallback = selected && !known ? `<option value="${esc(selected)}" selected>${esc(selected)}</option>` : '';
-    const g1 = gOpts ? `<optgroup label="Cadeaux">${gOpts}</optgroup>` : '';
-    return `${fallback}${g1}<optgroup label="Slots interactifs (art custom)">${sOpts}</optgroup>`;
+    return fallback + (opts || '<option value="">(catalogue indisponible)</option>');
 }
-/** Slug de cadeau par défaut : 1er cadeau du catalogue, sinon 1er slot réservé. */
+// « Cadeau personnalisé » = un SLOT réservé (ix_slot_01..30), art custom (icône obligatoire).
+function slotOptions(selected) {
+    let s = '';
+    for (let i = 1; i <= 30; i++) {
+        const v = `ix_slot_${String(i).padStart(2, '0')}`;
+        s += `<option value="${v}"${v === selected ? ' selected' : ''}>Slot interactif ${i}</option>`;
+    }
+    return s;
+}
+/** Slug par défaut d'un cadeau générique (1er du catalogue). */
 function defaultGiftSlug() {
     const g = giftCatalog.find((x) => !x.isInteractiveSlot);
     return g ? g.slug : 'ix_slot_01';
 }
+function defaultSlot() { return 'ix_slot_01'; }
 function eventFieldHtml(r) {
-    if (r.event.type === 'gift') return `<select class="r-giftslug">${giftOptions(r.event.giftSlug)}</select>`;
+    if (r.event.type === 'gift') return `<select class="r-giftslug">${giftOptionsGeneric(r.event.giftSlug)}</select>`;
+    if (r.event.type === 'gift-custom') return `<select class="r-giftslug">${slotOptions(r.event.giftSlug)}</select><button type="button" class="r-iconguide" title="Comment réaliser l'icône ?">i</button>`;
     if (r.event.type === 'comment') return `<input type="text" class="r-contains" placeholder="contient ce mot…" />`;
     if (r.event.type === 'hearts') return `<input type="number" class="r-milestone" placeholder="palier (ex. 100)" min="1" />`;
     return '';
 }
 function execFieldHtml(r) {
     switch (r.effect.type) {
-        case 'keyboard': return `<input type="text" class="r-keys" placeholder="touches (ex. space, shift+c)" /><select class="r-backend"><option value="auto">clavier normal</option><option value="interception">bas niveau (Meccha)</option></select>`;
+        case 'keyboard': return `<input type="text" class="r-keys" placeholder="touches (ex. space, shift+c)" /><select class="r-backend"><option value="auto">clavier normal</option><option value="interception">bas niveau (pilote)</option></select>`;
         case 'gamepad': return `<select class="r-button">${GP_BUTTONS.map((b) => `<option>${b}</option>`).join('')}</select>`;
         case 'rcon': return `<input type="text" class="r-command" placeholder="commande (ex. give {player} minecraft:diamond 1)" />`;
         case 'obs': return `<input type="text" class="r-request" placeholder="requête OBS (ex. SetCurrentProgramScene)" />`;
@@ -261,7 +264,7 @@ function newRule() { return { event: { type: 'gift', giftSlug: defaultGiftSlug()
 
 function readRule(el, r) {
     const q = (s) => el.querySelector(s);
-    if (r.event.type === 'gift') r.event.giftSlug = q('.r-giftslug') ? q('.r-giftslug').value : r.event.giftSlug;
+    if (r.event.type === 'gift' || r.event.type === 'gift-custom') r.event.giftSlug = q('.r-giftslug') ? q('.r-giftslug').value : r.event.giftSlug;
     if (r.event.type === 'comment') r.event.contains = q('.r-contains') ? q('.r-contains').value : '';
     if (r.event.type === 'hearts') r.event.milestone = q('.r-milestone') ? Number(q('.r-milestone').value) || undefined : undefined;
     if (r.effect.type === 'keyboard') { r.effect.keys = q('.r-keys') ? q('.r-keys').value : ''; r.effect.backend = q('.r-backend') ? q('.r-backend').value : 'auto'; }
@@ -321,7 +324,13 @@ function renderRules() {
         if (r.effect.type === 'osc') { if (q('.r-address')) q('.r-address').value = r.effect.address || ''; if (q('.r-oscargs')) q('.r-oscargs').value = (r.effect.args || []).join(', '); }
         if (r.effect.type === 'ws') { if (q('.r-wsurl')) q('.r-wsurl').value = r.effect.url || ''; if (q('.r-wsmsg')) q('.r-wsmsg').value = r.effect.message || ''; }
         if (q('.r-role')) q('.r-role').value = r.moderatorsOnly ? 'moderators' : r.followersOnly ? 'followers' : 'all';
-        q('.r-event').onchange = (e) => { const t = e.target.value; r.event = { type: t }; if (t === 'gift') r.event.giftSlug = defaultGiftSlug(); renderRules(); };
+        if (q('.r-iconguide')) q('.r-iconguide').onclick = () => $('icon-guide-modal').classList.remove('hidden');
+        q('.r-event').onchange = (e) => {
+            const t = e.target.value; r.event = { type: t };
+            if (t === 'gift') r.event.giftSlug = defaultGiftSlug();
+            if (t === 'gift-custom') r.event.giftSlug = defaultSlot();
+            renderRules();
+        };
         q('.r-exec').onchange = (e) => { r.effect = { type: e.target.value }; renderRules(); };
         el.querySelectorAll('input, select').forEach((inp) => {
             if (inp.classList.contains('r-event') || inp.classList.contains('r-exec')) return;
@@ -342,8 +351,10 @@ function renderRules() {
     });
 }
 function buildRule(r, i) {
-    const on = { type: r.event.type };
-    if (r.event.type === 'gift') on.giftSlug = r.event.giftSlug || r.event.slot;
+    // « Cadeau » et « Cadeau personnalisé » sont deux vues UI du même trigger 'gift'.
+    const onType = r.event.type === 'gift-custom' ? 'gift' : r.event.type;
+    const on = { type: onType };
+    if (onType === 'gift') on.giftSlug = r.event.giftSlug || r.event.slot;
     if (r.event.type === 'comment') on.contains = r.event.contains;
     if (r.event.type === 'hearts') on.milestone = r.event.milestone;
     const effect = { type: r.effect.type };
@@ -368,6 +379,8 @@ function manifestToRules(m) {
         const event = { ...rule.on };
         // Normalise l'alias déprécié slot -> giftSlug pour l'édition.
         if (event.type === 'gift' && !event.giftSlug && event.slot) { event.giftSlug = event.slot; delete event.slot; }
+        // Un slug de slot réservé -> vue « Cadeau personnalisé » ; sinon « Cadeau ».
+        if (event.type === 'gift' && /^ix_slot_\d{2}$/.test(event.giftSlug || '')) event.type = 'gift-custom';
         return { event, effect: { ...rule.effect }, followersOnly: !!rule.followersOnly, moderatorsOnly: !!rule.moderatorsOnly };
     });
 }
@@ -598,39 +611,19 @@ api.onUpdate(renderUpdate);
 $('update-check').onclick = () => api.update.check();
 $('update-install').onclick = () => api.update.install();
 
-// ── CGU / charte d'usage acceptable ──
-// Mini-rendu markdown (sous-ensemble : titres, gras, listes, hr, paragraphes),
-// échappé d'abord (contenu de confiance, mais on reste prudent).
-function mdToHtml(md) {
-    const lines = String(md || '').replace(/\r/g, '').split('\n');
-    const out = [];
-    let inList = false;
-    const inline = (s) => esc(s).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
-    for (const raw of lines) {
-        const l = raw.trimEnd();
-        if (/^###\s+/.test(l)) { closeList(); out.push('<h3>' + inline(l.replace(/^###\s+/, '')) + '</h3>'); }
-        else if (/^##\s+/.test(l)) { closeList(); out.push('<h2>' + inline(l.replace(/^##\s+/, '')) + '</h2>'); }
-        else if (/^#\s+/.test(l)) { closeList(); out.push('<h1>' + inline(l.replace(/^#\s+/, '')) + '</h1>'); }
-        else if (/^---+\s*$/.test(l)) { closeList(); out.push('<hr/>'); }
-        else if (/^\s*-\s+/.test(l)) { if (!inList) { out.push('<ul>'); inList = true; } out.push('<li>' + inline(l.replace(/^\s*-\s+/, '')) + '</li>'); }
-        else if (l === '') { closeList(); }
-        else { closeList(); out.push('<p>' + inline(l) + '</p>'); }
-    }
-    closeList();
-    return out.join('');
-}
+// ── CGU / charte d'usage acceptable (contenu HTML servi par main) ──
 let cguLoaded = false;
 async function openCgu(gate) {
     $('cgu-modal').classList.remove('hidden');
     $('cgu-close').classList.toggle('hidden', !!gate); // pas de fermeture tant que non accepté
     $('cgu-actions').classList.toggle('hidden', !gate);
     if (!cguLoaded) {
-        try { $('cgu-content').innerHTML = mdToHtml(await api.legal.text()); cguLoaded = true; }
+        try { $('cgu-content').innerHTML = await api.legal.text(); cguLoaded = true; }
         catch { $('cgu-content').textContent = 'Conditions indisponibles.'; }
     }
     $('cgu-content').scrollTop = 0;
 }
+$('icon-guide-close').onclick = () => $('icon-guide-modal').classList.add('hidden');
 $('cgu-open').onclick = () => openCgu(false);
 $('cgu-close').onclick = () => $('cgu-modal').classList.add('hidden');
 $('cgu-accept').onclick = async () => { await api.legal.accept(); $('cgu-modal').classList.add('hidden'); };
