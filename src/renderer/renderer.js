@@ -3,6 +3,17 @@ const api = window.houlaConnect;
 const $ = (id) => document.getElementById(id);
 const TRANSPARENT = 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=';
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+// Message d'erreur lisible : garde nos messages courts et propres (erreurs API),
+// remplace les dumps techniques (stack, HttpError, réseau) par un repli user-friendly.
+// Le détail complet part TOUJOURS en console pour le debug.
+function friendlyError(e, fallback) {
+    if (e) console.error(e);
+    const m = (e && e.message != null ? String(e.message) : String(e || '')).split('\n')[0].trim();
+    if (!m || m.length > 160 || /HttpError|node_modules|\bat\s|Failed to fetch|NetworkError|ENOTFOUND|ECONN|getaddrinfo|<!DOCTYPE|\bstack\b/i.test(m)) {
+        return fallback || 'Une erreur est survenue. Réessaie.';
+    }
+    return m;
+}
 // Seule l'injection LOCALE invasive exige un consentement explicite. Les protocoles
 // réseau (RCON/OBS/MQTT/WS/HTTP/OSC) sont gardés par la présence d'un CONNECTEUR.
 const CAPS = [
@@ -124,7 +135,7 @@ async function loadInstalled(toMine) {
 $('btn-start').onclick = async () => {
     const slug = $('active-bundle').value;
     if (!slug) return;
-    try { await api.engine.start(slug); } catch (e) { logLine({ allowed: false, reason: e.message, ruleId: 'start' }); }
+    try { await api.engine.start(slug); } catch (e) { logLine({ allowed: false, reason: friendlyError(e, 'Connexion au live impossible.'), ruleId: 'start' }); }
 };
 $('btn-stop').onclick = () => api.engine.stop();
 $('btn-test').onclick = () => api.engine.test();
@@ -419,7 +430,7 @@ function renderRules() {
                 const res = await api.lab.uploadSlotIcon(labCurrentSlug, r.event.giftSlug);
                 if (res && res.url) { r.event.iconUrl = res.url; $('lab-msg2').textContent = 'Icône ajoutée ✓'; renderRules(); }
                 else $('lab-msg2').textContent = '';
-            } catch (e) { $('lab-msg2').textContent = 'Icône : ' + e.message; }
+            } catch (e) { $('lab-msg2').textContent = friendlyError(e, "L'icône n'a pas pu être envoyée."); }
         };
         q('.r-event').onchange = (e) => {
             const t = e.target.value; r.event = { type: t };
@@ -441,7 +452,7 @@ function renderRules() {
                 const v = await api.engine.testRule(buildRule(r, i), labCurrentSlug);
                 if (v && v.ok) { res.textContent = '✓ Déclenché'; res.className = 'rule__result ok'; }
                 else { res.textContent = '✗ ' + ((v && v.reason) || 'échec'); res.className = 'rule__result no'; }
-            } catch (e) { res.textContent = '✗ ' + e.message; res.className = 'rule__result no'; }
+            } catch (e) { res.textContent = '✗ ' + friendlyError(e, 'test impossible'); res.className = 'rule__result no'; }
         };
         box.appendChild(el);
     });
@@ -598,14 +609,14 @@ $('lab-banner-btn').onclick = async () => {
     try {
         const r = await api.lab.uploadBanner(labCurrentSlug);
         if (r && r.bannerUrl) { $('lab-banner-preview').style.backgroundImage = `url('${r.bannerUrl}')`; $('lab-msg2').textContent = 'Bannière mise à jour ✓'; }
-    } catch (e) { $('lab-msg2').textContent = 'Bannière : ' + e.message; }
+    } catch (e) { $('lab-msg2').textContent = friendlyError(e, "La bannière n'a pas pu être enregistrée."); }
 };
 $('lab-save-meta').onclick = async () => {
     if (!labCurrentSlug) return;
     try {
         await api.lab.update(labCurrentSlug, { title: $('lab-title').value.trim(), game: $('lab-game').value.trim() || '', tags: labTags });
         $('lab-msg').textContent = 'Infos enregistrées ✓';
-    } catch (e) { $('lab-msg').textContent = 'Erreur : ' + e.message; }
+    } catch (e) { $('lab-msg').textContent = friendlyError(e, "Les infos n'ont pas pu être enregistrées."); }
 };
 /** true s'il reste un « cadeau personnalisé » sans icône (obligatoire avant soumission). */
 function missingCustomIcon() {
@@ -637,7 +648,7 @@ $('lab-submit-btn').onclick = async () => {
                 await enterEditMode(slug);
                 $('lab-msg2').textContent = visibility === 'public' ? 'Pack créé + v1.0.0 en modération ✓' : 'Pack créé (privé) + v1.0.0 ✓';
             }
-        } catch (e) { $('lab-msg2').textContent = 'Erreur : ' + e.message; }
+        } catch (e) { $('lab-msg2').textContent = friendlyError(e, 'La création du pack a échoué.'); }
         return;
     }
 
@@ -653,7 +664,7 @@ $('lab-submit-btn').onclick = async () => {
         await api.lab.submitVersion(labCurrentSlug, { version, manifest, visibility });
         labLatestVersion = version;
         $('lab-msg2').textContent = `Version ${version} enregistrée (${visibility === 'public' ? 'publique, en modération' : 'privée'}) ✓`;
-    } catch (e) { $('lab-msg2').textContent = 'Refusé : ' + e.message; }
+    } catch (e) { $('lab-msg2').textContent = friendlyError(e, 'Version refusée.'); }
 };
 
 // ── Mes bundles (cliquables -> édition dans le Lab) ──
@@ -724,7 +735,7 @@ $('connector-save').onclick = async () => {
         const saved = myConnectors.find((c) => c.id === (res && res.id)) || null;
         closeConnectorModal();
         if (connectorOnSaved) connectorOnSaved(saved);
-    } catch (e) { $('connector-msg').textContent = 'Erreur : ' + e.message; }
+    } catch (e) { $('connector-msg').textContent = friendlyError(e, "Le connecteur n'a pas pu être enregistré."); }
 };
 
 // ── Vue Connecteurs ──

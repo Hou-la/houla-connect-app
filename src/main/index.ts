@@ -51,7 +51,17 @@ function setupAutoUpdate(): void {
     autoUpdater.on('update-not-available', () => send('onUpdate', { status: 'none' }));
     autoUpdater.on('download-progress', (p: any) => send('onUpdate', { status: 'downloading', percent: Math.round(p?.percent || 0) }));
     autoUpdater.on('update-downloaded', (i: any) => send('onUpdate', { status: 'downloaded', version: i?.version }));
-    autoUpdater.on('error', (e: any) => send('onUpdate', { status: 'error', message: String(e?.message || e) }));
+    autoUpdater.on('error', (e: any) => {
+        const raw = String(e?.message || e || '');
+        console.error('[autoUpdate] error:', raw); // détail technique en console seulement
+        // 404 / latest.yml absent = pas encore de métadonnées de mise à jour pour cette
+        // plateforme -> bénin, on affiche « à jour » plutôt qu'une trace effrayante.
+        if (/latest\.yml|404|not found|ENOTFOUND|getaddrinfo/i.test(raw)) {
+            send('onUpdate', { status: 'none' });
+        } else {
+            send('onUpdate', { status: 'error', message: 'Vérification des mises à jour indisponible pour le moment.' });
+        }
+    });
 }
 
 // ── Moteur : le renderer n'envoie que du déclaratif, MAIN exécute ──
@@ -183,9 +193,8 @@ function registerIpc(): void {
             send('onUpdate', { status: 'dev' });
             return { ok: false };
         }
-        autoUpdater
-            .checkForUpdates()
-            .catch((e: any) => send('onUpdate', { status: 'error', message: String(e?.message || e) }));
+        // L'event autoUpdater 'error' (assaini) gère l'affichage : ici on ne fait que logger.
+        autoUpdater.checkForUpdates().catch((e: any) => console.error('[autoUpdate] check:', e?.message || e));
         return { ok: true };
     });
     ipcMain.handle('update:install', () => autoUpdater.quitAndInstall());
