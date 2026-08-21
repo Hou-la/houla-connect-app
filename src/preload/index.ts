@@ -13,6 +13,11 @@ contextBridge.exposeInMainWorld('houlaConnect', {
     login: () => invoke('auth:login'),
     logout: () => invoke('auth:logout'),
     authStatus: () => invoke('auth:status'),
+    isAdmin: () => invoke('auth:isAdmin'),
+    env: {
+        get: () => invoke('env:get'),
+        set: (env: string) => invoke('env:set', env),
+    },
     listWorkspaces: () => invoke('workspaces:list'),
     currentWorkspace: () => invoke('workspaces:current'),
     selectWorkspace: (ws: { id: string; name: string }) => invoke('workspaces:select', ws),
@@ -37,7 +42,8 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         submitVersion: (slug: string, dto: unknown) => invoke('lab:version', slug, dto),
         publish: (slug: string) => invoke('lab:publish', slug),
         uploadBanner: (slug: string) => invoke('lab:banner', slug),
-        uploadSlotIcon: (slug: string, slot: string) => invoke('lab:slotIcon', slug, slot),
+        pickIcon: () => invoke('lab:pickIcon'),
+        uploadIconFile: (slug: string, slot: string, filePath: string) => invoke('lab:uploadIconFile', slug, slot, filePath),
     },
     caps: {
         get: () => invoke('caps:get'),

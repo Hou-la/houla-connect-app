@@ -30,6 +30,7 @@ interface Schema {
     activeBundleSlug?: string;
     connectors?: StoredConnector[]; // connecteurs nommés (multiple par type)
     bundleBindings?: Record<string, Record<string, string>>; // slug -> role -> connectorId
+    environment?: string; // 'prod' | 'staging' | 'dev' (sélecteur admin)
 }
 
 /** Un connecteur : endpoint + identifiants d'un protocole, OU une capacité locale. */
@@ -296,6 +297,14 @@ export class StoreService {
     }
     setAutoLaunch(v: boolean) {
         this.store.set('autoLaunch', v);
+    }
+
+    // ── Environnement (sélecteur admin) ──
+    getEnvironment(): string {
+        return (this.store.get('environment') as any) || '';
+    }
+    setEnvironment(env: string) {
+        this.store.set('environment', env);
     }
 
     // ── Acceptation des CGU (version acceptée) ──

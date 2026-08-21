@@ -179,6 +179,15 @@
                 <!-- REGLAGES -->
                 <section id="view-settings" class="view hidden">
                     <h2>Réglages</h2>
+                    <div id="env-card" class="card hidden">
+                        <label>Environnement (admin)</label>
+                        <select id="env-select">
+                            <option value="prod">Production</option>
+                            <option value="staging">Staging</option>
+                            <option value="dev">Dev (localhost:53001)</option>
+                        </select>
+                        <p class="hint">Change l'API ciblée. Te déconnecte (reconnecte-toi sur le nouvel environnement).</p>
+                    </div>
                     <div class="card">
                         <label>Langue</label>
                         <select id="lang">

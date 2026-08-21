@@ -95,6 +95,10 @@ body { background: var(--bg); color: var(--text); overflow: hidden; }
 }
 .card > label { display: block; font-size: 12px; text-transform: uppercase;
     letter-spacing: .6px; color: var(--muted); margin-bottom: 10px; }
+/* Texte d'intro juste sous un titre de vue : espace avant les blocs. */
+section.view > p { margin: 6px 0 20px; line-height: 1.5; }
+/* Entête de carte (titre + switch) : espace avant le contenu. */
+.card > .row.between { margin-bottom: 14px; }
 
 select, input, textarea {
     width: 100%; padding: 10px 12px; background: var(--bg-3);
@@ -196,10 +200,11 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
 .switch { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; user-select: none;
     font-size: 13px; color: var(--muted); }
 .switch input { display: none; }
+/* Piste OFF plus claire que TOUS les fonds (bg, bg-2, bg-3) pour qu'on la voie. */
 .switch__track { position: relative; width: 40px; height: 22px; flex: none; border-radius: 999px;
-    background: var(--bg-3); border: 1px solid var(--border); transition: background .15s, border-color .15s; }
+    background: #3a4050; border: 1px solid var(--border); transition: background .18s ease, border-color .18s ease; }
 .switch__thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
-    background: var(--muted); transition: transform .15s, background .15s; }
+    background: #cfd4de; transition: transform .18s ease, background .18s ease; }
 .switch input:checked + .switch__track { background: var(--accent); border-color: var(--accent); }
 .switch input:checked + .switch__track .switch__thumb { transform: translateX(18px); background: #fff; }
 

@@ -1,5 +1,5 @@
 import { createHash, verify } from 'crypto';
-import { CONFIG } from '../config';
+import { CONFIG, ENV_API_URLS } from '../config';
 import { StoreService } from './store.service';
 
 // Client API : token exchange, workspaces, mint de clé event, store, manifeste.
@@ -9,6 +9,22 @@ export class ApiService {
 
     constructor(private readonly store: StoreService) {}
 
+    /** URL d'API courante : environnement choisi (admin) sinon défaut. */
+    base(): string {
+        const env = this.store.getEnvironment();
+        return (env && ENV_API_URLS[env]) || CONFIG.apiUrl;
+    }
+
+    /** Sonde le statut admin : un endpoint AdminGuard renvoie 200 si admin, sinon 403. */
+    async isAdmin(): Promise<boolean> {
+        try {
+            const res = await this.authFetch('/api/admin/bundles/moderation/queue');
+            return res.status === 200;
+        } catch {
+            return false;
+        }
+    }
+
     private async authFetch(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
         const token = this.store.getAccessToken();
         const headers: Record<string, string> = {
@@ -17,7 +33,7 @@ export class ApiService {
         };
         const wsId = this.store.getWorkspaceId();
         if (wsId) headers['X-Workspace-Id'] = wsId;
-        const res = await fetch(`${CONFIG.apiUrl}${path}`, { ...init, headers });
+        const res = await fetch(`${this.base()}${path}`, { ...init, headers });
         if (res.status === 401 && retry) {
             await this.refresh();
             return this.authFetch(path, init, false);
@@ -27,7 +43,7 @@ export class ApiService {
 
     // ── OAuth ──
     async exchangeCode(code: string, codeVerifier: string): Promise<void> {
-        const res = await fetch(`${CONFIG.apiUrl}/api/oauth/token`, {
+        const res = await fetch(`${this.base()}/api/oauth/token`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -47,7 +63,7 @@ export class ApiService {
     async refresh(): Promise<void> {
         const rt = this.store.getRefreshToken();
         if (!rt) throw new Error('pas de refresh token');
-        const res = await fetch(`${CONFIG.apiUrl}/api/oauth/token`, {
+        const res = await fetch(`${this.base()}/api/oauth/token`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: rt, client_id: CONFIG.clientId }),
@@ -85,7 +101,7 @@ export class ApiService {
         const fresh = cache && Date.now() - cache.at < 6 * 3600 * 1000;
         if (cache && fresh && !force) return cache.gifts;
         try {
-            const res = await fetch(`${CONFIG.apiUrl}/api/gifts`);
+            const res = await fetch(`${this.base()}/api/gifts`);
             if (!res.ok) return cache?.gifts || [];
             const gifts = (await res.json()) as any[];
             const slim = Array.isArray(gifts)
@@ -101,7 +117,7 @@ export class ApiService {
     // ── Store ──
     async listStore(query: Record<string, string> = {}): Promise<any[]> {
         const qs = new URLSearchParams(query).toString();
-        const res = await fetch(`${CONFIG.apiUrl}/api/bundles${qs ? '?' + qs : ''}`);
+        const res = await fetch(`${this.base()}/api/bundles${qs ? '?' + qs : ''}`);
         return res.ok ? res.json() : [];
     }
 
@@ -132,7 +148,7 @@ export class ApiService {
     async getDictionary(kind?: string): Promise<any[]> {
         try {
             const qs = kind ? `?kind=${encodeURIComponent(kind)}` : '';
-            const res = await fetch(`${CONFIG.apiUrl}/api/bundles/dictionary${qs}`);
+            const res = await fetch(`${this.base()}/api/bundles/dictionary${qs}`);
             return res.ok ? res.json() : [];
         } catch {
             return [];
@@ -190,7 +206,7 @@ export class ApiService {
     }
 
     async previewBundle(slug: string): Promise<any> {
-        const res = await fetch(`${CONFIG.apiUrl}/api/bundles/${encodeURIComponent(slug)}`);
+        const res = await fetch(`${this.base()}/api/bundles/${encodeURIComponent(slug)}`);
         if (!res.ok) throw new Error('preview failed');
         return res.json();
     }
@@ -208,7 +224,7 @@ export class ApiService {
     private async getSigningPublicKey(): Promise<string | null> {
         if (this.cachedPublicKey) return this.cachedPublicKey;
         try {
-            const res = await fetch(`${CONFIG.apiUrl}/api/download/connect/signing-key`);
+            const res = await fetch(`${this.base()}/api/download/connect/signing-key`);
             const d: any = await res.json();
             this.cachedPublicKey = d?.publicKey || null;
         } catch {

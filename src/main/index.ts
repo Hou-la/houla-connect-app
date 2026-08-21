@@ -185,6 +185,17 @@ function registerIpc(): void {
         return { authenticated: false };
     });
     ipcMain.handle('auth:status', () => ({ authenticated: auth.isAuthenticated() }));
+    ipcMain.handle('auth:isAdmin', () => api.isAdmin());
+    ipcMain.handle('env:get', () => store.getEnvironment() || 'prod');
+    ipcMain.handle('env:set', (_e, env: string) => {
+        // Changer d'environnement invalide la session (tokens propres à l'API) :
+        // on déconnecte pour forcer une reconnexion sur le bon environnement.
+        store.setEnvironment(env);
+        conn.disconnect();
+        auth.logout();
+        store.clearEventKey();
+        return { ok: true };
+    });
     ipcMain.handle('workspaces:list', () => api.listWorkspaces());
     ipcMain.handle('workspaces:current', () => ({ id: store.getWorkspaceId(), name: store.getWorkspaceName() }));
     ipcMain.handle('app:version', () => app.getVersion());
@@ -242,14 +253,26 @@ function registerIpc(): void {
         if (r.canceled || !r.filePaths[0]) return null;
         return api.uploadBanner(slug, r.filePaths[0]);
     });
-    ipcMain.handle('lab:slotIcon', async (_e, slug: string, slot: string) => {
+    // Choisir une icône SANS uploader : on renvoie le chemin (pour l'upload différé)
+    // + un data-URL pour l'aperçu immédiat. L'upload se fait à la création du pack.
+    ipcMain.handle('lab:pickIcon', async () => {
         const r = await dialog.showOpenDialog({
             properties: ['openFile'],
             filters: [{ name: 'Icône PNG transparent', extensions: ['png', 'webp'] }],
         });
         if (r.canceled || !r.filePaths[0]) return null;
-        return api.uploadSlotIcon(slug, slot, r.filePaths[0]);
+        const filePath = r.filePaths[0];
+        try {
+            const buf = fs.readFileSync(filePath);
+            const ext = filePath.toLowerCase().endsWith('.webp') ? 'webp' : 'png';
+            return { filePath, dataUrl: `data:image/${ext};base64,${buf.toString('base64')}` };
+        } catch {
+            return { filePath, dataUrl: null };
+        }
     });
+    ipcMain.handle('lab:uploadIconFile', (_e, slug: string, slot: string, filePath: string) =>
+        api.uploadSlotIcon(slug, slot, filePath),
+    );
     ipcMain.handle('store:uninstall', (_e, slug: string) => {
         store.setInstalled(store.getInstalled().filter((b) => b.slug !== slug));
         if (store.getActiveBundleSlug() === slug) store.setActiveBundleSlug(undefined);

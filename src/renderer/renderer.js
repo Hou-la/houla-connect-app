@@ -106,6 +106,16 @@ function switchView(name) {
     if (name === 'mine') loadMyBundles();
     if (name === 'lab') loadLab();
     if (name === 'connecteurs') loadConnectorsView();
+    if (name === 'settings') loadSettings();
+}
+// Réglages : l'encart Environnement n'apparaît que pour un compte ADMIN.
+async function loadSettings() {
+    try {
+        if (await api.isAdmin()) {
+            $('env-card').classList.remove('hidden');
+            $('env-select').value = (await api.env.get()) || 'prod';
+        }
+    } catch { /* noop */ }
 }
 document.querySelectorAll('.nav').forEach((n) => (n.onclick = () => switchView(n.dataset.view)));
 
@@ -284,7 +294,8 @@ function defaultSlot() { return 'ix_slot_01'; }
 function eventFieldHtml(r) {
     if (r.event.type === 'gift') return `<select class="r-giftslug">${giftOptionsGeneric(r.event.giftSlug)}</select>`;
     if (r.event.type === 'gift-custom') {
-        const ic = r.event.iconUrl ? `background-image:url('${esc(r.event.iconUrl)}')` : '';
+        const src = r.event.iconUrl || r.event._iconPreview;
+        const ic = src ? `background-image:url('${esc(src)}')` : '';
         return `<select class="r-giftslug">${slotOptions(r.event.giftSlug)}</select>`
             + `<span class="r-icon" title="icône du cadeau" style="${ic}"></span>`
             + `<button type="button" class="r-iconbtn">Icône…</button>`
@@ -423,24 +434,24 @@ function renderRules() {
         if (q('.r-connector')) q('.r-connector').onchange = () => onConnectorPick(el, r);
         if (q('.r-iconguide')) q('.r-iconguide').onclick = () => $('icon-guide-modal').classList.remove('hidden');
         if (q('.r-iconbtn')) q('.r-iconbtn').onclick = async () => {
-            // L'icône est hébergée côté serveur : le pack doit exister. En création,
-            // on le crée à la volée (slug + titre requis) puis on passe en édition.
-            if (!labCurrentSlug) {
-                const slug = $('lab-slug').value.trim(), title = $('lab-title').value.trim();
-                if (!slug || !title) { $('lab-msg2').textContent = 'Renseigne d’abord le slug et le titre du pack (en haut), puis clique Icône.'; return; }
-                try {
-                    await api.lab.create({ slug, title, game: $('lab-game').value.trim() || undefined, tags: labTags });
-                    labCurrentSlug = slug; labLatestVersion = null; syncLabBindings(); setLabMode('edit');
-                    $('lab-msg2').textContent = 'Pack créé ✓ — choisis maintenant l’icône…';
-                } catch (e) { $('lab-msg2').textContent = friendlyError(e, 'Impossible de créer le pack.'); return; }
-            }
             readRule(el, r);
-            $('lab-msg2').textContent = 'Envoi de l’icône…';
-            try {
-                const res = await api.lab.uploadSlotIcon(labCurrentSlug, r.event.giftSlug);
-                if (res && res.url) { r.event.iconUrl = res.url; $('lab-msg2').textContent = 'Icône ajoutée ✓'; renderRules(); }
-                else $('lab-msg2').textContent = '';
-            } catch (e) { $('lab-msg2').textContent = friendlyError(e, "L'icône n'a pas pu être envoyée."); }
+            const picked = await api.lab.pickIcon(); // choisir SANS créer le pack
+            if (!picked || !picked.filePath) return;
+            // Garde l'icône EN MÉMOIRE (aperçu immédiat) ; upload différé à la création.
+            r.event._iconFile = picked.filePath;
+            r.event._iconPreview = picked.dataUrl || '';
+            r.event.iconUrl = null; // sera posé à l'upload
+            // Si le pack existe déjà (édition), on peut uploader tout de suite.
+            if (labCurrentSlug) {
+                $('lab-msg2').textContent = 'Envoi de l’icône…';
+                try {
+                    const res = await api.lab.uploadIconFile(labCurrentSlug, r.event.giftSlug, picked.filePath);
+                    if (res && res.url) { r.event.iconUrl = res.url; r.event._iconFile = null; $('lab-msg2').textContent = 'Icône ajoutée ✓'; }
+                } catch (e) { $('lab-msg2').textContent = friendlyError(e, "L'icône n'a pas pu être envoyée."); }
+            } else {
+                $('lab-msg2').textContent = 'Icône prête ✓ (envoyée à la création du pack).';
+            }
+            renderRules();
         };
         q('.r-event').onchange = (e) => {
             const t = e.target.value; r.event = { type: t };
@@ -628,44 +639,46 @@ $('lab-save-meta').onclick = async () => {
         $('lab-msg').textContent = 'Infos enregistrées ✓';
     } catch (e) { $('lab-msg').textContent = friendlyError(e, "Les infos n'ont pas pu être enregistrées."); }
 };
-/** true s'il reste un « cadeau personnalisé » sans icône (obligatoire avant soumission). */
+/** true s'il reste un « cadeau personnalisé » sans icône (uploadée OU en mémoire). */
 function missingCustomIcon() {
-    return labRules.some((r) => r.event.type === 'gift-custom' && !r.event.iconUrl);
+    return labRules.some((r) => r.event.type === 'gift-custom' && !r.event.iconUrl && !r.event._iconFile);
+}
+/** Upload les icônes gardées EN MÉMOIRE (une fois le pack créé). */
+async function uploadHeldIcons() {
+    for (const r of labRules) {
+        if (r.event.type === 'gift-custom' && r.event._iconFile && !r.event.iconUrl) {
+            const res = await api.lab.uploadIconFile(labCurrentSlug, r.event.giftSlug, r.event._iconFile);
+            if (res && res.url) { r.event.iconUrl = res.url; r.event._iconFile = null; r.event._iconPreview = ''; }
+        }
+    }
 }
 $('lab-submit-btn').onclick = async () => {
     const visibility = $('lab-vis').checked ? 'public' : 'private';
 
     if (!labJsonMode && missingConnector())
         return ($('lab-msg2').textContent = 'Chaque interaction réseau doit avoir un connecteur — choisis-en un ou crée-en un (+ Nouveau…).');
+    if (!labJsonMode && missingCustomIcon())
+        return ($('lab-msg2').textContent = 'Chaque « cadeau personnalisé » doit avoir une icône.');
 
     if (labMode === 'create') {
         const slug = $('lab-slug').value.trim(), title = $('lab-title').value.trim();
         if (!slug || !title) return ($('lab-msg').textContent = 'Slug et titre sont obligatoires.');
-        const hasCustom = labRules.some((r) => r.event.type === 'gift-custom');
         try {
             await api.lab.create({ slug, title, game: $('lab-game').value.trim() || undefined, tags: labTags });
             labCurrentSlug = slug; labLatestVersion = null;
             syncLabBindings(); // enregistre les liaisons rôle->connecteur (slug désormais connu)
-            if (hasCustom) {
-                // Icônes obligatoires : on ne peut les uploader qu'une fois le pack créé.
-                // On passe en ÉDITION (brouillon conservé) pour les ajouter avant de soumettre.
-                setLabMode('edit');
-                renderRules();
-                $('lab-msg2').textContent = 'Pack créé ✓ Ajoute une icône à chaque « cadeau personnalisé », puis « Enregistrer la version ».';
-            } else {
-                const manifest = labJsonMode ? JSON.parse($('lab-manifest').value) : buildManifest();
-                await api.lab.submitVersion(slug, { version: '1.0.0', manifest, visibility });
-                await enterEditMode(slug);
-                $('lab-msg2').textContent = visibility === 'public' ? 'Pack créé + v1.0.0 en modération ✓' : 'Pack créé (privé) + v1.0.0 ✓';
-            }
+            await uploadHeldIcons(); // pose les icônes gardées en mémoire
+            const manifest = labJsonMode ? JSON.parse($('lab-manifest').value) : buildManifest();
+            await api.lab.submitVersion(slug, { version: '1.0.0', manifest, visibility });
+            await enterEditMode(slug);
+            $('lab-msg2').textContent = visibility === 'public' ? 'Pack créé + v1.0.0 en modération ✓' : 'Pack créé (privé) + v1.0.0 ✓';
         } catch (e) { $('lab-msg2').textContent = friendlyError(e, 'La création du pack a échoué.'); }
         return;
     }
 
     // Édition : nouvelle version
-    if (!labJsonMode && missingCustomIcon())
-        return ($('lab-msg2').textContent = 'Chaque « cadeau personnalisé » doit avoir une icône.');
     syncLabBindings();
+    await uploadHeldIcons();
     let manifest;
     if (labJsonMode) { try { manifest = JSON.parse($('lab-manifest').value); } catch { return ($('lab-msg2').textContent = 'JSON invalide.'); } }
     else manifest = buildManifest();
@@ -690,6 +703,12 @@ async function loadMyBundles() {
 
 // ── Settings ──
 $('lang').onchange = (e) => api.language(e.target.value);
+$('env-select').onchange = async () => {
+    await api.env.set($('env-select').value);
+    // Déconnecté par le changement d'env : on revient à l'écran de connexion.
+    $('app-main').classList.add('hidden');
+    $('view-auth').classList.remove('hidden');
+};
 api.autoLaunch().then((v) => ($('autolaunch').checked = !!v));
 $('autolaunch').onchange = () => api.autoLaunch($('autolaunch').checked);
 
@@ -763,7 +782,9 @@ function renderConnectorsList() {
     }).join('');
     box.querySelectorAll('.cx-row').forEach((row) => {
         const c = myConnectors.find((x) => x.id === row.dataset.id);
-        row.querySelector('.cx-enable').onchange = async (e) => { await api.connectors.enable(c.id, e.target.checked); await loadConnectors(); renderConnectorsList(); };
+        // Pas de re-render au toggle : sinon le DOM est remplacé et le switch « saute »
+        // au lieu de glisser. On met à jour l'état local + on persiste, c'est tout.
+        row.querySelector('.cx-enable').onchange = (e) => { c.enabled = e.target.checked; api.connectors.enable(c.id, e.target.checked); };
         const edit = row.querySelector('.cx-edit'); if (edit) edit.onclick = () => openConnectorModal(c, () => renderConnectorsList());
         const del = row.querySelector('.cx-del'); if (del) del.onclick = async () => { await api.connectors.remove(c.id); await loadConnectors(); renderConnectorsList(); };
     });
