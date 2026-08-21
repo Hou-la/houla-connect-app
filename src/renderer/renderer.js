@@ -242,7 +242,13 @@ function defaultGiftSlug() {
 function defaultSlot() { return 'ix_slot_01'; }
 function eventFieldHtml(r) {
     if (r.event.type === 'gift') return `<select class="r-giftslug">${giftOptionsGeneric(r.event.giftSlug)}</select>`;
-    if (r.event.type === 'gift-custom') return `<select class="r-giftslug">${slotOptions(r.event.giftSlug)}</select><button type="button" class="r-iconguide" title="Comment réaliser l'icône ?">i</button>`;
+    if (r.event.type === 'gift-custom') {
+        const ic = r.event.iconUrl ? `background-image:url('${esc(r.event.iconUrl)}')` : '';
+        return `<select class="r-giftslug">${slotOptions(r.event.giftSlug)}</select>`
+            + `<span class="r-icon" title="icône du cadeau" style="${ic}"></span>`
+            + `<button type="button" class="r-iconbtn">Icône…</button>`
+            + `<button type="button" class="r-iconguide" title="Comment réaliser l'icône ?">i</button>`;
+    }
     if (r.event.type === 'comment') return `<input type="text" class="r-contains" placeholder="contient ce mot…" />`;
     if (r.event.type === 'hearts') return `<input type="number" class="r-milestone" placeholder="palier (ex. 100)" min="1" />`;
     return '';
@@ -325,6 +331,16 @@ function renderRules() {
         if (r.effect.type === 'ws') { if (q('.r-wsurl')) q('.r-wsurl').value = r.effect.url || ''; if (q('.r-wsmsg')) q('.r-wsmsg').value = r.effect.message || ''; }
         if (q('.r-role')) q('.r-role').value = r.moderatorsOnly ? 'moderators' : r.followersOnly ? 'followers' : 'all';
         if (q('.r-iconguide')) q('.r-iconguide').onclick = () => $('icon-guide-modal').classList.remove('hidden');
+        if (q('.r-iconbtn')) q('.r-iconbtn').onclick = async () => {
+            if (!labCurrentSlug) { $('lab-msg2').textContent = 'Crée d’abord le pack, puis ajoute les icônes.'; return; }
+            readRule(el, r);
+            $('lab-msg2').textContent = 'Envoi de l’icône…';
+            try {
+                const res = await api.lab.uploadSlotIcon(labCurrentSlug, r.event.giftSlug);
+                if (res && res.url) { r.event.iconUrl = res.url; $('lab-msg2').textContent = 'Icône ajoutée ✓'; renderRules(); }
+                else $('lab-msg2').textContent = '';
+            } catch (e) { $('lab-msg2').textContent = 'Icône : ' + e.message; }
+        };
         q('.r-event').onchange = (e) => {
             const t = e.target.value; r.event = { type: t };
             if (t === 'gift') r.event.giftSlug = defaultGiftSlug();
@@ -355,6 +371,7 @@ function buildRule(r, i) {
     const onType = r.event.type === 'gift-custom' ? 'gift' : r.event.type;
     const on = { type: onType };
     if (onType === 'gift') on.giftSlug = r.event.giftSlug || r.event.slot;
+    if (r.event.type === 'gift-custom' && r.event.iconUrl) on.iconUrl = r.event.iconUrl;
     if (r.event.type === 'comment') on.contains = r.event.contains;
     if (r.event.type === 'hearts') on.milestone = r.event.milestone;
     const effect = { type: r.effect.type };
@@ -501,24 +518,42 @@ $('lab-save-meta').onclick = async () => {
         $('lab-msg').textContent = 'Infos enregistrées ✓';
     } catch (e) { $('lab-msg').textContent = 'Erreur : ' + e.message; }
 };
+/** true s'il reste un « cadeau personnalisé » sans icône (obligatoire avant soumission). */
+function missingCustomIcon() {
+    return labRules.some((r) => r.event.type === 'gift-custom' && !r.event.iconUrl);
+}
 $('lab-submit-btn').onclick = async () => {
-    let manifest;
-    if (labJsonMode) { try { manifest = JSON.parse($('lab-manifest').value); } catch { return ($('lab-msg2').textContent = 'JSON invalide.'); } }
-    else manifest = buildManifest();
     const visibility = $('lab-vis').checked ? 'public' : 'private';
 
     if (labMode === 'create') {
         const slug = $('lab-slug').value.trim(), title = $('lab-title').value.trim();
         if (!slug || !title) return ($('lab-msg').textContent = 'Slug et titre sont obligatoires.');
+        const hasCustom = labRules.some((r) => r.event.type === 'gift-custom');
         try {
             await api.lab.create({ slug, title, game: $('lab-game').value.trim() || undefined, tags: labTags });
-            await api.lab.submitVersion(slug, { version: '1.0.0', manifest, visibility });
-            $('lab-msg2').textContent = visibility === 'public' ? 'Pack créé + v1.0.0 envoyée en modération ✓' : 'Pack créé (privé) + v1.0.0 ✓';
-            await enterEditMode(slug);
+            labCurrentSlug = slug; labLatestVersion = null;
+            if (hasCustom) {
+                // Icônes obligatoires : on ne peut les uploader qu'une fois le pack créé.
+                // On passe en ÉDITION (brouillon conservé) pour les ajouter avant de soumettre.
+                setLabMode('edit');
+                renderRules();
+                $('lab-msg2').textContent = 'Pack créé ✓ Ajoute une icône à chaque « cadeau personnalisé », puis « Enregistrer la version ».';
+            } else {
+                const manifest = labJsonMode ? JSON.parse($('lab-manifest').value) : buildManifest();
+                await api.lab.submitVersion(slug, { version: '1.0.0', manifest, visibility });
+                await enterEditMode(slug);
+                $('lab-msg2').textContent = visibility === 'public' ? 'Pack créé + v1.0.0 en modération ✓' : 'Pack créé (privé) + v1.0.0 ✓';
+            }
         } catch (e) { $('lab-msg2').textContent = 'Erreur : ' + e.message; }
         return;
     }
+
     // Édition : nouvelle version
+    if (!labJsonMode && missingCustomIcon())
+        return ($('lab-msg2').textContent = 'Chaque « cadeau personnalisé » doit avoir une icône.');
+    let manifest;
+    if (labJsonMode) { try { manifest = JSON.parse($('lab-manifest').value); } catch { return ($('lab-msg2').textContent = 'JSON invalide.'); } }
+    else manifest = buildManifest();
     const version = labLatestVersion ? bumpVersion(labLatestVersion, $('lab-bump').value) : '1.0.0';
     try {
         await api.lab.submitVersion(labCurrentSlug, { version, manifest, visibility });

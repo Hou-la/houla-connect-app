@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         submitVersion: (slug: string, dto: unknown) => invoke('lab:version', slug, dto),
         publish: (slug: string) => invoke('lab:publish', slug),
         uploadBanner: (slug: string) => invoke('lab:banner', slug),
+        uploadSlotIcon: (slug: string, slot: string) => invoke('lab:slotIcon', slug, slot),
     },
     caps: {
         get: () => invoke('caps:get'),

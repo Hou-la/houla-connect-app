@@ -167,6 +167,14 @@ function registerIpc(): void {
         if (r.canceled || !r.filePaths[0]) return null;
         return api.uploadBanner(slug, r.filePaths[0]);
     });
+    ipcMain.handle('lab:slotIcon', async (_e, slug: string, slot: string) => {
+        const r = await dialog.showOpenDialog({
+            properties: ['openFile'],
+            filters: [{ name: 'Icône PNG transparent', extensions: ['png', 'webp'] }],
+        });
+        if (r.canceled || !r.filePaths[0]) return null;
+        return api.uploadSlotIcon(slug, slot, r.filePaths[0]);
+    });
     ipcMain.handle('store:uninstall', (_e, slug: string) => {
         store.setInstalled(store.getInstalled().filter((b) => b.slug !== slug));
         if (store.getActiveBundleSlug() === slug) store.setActiveBundleSlug(undefined);

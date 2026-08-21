@@ -174,6 +174,21 @@ export class ApiService {
         return res.json();
     }
 
+    async uploadSlotIcon(slug: string, slot: string, filePath: string): Promise<any> {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const buf = await fs.readFile(filePath);
+        const fd = new FormData();
+        fd.append('file', new Blob([buf]), path.basename(filePath));
+        fd.append('slot', slot);
+        const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}/slot-icon`, {
+            method: 'POST',
+            body: fd as any,
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || `icône ${res.status}`);
+        return res.json(); // { slot, url }
+    }
+
     async previewBundle(slug: string): Promise<any> {
         const res = await fetch(`${CONFIG.apiUrl}/api/bundles/${encodeURIComponent(slug)}`);
         if (!res.ok) throw new Error('preview failed');
