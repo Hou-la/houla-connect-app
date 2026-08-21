@@ -119,6 +119,25 @@ export class ApiService {
         const res = await this.authFetch('/api/manager/bundles');
         return res.ok ? res.json() : [];
     }
+    async updateBundle(slug: string, dto: any): Promise<any> {
+        const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dto),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || `update ${res.status}`);
+        return res.json();
+    }
+    /** Dictionnaire APPROUVÉ (autocomplétion Lab). kind='type'|'game'. Public, best-effort. */
+    async getDictionary(kind?: string): Promise<any[]> {
+        try {
+            const qs = kind ? `?kind=${encodeURIComponent(kind)}` : '';
+            const res = await fetch(`${CONFIG.apiUrl}/api/bundles/dictionary${qs}`);
+            return res.ok ? res.json() : [];
+        } catch {
+            return [];
+        }
+    }
     async myBundleDetail(slug: string): Promise<any> {
         const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}`);
         return res.ok ? res.json() : null;

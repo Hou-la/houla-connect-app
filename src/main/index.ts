@@ -149,6 +149,8 @@ function registerIpc(): void {
 
     // Lab (créateur)
     ipcMain.handle('lab:create', (_e, dto) => api.createBundle(dto));
+    ipcMain.handle('lab:update', (_e, slug: string, dto) => api.updateBundle(slug, dto));
+    ipcMain.handle('lab:dictionary', (_e, kind?: string) => api.getDictionary(kind));
     ipcMain.handle('lab:mybundles', () => api.myBundles());
     ipcMain.handle('lab:detail', (_e, slug: string) => api.myBundleDetail(slug));
     ipcMain.handle('lab:version', (_e, slug: string, dto) => api.submitVersion(slug, dto));

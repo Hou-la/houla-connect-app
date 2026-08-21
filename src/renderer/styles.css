@@ -203,3 +203,16 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
 .lab-version-row .btn { flex: 0 0 auto; white-space: nowrap; }
 .lab-sub { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
     color: var(--muted); margin: 2px 0 6px; }
+
+/* Chips de tags (types d'intégration) */
+.tagbox { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.tagbox:empty { display: none; }
+.tag-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 4px 6px 4px 10px;
+    border-radius: 14px; background: var(--bg-3); border: 1px solid var(--border); color: var(--text); }
+.tag-chip button { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 14px;
+    line-height: 1; padding: 0 2px; }
+.tag-chip button:hover { color: var(--danger); }
+input[readonly] { opacity: .6; cursor: not-allowed; }
+.card--click { cursor: pointer; transition: border-color .12s, background .12s; }
+.card--click:hover { border-color: var(--accent); background: var(--bg-3); }
+.link { color: var(--accent-2); }

@@ -96,37 +96,35 @@
 
                 <!-- LAB -->
                 <section id="view-lab" class="view hidden">
-                    <h2>Lab</h2>
-                    <p class="muted">Crée un pack, ajoute une version (le manifeste des interactions), puis publie-le (modération).</p>
+                    <div class="row between">
+                        <h2 id="lab-mode-title">Créer un pack</h2>
+                        <button id="lab-new-btn" class="btn btn--ghost hidden">+ Nouveau pack</button>
+                    </div>
+                    <p class="muted" id="lab-intro">Renseigne les infos, ajoute des interactions, puis enregistre en privé (pour toi) ou publie en public (modéré). Pour éditer un pack existant, ouvre-le depuis « Mes bundles ».</p>
+
                     <div class="card">
-                        <label>1. Créer un bundle</label>
+                        <label>Infos du pack</label>
                         <input id="lab-slug" placeholder="slug (minuscules-tirets, ex. mon-pack)" />
                         <input id="lab-title" placeholder="Titre (anglais)" />
-                        <div class="row gap">
-                            <input id="lab-game" placeholder="jeu (optionnel)" />
-                            <select id="lab-theme">
-                                <option value="gaming">gaming</option>
-                                <option value="asmr">asmr</option>
-                                <option value="studio-fx">studio-fx</option>
-                                <option value="irl">irl</option>
-                                <option value="music">music</option>
-                                <option value="other">other</option>
-                            </select>
-                        </div>
-                        <button id="lab-create-btn" class="btn btn--primary">Créer</button>
+                        <input id="lab-game" list="lab-game-list" placeholder="jeu (ex. minecraft) — optionnel" />
+                        <datalist id="lab-game-list"></datalist>
+                        <span class="lab-sub">Types (tags)</span>
+                        <div id="lab-tags" class="tagbox"></div>
+                        <input id="lab-tag-input" list="lab-tag-list" placeholder="ajouter un type puis Entrée (ex. gaming, domotique, asmr)…" />
+                        <datalist id="lab-tag-list"></datalist>
+                        <button id="lab-save-meta" class="btn btn--ghost hidden">Enregistrer les infos</button>
                         <p id="lab-msg" class="hint"></p>
                     </div>
+
                     <div class="card">
                         <div class="row between">
-                            <label>2. Interactions</label>
+                            <label>Interactions</label>
                             <label class="switch">
                                 <input type="checkbox" id="lab-mode" />
                                 <span class="switch__track"><span class="switch__thumb"></span></span>
                                 <span id="lab-mode-label">Mode avancé (JSON)</span>
                             </label>
                         </div>
-                        <span class="lab-sub">Bundle en cours d'édition</span>
-                        <select id="lab-bundle-sel"></select>
 
                         <div class="lab-banner-row">
                             <div id="lab-banner-preview" class="lab-banner"></div>
@@ -144,13 +142,17 @@
                         </div>
 
                         <div class="row gap lab-version-row" style="margin-top: 14px">
-                            <select id="lab-bump" title="Type de changement pour la nouvelle version">
+                            <select id="lab-bump" class="hidden" title="Type de changement pour la nouvelle version">
                                 <option value="patch">Correction</option>
                                 <option value="minor">Amélioration</option>
                                 <option value="major">Gros changement</option>
                             </select>
-                            <button id="lab-submit-btn" class="btn btn--ghost">Enregistrer la version</button>
-                            <button id="lab-publish-btn" class="btn btn--primary">Publier</button>
+                            <label class="switch" title="Visibilité de cette version">
+                                <input type="checkbox" id="lab-vis" />
+                                <span class="switch__track"><span class="switch__thumb"></span></span>
+                                <span id="lab-vis-label">Privé</span>
+                            </label>
+                            <button id="lab-submit-btn" class="btn btn--primary">Créer le pack</button>
                         </div>
                         <p id="lab-msg2" class="hint"></p>
                     </div>

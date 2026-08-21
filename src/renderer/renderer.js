@@ -205,6 +205,9 @@ let labRules = [];
 let labCurrentSlug = null;
 let labLatestVersion = null;
 let labJsonMode = false;
+let labMode = 'create'; // 'create' | 'edit'
+let labTags = []; // types d'intégration (slugs)
+let pendingEditSlug = null; // pack à ouvrir en édition quand on arrive sur le Lab
 let giftCatalog = []; // [{slug,name,thumbnailUrl,coinCost,isInteractiveSlot}] depuis GET /api/gifts
 
 async function loadGiftCatalog() {
@@ -382,93 +385,133 @@ $('lab-mode').onchange = () => {
     }
 };
 
-async function loadLab() {
-    await loadGiftCatalog();
-    const mine = (await api.lab.myBundles()) || [];
-    const sel = $('lab-bundle-sel');
-    // Défaut = « — Nouveau bundle — » : on N'auto-charge PLUS un pack existant.
-    sel.innerHTML = '<option value="">— Nouveau bundle —</option>'
-        + mine.map((b) => `<option value="${esc(b.slug)}">${esc(b.slug)} (${esc(b.visibility)})</option>`).join('');
-    sel.onchange = () => (sel.value ? loadLabBundle(sel.value) : startNewLab());
-    sel.value = '';
-    startNewLab();
+// ── Tags (chips) ──
+function normTag(s) {
+    return String(s || '').trim().toLowerCase().normalize('NFD')
+        .replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 }
-/** État vierge : pas de pack sélectionné, une seule interaction prête à remplir. */
-function startNewLab() {
-    labCurrentSlug = null;
-    labLatestVersion = null;
-    labRules = [newRule()];
-    $('lab-banner-preview').style.backgroundImage = '';
-    if (labJsonMode) $('lab-manifest').value = JSON.stringify(buildManifest(), null, 2);
-    else renderRules();
+function renderTags() {
+    const box = $('lab-tags');
+    box.innerHTML = labTags.map((t, i) => `<span class="tag-chip">${esc(t)}<button data-i="${i}" title="retirer">&#10005;</button></span>`).join('');
+    box.querySelectorAll('button').forEach((b) => (b.onclick = () => { labTags.splice(Number(b.dataset.i), 1); renderTags(); }));
 }
-async function loadLabBundle(slug) {
-    labCurrentSlug = slug;
-    if (!slug) return startNewLab();
-    const detail = await api.lab.detail(slug);
-    const versions = (detail && detail.versions) || [];
-    labLatestVersion = versions.length ? versions[0].version : null; // triées DESC
-    const bundle = detail && detail.bundle;
-    $('lab-banner-preview').style.backgroundImage = bundle && bundle.bannerUrl ? `url('${bundle.bannerUrl}')` : '';
-    // Pack fraîchement créé (0 version) : on démarre avec une interaction vide.
-    labRules = versions.length ? manifestToRules(versions[0].manifestJson) : [newRule()];
-    if (labJsonMode) $('lab-manifest').value = JSON.stringify(buildManifest(), null, 2);
-    else renderRules();
+function addTagFromInput() {
+    const el = $('lab-tag-input');
+    const t = normTag(el.value);
+    if (t && !labTags.includes(t) && labTags.length < 6) labTags.push(t);
+    el.value = '';
+    renderTags();
+}
+$('lab-tag-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTagFromInput(); } });
+$('lab-tag-input').addEventListener('change', () => { if ($('lab-tag-input').value) addTagFromInput(); });
+
+// ── Dictionnaires (autocomplétion type + jeu, approuvés uniquement) ──
+async function loadDictionaries() {
+    const [types, games] = await Promise.all([api.lab.dictionary('type'), api.lab.dictionary('game')]);
+    $('lab-tag-list').innerHTML = (types || []).map((t) => `<option value="${esc(t.slug)}">${esc(t.label)}</option>`).join('');
+    $('lab-game-list').innerHTML = (games || []).map((g) => `<option value="${esc(g.slug)}">${esc(g.label)}</option>`).join('');
 }
 
-$('lab-create-btn').onclick = async () => {
-    const dto = { slug: $('lab-slug').value.trim(), title: $('lab-title').value.trim(), game: $('lab-game').value.trim() || undefined, theme: $('lab-theme').value };
-    try {
-        await api.lab.create(dto);
-        $('lab-msg').textContent = 'Pack créé : ' + dto.slug + ' — ajoute tes interactions puis publie.';
-        $('lab-slug').value = '';
-        $('lab-title').value = '';
-        await loadLab();
-        // Sélectionne le pack qu'on vient de créer (prêt à recevoir des interactions).
-        $('lab-bundle-sel').value = dto.slug;
-        await loadLabBundle(dto.slug);
-    } catch (e) {
-        $('lab-msg').textContent = 'Erreur : ' + e.message;
-    }
-};
+// ── Visibilité par version (toggle : position + texte, daltonien-safe) ──
+$('lab-vis').onchange = () => { $('lab-vis-label').textContent = $('lab-vis').checked ? 'Public' : 'Privé'; };
+
+// ── Bascule création / édition ──
+function setLabMode(mode) {
+    labMode = mode;
+    const create = mode === 'create';
+    $('lab-mode-title').textContent = create ? 'Créer un pack' : 'Éditer : ' + (labCurrentSlug || '');
+    $('lab-slug').readOnly = !create;
+    $('lab-bump').classList.toggle('hidden', create);
+    $('lab-save-meta').classList.toggle('hidden', create);
+    $('lab-new-btn').classList.toggle('hidden', create);
+    $('lab-submit-btn').textContent = create ? 'Créer le pack' : 'Enregistrer la version';
+}
+function enterCreateMode() {
+    labCurrentSlug = null; labLatestVersion = null; labTags = [];
+    labRules = [newRule()];
+    $('lab-slug').value = ''; $('lab-title').value = ''; $('lab-game').value = '';
+    $('lab-banner-preview').style.backgroundImage = '';
+    $('lab-msg').textContent = ''; $('lab-msg2').textContent = '';
+    $('lab-vis').checked = false; $('lab-vis-label').textContent = 'Privé';
+    renderTags();
+    if (labJsonMode) $('lab-manifest').value = JSON.stringify(buildManifest(), null, 2); else renderRules();
+    setLabMode('create');
+}
+async function enterEditMode(slug) {
+    const detail = await api.lab.detail(slug);
+    if (!detail || !detail.bundle) { $('lab-msg').textContent = 'Pack introuvable.'; return; }
+    const b = detail.bundle;
+    const versions = detail.versions || []; // triées DESC
+    labCurrentSlug = b.slug;
+    labLatestVersion = versions.length ? versions[0].version : null;
+    labTags = Array.isArray(b.tags) ? b.tags.slice() : [];
+    $('lab-slug').value = b.slug; $('lab-title').value = b.title || ''; $('lab-game').value = b.game || '';
+    $('lab-banner-preview').style.backgroundImage = b.bannerUrl ? `url('${b.bannerUrl}')` : '';
+    $('lab-msg').textContent = ''; $('lab-msg2').textContent = '';
+    const lastVis = versions.length ? versions[0].visibility : b.visibility;
+    $('lab-vis').checked = lastVis === 'public'; $('lab-vis-label').textContent = lastVis === 'public' ? 'Public' : 'Privé';
+    labRules = versions.length ? manifestToRules(versions[0].manifestJson) : [newRule()];
+    renderTags();
+    if (labJsonMode) $('lab-manifest').value = JSON.stringify(buildManifest(), null, 2); else renderRules();
+    setLabMode('edit');
+}
+$('lab-new-btn').onclick = () => enterCreateMode();
+
+async function loadLab() {
+    await Promise.all([loadGiftCatalog(), loadDictionaries()]);
+    if (pendingEditSlug) { const s = pendingEditSlug; pendingEditSlug = null; await enterEditMode(s); }
+    else if (!(labMode === 'edit' && labCurrentSlug)) enterCreateMode();
+}
+
 $('lab-banner-btn').onclick = async () => {
-    if (!labCurrentSlug) return ($('lab-msg2').textContent = "Crée/choisis un pack d'abord.");
+    if (!labCurrentSlug) return ($('lab-msg2').textContent = 'Crée d’abord le pack (bouton « Créer le pack »).');
     try {
         const r = await api.lab.uploadBanner(labCurrentSlug);
         if (r && r.bannerUrl) { $('lab-banner-preview').style.backgroundImage = `url('${r.bannerUrl}')`; $('lab-msg2').textContent = 'Bannière mise à jour ✓'; }
     } catch (e) { $('lab-msg2').textContent = 'Bannière : ' + e.message; }
 };
+$('lab-save-meta').onclick = async () => {
+    if (!labCurrentSlug) return;
+    try {
+        await api.lab.update(labCurrentSlug, { title: $('lab-title').value.trim(), game: $('lab-game').value.trim() || '', tags: labTags });
+        $('lab-msg').textContent = 'Infos enregistrées ✓';
+    } catch (e) { $('lab-msg').textContent = 'Erreur : ' + e.message; }
+};
 $('lab-submit-btn').onclick = async () => {
-    const slug = $('lab-bundle-sel').value;
-    if (!slug) return ($('lab-msg2').textContent = "Crée un pack d'abord.");
     let manifest;
     if (labJsonMode) { try { manifest = JSON.parse($('lab-manifest').value); } catch { return ($('lab-msg2').textContent = 'JSON invalide.'); } }
     else manifest = buildManifest();
+    const visibility = $('lab-vis').checked ? 'public' : 'private';
+
+    if (labMode === 'create') {
+        const slug = $('lab-slug').value.trim(), title = $('lab-title').value.trim();
+        if (!slug || !title) return ($('lab-msg').textContent = 'Slug et titre sont obligatoires.');
+        try {
+            await api.lab.create({ slug, title, game: $('lab-game').value.trim() || undefined, tags: labTags });
+            await api.lab.submitVersion(slug, { version: '1.0.0', manifest, visibility });
+            $('lab-msg2').textContent = visibility === 'public' ? 'Pack créé + v1.0.0 envoyée en modération ✓' : 'Pack créé (privé) + v1.0.0 ✓';
+            await enterEditMode(slug);
+        } catch (e) { $('lab-msg2').textContent = 'Erreur : ' + e.message; }
+        return;
+    }
+    // Édition : nouvelle version
     const version = labLatestVersion ? bumpVersion(labLatestVersion, $('lab-bump').value) : '1.0.0';
     try {
-        await api.lab.submitVersion(slug, { version, manifest });
+        await api.lab.submitVersion(labCurrentSlug, { version, manifest, visibility });
         labLatestVersion = version;
-        $('lab-msg2').textContent = `Version ${version} enregistrée ✓`;
+        $('lab-msg2').textContent = `Version ${version} enregistrée (${visibility === 'public' ? 'publique, en modération' : 'privée'}) ✓`;
     } catch (e) { $('lab-msg2').textContent = 'Refusé : ' + e.message; }
 };
-$('lab-publish-btn').onclick = async () => {
-    const slug = $('lab-bundle-sel').value;
-    if (!slug) return;
-    try { await api.lab.publish(slug); $('lab-msg2').textContent = 'Publié (en modération) ✓'; }
-    catch (e) { $('lab-msg2').textContent = 'Erreur : ' + e.message; }
-};
 
-// ── Mes bundles ──
+// ── Mes bundles (cliquables -> édition dans le Lab) ──
 async function loadMyBundles() {
     const mine = (await api.lab.myBundles()) || [];
-    $('mine-list').innerHTML = mine.length
-        ? mine
-              .map(
-                  (b) =>
-                      `<div class="card"><div class="row between"><b>${b.title || b.slug}</b><span class="badge badge--off">${b.visibility}</span></div><p class="muted">${b.slug}${b.official ? ' · officiel' : ''} · installs ${b.installCount || 0}</p></div>`,
-              )
-              .join('')
-        : '<p class="muted">Aucun bundle créé. Va dans le Lab pour en créer un.</p>';
+    const box = $('mine-list');
+    if (!mine.length) { box.innerHTML = '<p class="muted">Aucun bundle créé. Va dans le Lab pour en créer un.</p>'; return; }
+    box.innerHTML = mine.map((b) =>
+        `<div class="card card--click" data-slug="${esc(b.slug)}"><div class="row between"><b>${esc(b.title || b.slug)}</b><span class="badge badge--off">${esc(b.visibility)}</span></div><p class="muted">${esc(b.slug)}${b.official ? ' · officiel' : ''} · installs ${b.installCount || 0} · <span class="link">éditer ✎</span></p></div>`
+    ).join('');
+    box.querySelectorAll('.card--click').forEach((c) => (c.onclick = () => { pendingEditSlug = c.dataset.slug; switchView('lab'); }));
 }
 
 // ── Settings ──

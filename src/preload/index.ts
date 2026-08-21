@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld('houlaConnect', {
     },
     lab: {
         create: (dto: unknown) => invoke('lab:create', dto),
+        update: (slug: string, dto: unknown) => invoke('lab:update', slug, dto),
+        dictionary: (kind?: string) => invoke('lab:dictionary', kind),
         myBundles: () => invoke('lab:mybundles'),
         detail: (slug: string) => invoke('lab:detail', slug),
         submitVersion: (slug: string, dto: unknown) => invoke('lab:version', slug, dto),
