@@ -172,6 +172,14 @@ export class StoreService {
         return this.store.get('activeBundleSlug');
     }
 
+    // ── Démarrage automatique (arrière-plan) — activé par défaut ──
+    getAutoLaunch(): boolean {
+        return this.store.get('autoLaunch', true) as boolean;
+    }
+    setAutoLaunch(v: boolean) {
+        this.store.set('autoLaunch', v);
+    }
+
     // ── Acceptation des CGU (version acceptée) ──
     getLegalAcceptedVersion(): string | undefined {
         return this.store.get('legalAcceptedVersion') as any;

@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         status: () => invoke('engine:status'),
     },
     language: (lang?: string) => invoke('prefs:language', lang),
+    autoLaunch: (enabled?: boolean) => invoke('prefs:autolaunch', enabled),
     legal: {
         text: () => invoke('legal:text'),
         status: () => invoke('legal:status'),

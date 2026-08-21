@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, globalShortcut, shell, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, globalShortcut, shell, dialog, Tray, Menu, nativeImage } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -20,6 +20,8 @@ const auth = new AuthService(api, store);
 const LEGAL_VERSION = '1.0';
 
 let win: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false; // vrai seulement quand on quitte VRAIMENT (menu tray)
 let sidecarInstance: PythonSidecar | null = null;
 let activeManifest: BundleManifest | null = null;
 let engineRunning = false;
@@ -97,6 +99,51 @@ function createWindow(): void {
     win.webContents.once('did-finish-load', () => {
         const coldUrl = process.argv.find((a) => a.startsWith(`${CONFIG.protocol}://`));
         if (coldUrl) handleDeepLink(coldUrl);
+    });
+    // Fermer = réduire dans le tray (l'app tourne EN ARRIÈRE-PLAN : le moteur continue
+    // de déclencher les effets). Seul « Quitter » (tray) ferme vraiment.
+    win.on('close', (e) => {
+        if (!isQuitting) {
+            e.preventDefault();
+            win?.hide();
+        }
+    });
+}
+
+// ═══════════════════════ Tray (arrière-plan) ═══════════════════════
+function trayIcon(): Electron.NativeImage {
+    const p = path.join(__dirname, '..', '..', 'resources', 'icon.png');
+    try {
+        const img = nativeImage.createFromPath(p).resize({ width: 16, height: 16 });
+        if (!img.isEmpty()) return img;
+    } catch {
+        /* fallback vide */
+    }
+    return nativeImage.createEmpty();
+}
+function createTray(): void {
+    if (tray) return;
+    tray = new Tray(trayIcon());
+    tray.setToolTip('Hou.la Connect');
+    const menu = Menu.buildFromTemplate([
+        { label: 'Afficher', click: () => { win?.show(); win?.focus(); } },
+        { type: 'separator' },
+        {
+            label: 'PANIC (tout arrêter)',
+            click: () => {
+                conn.disconnect();
+                engine.panic();
+                sidecarInstance?.kill();
+                send('onState', { connected: false });
+            },
+        },
+        { type: 'separator' },
+        { label: 'Quitter', click: () => { isQuitting = true; app.quit(); } },
+    ]);
+    tray.setContextMenu(menu);
+    tray.on('click', () => {
+        if (win?.isVisible()) win.hide();
+        else { win?.show(); win?.focus(); }
     });
 }
 
@@ -261,10 +308,29 @@ function registerIpc(): void {
         return store.getLanguage();
     });
 
-    // Contrôles de fenêtre (titlebar custom, frameless).
+    // Contrôles de fenêtre (titlebar custom, frameless). Fermer = réduire au tray.
     ipcMain.handle('win:minimize', () => win?.minimize());
     ipcMain.handle('win:maximize', () => (win?.isMaximized() ? win.unmaximize() : win?.maximize()));
-    ipcMain.handle('win:close', () => win?.close());
+    ipcMain.handle('win:close', () => win?.hide());
+
+    // Démarrage automatique avec le système (arrière-plan).
+    ipcMain.handle('prefs:autolaunch', (_e, enabled?: boolean) => {
+        if (typeof enabled === 'boolean') {
+            store.setAutoLaunch(enabled);
+            applyAutoLaunch();
+        }
+        return store.getAutoLaunch();
+    });
+}
+
+/** Applique la préférence de lancement au démarrage (openAsHidden : direct au tray). */
+function applyAutoLaunch(): void {
+    try {
+        const enabled = store.getAutoLaunch();
+        app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true });
+    } catch {
+        /* non supporté sur cette plateforme */
+    }
 }
 
 // ═══════════════════════ Lifecycle ═══════════════════════
@@ -289,6 +355,8 @@ if (!app.requestSingleInstanceLock()) {
         }
         registerIpc();
         createWindow();
+        createTray();
+        applyAutoLaunch();
         setupAutoUpdate();
         // PANIC global : Ctrl+Alt+Pause.
         globalShortcut.register('Control+Alt+Pause', () => {
@@ -309,7 +377,9 @@ if (!app.requestSingleInstanceLock()) {
         engine.dispose();
         sidecarInstance?.kill();
     });
+    // On NE quitte PAS quand la fenêtre se ferme : l'app vit dans le tray
+    // (arrière-plan). Seul « Quitter » (menu tray) termine le process.
     app.on('window-all-closed', () => {
-        if (process.platform !== 'darwin') app.quit();
+        /* rester en arrière-plan (tray) */
     });
 }

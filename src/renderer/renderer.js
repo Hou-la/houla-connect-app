@@ -592,6 +592,8 @@ async function loadCaps() {
     });
 }
 $('lang').onchange = (e) => api.language(e.target.value);
+api.autoLaunch().then((v) => ($('autolaunch').checked = !!v));
+$('autolaunch').onchange = () => api.autoLaunch($('autolaunch').checked);
 
 // ── Connexions (RCON / OBS / MQTT + hôtes) ──
 // Les secrets sont WRITE-ONLY (jamais relus côté renderer) : on ne pré-remplit pas
