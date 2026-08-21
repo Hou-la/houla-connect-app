@@ -43,15 +43,35 @@ $('win-max').onclick = () => api.win.maximize();
 $('win-close').onclick = () => api.win.close();
 
 // ── Auth ──
+async function showLoginEnvHint() {
+    try {
+        const env = (await api.env.get()) || 'prod';
+        if (env !== 'prod') {
+            $('auth-env-name').textContent = env;
+            $('auth-env').classList.remove('hidden');
+        } else $('auth-env').classList.add('hidden');
+    } catch { /* noop */ }
+}
 async function refreshAuth() {
     const { authenticated } = await api.authStatus();
     if (authenticated) return showApp();
     $('view-auth').classList.remove('hidden');
     $('app-main').classList.add('hidden');
+    showLoginEnvHint();
 }
-$('btn-login').onclick = () => api.login();
+$('btn-login').onclick = () => { $('auth-error').classList.add('hidden'); api.login(); };
 $('btn-logout').onclick = async () => { await api.logout(); location.reload(); };
-api.onAuth(async (a) => { if (a.authenticated) await showApp(); });
+$('auth-env-reset').onclick = async (e) => { e.preventDefault(); await api.env.set('prod'); location.reload(); };
+api.onAuth(async (a) => {
+    if (a.authenticated) { $('auth-error').classList.add('hidden'); await showApp(); }
+    else {
+        // Échec silencieux évité : message clair + l'indicateur d'environnement (souvent la cause).
+        if (a.error) console.error('[auth] callback:', a.error);
+        $('auth-error').textContent = 'Connexion échouée. Vérifie l’environnement ci-dessous, puis réessaie.';
+        $('auth-error').classList.remove('hidden');
+        showLoginEnvHint();
+    }
+});
 
 // Switch d'identité DANS l'app (multi-workspace) : on utilise le workspace choisi
 // à l'auth par défaut, et on peut en changer. Plus de double sélection.

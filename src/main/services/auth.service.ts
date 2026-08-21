@@ -25,7 +25,9 @@ export class AuthService {
             code_challenge_method: 'S256',
             scope: CONFIG.scopes.join(' '),
         });
-        await shell.openExternal(`${CONFIG.appUrl}/oauth/authorize?${params.toString()}`);
+        // L'autorisation DOIT viser le MÊME environnement que l'échange de code
+        // (this.api.base()) — sinon on autorise sur un env et on échange sur un autre.
+        await shell.openExternal(`${this.api.base()}/oauth/authorize?${params.toString()}`);
     }
 
     async handleCallback(url: string): Promise<void> {
