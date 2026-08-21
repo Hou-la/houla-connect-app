@@ -6,6 +6,13 @@ on:
     tags:
       - 'v*'
 
+# SÉRIALISE les releases : un seul bump+build à la fois. Des pushes rapprochés
+# lançaient plusieurs runs en parallèle -> versions désynchronisées, artefacts
+# Windows publiés sur la mauvaise release (d'où des releases sans .exe/latest.yml).
+concurrency:
+  group: auto-bump-release
+  cancel-in-progress: false
+
 jobs:
   # ── Job 1 : bump patch auto sur push main ──────────────────────────
   bump:
