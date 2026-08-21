@@ -72,10 +72,24 @@ jobs:
         run: npm ci
       - name: Build (main + preload + renderer)
         run: npm run build
-      # Windows non signé pour l'instant (certif de code à venir) : SmartScreen
-      # alertera, mais l'exe est bien téléchargeable. mac best-effort.
+      # Signature de code Windows via Azure Trusted Signing — UNIQUEMENT si les
+      # secrets Azure sont configurés (sinon build non signé, toujours téléchargeable ;
+      # SmartScreen alertera). mac best-effort. Voir docs/CODE_SIGNING_AZURE.md.
       - name: Publish release
-        run: npx electron-builder --publish always
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EP_GH_IGNORE_TIME: true
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          if [ "${{ matrix.os }}" = "windows-2022" ] && [ -n "$AZURE_CLIENT_ID" ]; then
+            echo "Signature Windows via Azure Trusted Signing"
+            npx electron-builder --publish always \
+              -c.win.azureSignOptions.endpoint="${{ secrets.AZURE_SIGN_ENDPOINT }}" \
+              -c.win.azureSignOptions.codeSigningAccountName="${{ secrets.AZURE_SIGN_ACCOUNT }}" \
+              -c.win.azureSignOptions.certificateProfileName="${{ secrets.AZURE_SIGN_PROFILE }}"
+          else
+            npx electron-builder --publish always
+          fi
