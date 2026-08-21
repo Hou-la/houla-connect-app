@@ -124,11 +124,13 @@ export interface Executor {
     /** La capacité que l'utilisateur doit avoir accordée pour que fire() tourne. */
     readonly capability: string;
     /**
-     * true = injection locale invasive (clavier/manette/pilote) -> exige un
-     * consentement explicite (capacité accordée). false = protocole réseau ->
-     * le CONNECTEUR configuré tient lieu de consentement, pas de capacité.
+     * true = injection locale invasive (clavier/manette/pilote) -> gardée par un
+     * CONNECTEUR LOCAL activé (localConnectorType). false = protocole réseau ->
+     * gardé par la présence d'un connecteur réseau lié + activé.
      */
     readonly requiresCapability: boolean;
+    /** Pour les exécuteurs locaux : type du connecteur local (keyboard|gamepad|driver). */
+    readonly localConnectorType?: string;
     /** Valide + encode l'effet (encodage PROPRE à l'exécuteur), lève si invalide. */
     validate(effect: BundleEffect): void;
     fire(effect: BundleEffect, ctx: FireContext): Promise<void>;

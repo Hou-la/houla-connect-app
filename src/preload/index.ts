@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         list: () => invoke('connectors:list'),
         save: (c: unknown) => invoke('connectors:save', c),
         remove: (id: string) => invoke('connectors:delete', id),
+        enable: (id: string, enabled: boolean) => invoke('connectors:enable', id, enabled),
     },
     bindings: {
         get: (slug: string) => invoke('bindings:get', slug),

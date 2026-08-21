@@ -11,6 +11,7 @@ export class KeyboardExecutor implements Executor {
     readonly type = 'keyboard' as const;
     readonly capability = 'allowKeyboard';
     readonly requiresCapability = true;
+    readonly localConnectorType = 'keyboard';
     private held: any[] = [];
 
     constructor(private readonly sidecar: () => PythonSidecar) {}

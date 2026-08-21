@@ -7,6 +7,7 @@ export class GamepadExecutor implements Executor {
     readonly type = 'gamepad' as const;
     readonly capability = 'allowGamepad';
     readonly requiresCapability = true;
+    readonly localConnectorType = 'gamepad';
 
     constructor(private readonly sidecar: () => PythonSidecar) {}
 

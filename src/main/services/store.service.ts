@@ -32,16 +32,24 @@ interface Schema {
     bundleBindings?: Record<string, Record<string, string>>; // slug -> role -> connectorId
 }
 
-/** Un connecteur : endpoint + identifiants d'un protocole (RCON/OBS/MQTT/WS/HTTP/OSC). */
+/** Un connecteur : endpoint + identifiants d'un protocole, OU une capacité locale. */
 export interface StoredConnector {
     id: string;
     name: string;
-    type: string; // rcon | obs | mqtt | ws | http | osc
+    type: string; // réseau: rcon|obs|mqtt|ws|http|osc — local: keyboard|gamepad|driver
+    enabled: boolean;
     config: Record<string, string>; // les champs 'password' sont chiffrés au repos
 }
 
 /** Champs sensibles (chiffrés) par type de connecteur. */
 const SECRET_FIELDS = new Set(['password']);
+
+/** Connecteurs LOCAUX (injection : clavier/manette/pilote) pré-créés, désactivés. */
+const DEFAULT_LOCAL_CONNECTORS: Array<{ id: string; type: string; name: string }> = [
+    { id: 'local-keyboard', type: 'keyboard', name: 'Clavier' },
+    { id: 'local-gamepad', type: 'gamepad', name: 'Manette virtuelle (ViGEm)' },
+    { id: 'local-driver', type: 'driver', name: 'Pilotage bas niveau (Interception/ViGEm)' },
+];
 
 export class StoreService {
     private store = new Store<Schema>({ name: 'houla-connect-config' });
@@ -175,12 +183,24 @@ export class StoreService {
         };
     }
 
-    // ═══════════════════ Connecteurs (multiple par protocole) ═══════════════════
+    // ═══════════════════ Connecteurs (multiple par protocole + locaux) ═══════════════════
     private rawConnectors(): StoredConnector[] {
         return this.store.get('connectors', [] as StoredConnector[]);
     }
+    /** Pré-crée les 3 connecteurs LOCAUX (clavier/manette/pilote), désactivés. Idempotent. */
+    ensureDefaultConnectors(): void {
+        const list = this.rawConnectors();
+        let changed = false;
+        for (const d of DEFAULT_LOCAL_CONNECTORS) {
+            if (!list.some((c) => c.id === d.id)) {
+                list.push({ id: d.id, name: d.name, type: d.type, enabled: false, config: {} });
+                changed = true;
+            }
+        }
+        if (changed) this.store.set('connectors', list);
+    }
     /** Liste pour le renderer : SANS les champs secrets (juste un booléen hasSecret). */
-    listConnectors(): Array<{ id: string; name: string; type: string; config: Record<string, string>; hasSecret: boolean }> {
+    listConnectors(): Array<{ id: string; name: string; type: string; enabled: boolean; config: Record<string, string>; hasSecret: boolean }> {
         return this.rawConnectors().map((c) => {
             const clean: Record<string, string> = {};
             let hasSecret = false;
@@ -188,10 +208,10 @@ export class StoreService {
                 if (SECRET_FIELDS.has(k)) { hasSecret = hasSecret || !!val; continue; }
                 clean[k] = val;
             }
-            return { id: c.id, name: c.name, type: c.type, config: clean, hasSecret };
+            return { id: c.id, name: c.name, type: c.type, enabled: !!c.enabled, config: clean, hasSecret };
         });
     }
-    /** Crée (sans id) ou met à jour (avec id) un connecteur. Champ 'password' vide en MAJ = inchangé. */
+    /** Crée (sans id, activé) ou met à jour (avec id) un connecteur. 'password' vide en MAJ = inchangé. */
     saveConnector(input: { id?: string; name: string; type: string; config: Record<string, string> }): { id: string } {
         const list = this.rawConnectors();
         const cfg: Record<string, string> = {};
@@ -212,9 +232,18 @@ export class StoreService {
             return { id: existing.id };
         }
         const id = randomUUID();
-        list.push({ id, name: input.name, type: input.type, config: cfg });
+        list.push({ id, name: input.name, type: input.type, enabled: true, config: cfg });
         this.store.set('connectors', list);
         return { id };
+    }
+    setConnectorEnabled(id: string, enabled: boolean): void {
+        const list = this.rawConnectors();
+        const c = list.find((x) => x.id === id);
+        if (c) { c.enabled = enabled; this.store.set('connectors', list); }
+    }
+    /** true si un connecteur ACTIVÉ de ce type existe (garde des exécuteurs locaux). */
+    hasEnabledConnector(type: string): boolean {
+        return this.rawConnectors().some((c) => c.type === type && c.enabled);
     }
     deleteConnector(id: string): void {
         this.store.set('connectors', this.rawConnectors().filter((c) => c.id !== id));
@@ -227,10 +256,10 @@ export class StoreService {
         }
         this.store.set('bundleBindings', bindings);
     }
-    /** Config DÉCHIFFRÉE d'un connecteur (usage MAIN uniquement). */
+    /** Config DÉCHIFFRÉE d'un connecteur ACTIVÉ (usage MAIN uniquement). null si absent/désactivé. */
     getConnectorConfig(id: string): { type: string; config: Record<string, string> } | null {
         const c = this.rawConnectors().find((x) => x.id === id);
-        if (!c) return null;
+        if (!c || !c.enabled) return null; // désactivé => non utilisable
         const out: Record<string, string> = {};
         for (const [k, val] of Object.entries(c.config || {})) {
             out[k] = SECRET_FIELDS.has(k) ? this.dec(val) ?? '' : val;

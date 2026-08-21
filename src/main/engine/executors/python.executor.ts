@@ -10,6 +10,7 @@ export class PythonExecutor implements Executor {
     readonly type = 'python' as const;
     readonly capability = 'allowPythonDriver';
     readonly requiresCapability = true;
+    readonly localConnectorType = 'driver';
 
     constructor(private readonly sidecar: () => PythonSidecar) {}
 

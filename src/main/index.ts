@@ -71,6 +71,7 @@ const engine = new Engine({
         const id = store.getBindings(slug)[role];
         return id ? store.getConnectorConfig(id) : null;
     },
+    hasEnabledConnector: (type: string) => store.hasEnabledConnector(type),
     sidecar,
     // TODO focus-guard natif (fenêtre au premier plan). Permissif tant que non implémenté.
     isTargetFocused: () => true,
@@ -263,6 +264,7 @@ function registerIpc(): void {
     ipcMain.handle('connectors:list', () => store.listConnectors());
     ipcMain.handle('connectors:save', (_e, c: any) => store.saveConnector(c));
     ipcMain.handle('connectors:delete', (_e, id: string) => (store.deleteConnector(id), { ok: true }));
+    ipcMain.handle('connectors:enable', (_e, id: string, enabled: boolean) => (store.setConnectorEnabled(id, !!enabled), { ok: true }));
     ipcMain.handle('bindings:get', (_e, slug: string) => store.getBindings(slug));
     ipcMain.handle('bindings:set', (_e, slug: string, role: string, connectorId: string) => (store.setBinding(slug, role, connectorId), { ok: true }));
 
@@ -378,6 +380,7 @@ if (!app.requestSingleInstanceLock()) {
         } else if (!app.isDefaultProtocolClient(CONFIG.protocol)) {
             app.setAsDefaultProtocolClient(CONFIG.protocol);
         }
+        store.ensureDefaultConnectors(); // clavier/manette/pilote pré-créés, désactivés
         registerIpc();
         createWindow();
         createTray();

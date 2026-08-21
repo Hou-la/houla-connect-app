@@ -41,6 +41,7 @@
                 <button class="nav" data-view="store">Store</button>
                 <button class="nav" data-view="lab">Lab</button>
                 <button class="nav" data-view="mine">Mes bundles</button>
+                <button class="nav" data-view="connecteurs">Connecteurs</button>
                 <button class="nav" data-view="settings">Réglages</button>
                 <div class="sidebar__foot">
                     <div class="ws-switch">
@@ -164,27 +165,20 @@
                     <div id="mine-list"></div>
                 </section>
 
+                <!-- CONNECTEURS -->
+                <section id="view-connecteurs" class="view hidden">
+                    <div class="row between">
+                        <h2 class="row" style="gap:8px">Connecteurs <button id="cx-info" class="r-iconguide" title="C'est quoi un connecteur ?">i</button></h2>
+                        <button id="cx-add" class="btn btn--primary">+ Nouveau connecteur</button>
+                    </div>
+                    <p class="muted">Active le clavier / la manette / le pilotage, et ajoute tes connexions (serveur de jeu RCON, OBS, MQTT…). Chaque connecteur a un interrupteur.</p>
+                    <div id="cx-list"></div>
+                    <p id="cx-msg" class="hint"></p>
+                </section>
+
                 <!-- REGLAGES -->
                 <section id="view-settings" class="view hidden">
                     <h2>Réglages</h2>
-                    <div class="card">
-                        <label>Capacités (tout désactivé par défaut)</label>
-                        <div id="caps"></div>
-                    </div>
-                    <div class="card">
-                        <div class="row between">
-                            <label>Connecteurs (RCON, OBS, MQTT, WebSocket, HTTP, OSC)</label>
-                            <button id="cx-add" class="btn btn--primary">+ Nouveau connecteur</button>
-                        </div>
-                        <p class="hint">Un connecteur = une adresse + des identifiants. Stockés en local, chiffrés, jamais envoyés à Hou.la. Tu peux en avoir plusieurs par protocole (ex. plusieurs brokers MQTT).</p>
-                        <div id="cx-list"></div>
-                        <span class="lab-sub">Variable pseudo en jeu ({player})</span>
-                        <div class="row gap">
-                            <input id="cx-player" placeholder="ton pseudo en jeu (remplace {player} dans les commandes RCON)" />
-                            <button id="cx-save-player" class="btn btn--ghost">OK</button>
-                        </div>
-                        <p id="cx-msg" class="hint"></p>
-                    </div>
                     <div class="card">
                         <label>Langue</label>
                         <select id="lang">
@@ -236,6 +230,27 @@
                 <p id="modal-desc" class="muted"></p>
                 <div id="modal-caps" class="chips"></div>
                 <button id="modal-install" class="btn btn--primary">Installer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale info : c'est quoi un connecteur -->
+    <div id="cx-info-modal" class="modal hidden">
+        <div class="modal__box">
+            <button id="cx-info-close" class="modal__close">&#10005;</button>
+            <div class="modal__body">
+                <div class="cgu__content">
+                    <h1>C'est quoi un connecteur ?</h1>
+                    <p>Un <strong>connecteur</strong> est un pont entre Hou.la Connect et quelque chose que tu veux piloter quand un événement arrive en live.</p>
+                    <h2>Deux familles</h2>
+                    <ul>
+                        <li><strong>Locaux</strong> : le <strong>Clavier</strong>, la <strong>Manette virtuelle</strong> et le <strong>Pilotage bas niveau</strong> (pour les jeux qui ignorent le clavier normal). Rien à configurer : tu les <strong>actives</strong> avec l'interrupteur. Ils sont désactivés par défaut, par sécurité.</li>
+                        <li><strong>Réseau</strong> : une <strong>adresse + des identifiants</strong> vers un service — serveur de jeu <strong>RCON</strong> (Minecraft…), <strong>OBS</strong>, <strong>MQTT</strong> (domotique), <strong>WebSocket</strong>, <strong>HTTP/API</strong>, <strong>OSC</strong> (VRChat…). Tu peux en avoir <strong>plusieurs par type</strong> (ex. deux brokers MQTT, plusieurs serveurs).</li>
+                    </ul>
+                    <h2>Comment ça sert</h2>
+                    <p>Dans le <strong>Lab</strong>, chaque interaction choisit son connecteur (« quand on m'envoie une rose → commande RCON <em>sur ce serveur</em> »). Quand tu <strong>installes</strong> un pack, l'app te demande de relier ses connecteurs aux tiens.</p>
+                    <p class="muted">Tout est stocké <strong>en local</strong>, chiffré, et <strong>jamais envoyé à Hou.la</strong>.</p>
+                </div>
             </div>
         </div>
     </div>

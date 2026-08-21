@@ -31,6 +31,8 @@ export interface EngineDeps {
     getMqttConfig: () => MqttConfig | null;
     /** Résout le connecteur lié à un effet (endpoint + identifiants), ou null. */
     resolveConnector: (effect: BundleEffect, bundleSlug?: string) => { type: string; config: Record<string, string> } | null;
+    /** true si un connecteur LOCAL activé de ce type existe (clavier/manette/pilote). */
+    hasEnabledConnector: (type: string) => boolean;
     sidecar: () => PythonSidecar;
     /** Fenêtre cible au premier plan ? (focus-guard clavier/manette). */
     isTargetFocused: () => boolean;
@@ -65,6 +67,16 @@ export class Engine {
 
     private now(): number {
         return Date.now();
+    }
+
+    /** Fusionne la config NON secrète du connecteur dans les variables ({player}, {host}…). */
+    private applyConnectorVars(ctx: FireContext): void {
+        if (!ctx.connector) return;
+        const extra: Record<string, string> = {};
+        for (const [k, v] of Object.entries(ctx.connector.config)) {
+            if (k !== 'password') extra[k] = v; // jamais de secret dans les substitutions
+        }
+        ctx.vars = { ...ctx.vars, ...extra };
     }
 
     private tokenOk(): boolean {
@@ -103,10 +115,10 @@ export class Engine {
         // 2. Gating rôles.
         if (rule.followersOnly && !ctx.isFollower) return audit(false, 'abonnés uniquement');
         if (rule.moderatorsOnly && !ctx.isModerator) return audit(false, 'modérateurs uniquement');
-        // 3. Capacité accordée ? (seulement pour l'injection locale ; le réseau est
-        //    gardé par la présence d'un connecteur configuré.)
-        if (executor.requiresCapability && !this.deps.getCapabilities().has(executor.capability))
-            return audit(false, `capacité non accordée (${executor.capability})`);
+        // 3. Injection locale : gardée par un connecteur LOCAL activé (clavier/manette/
+        //    pilote). Le réseau est gardé par la résolution d'un connecteur (étape 7).
+        if (executor.requiresCapability && !this.deps.hasEnabledConnector(executor.localConnectorType || ''))
+            return audit(false, `connecteur « ${executor.localConnectorType} » désactivé`);
         // 4. Focus-guard clavier/manette (default-deny si focus inconnu/mauvais).
         if ((effect.type === 'keyboard' || effect.type === 'gamepad') && !this.deps.isTargetFocused())
             return audit(false, 'fenêtre cible pas au premier plan');
@@ -126,6 +138,7 @@ export class Engine {
                 this.validated.add(effect as object);
             }
             ctx.connector = this.deps.resolveConnector(effect as BundleEffect);
+            this.applyConnectorVars(ctx);
             await executor.fire(effect as BundleEffect, ctx);
             this.lastFired.set(rule.id, this.now());
             audit(true);
@@ -145,8 +158,8 @@ export class Engine {
         const effect = rule?.effect;
         const executor = effect && this.executors.get(effect.type);
         if (!executor) return { ok: false, reason: 'exécuteur inconnu' };
-        if (executor.requiresCapability && !this.deps.getCapabilities().has(executor.capability))
-            return { ok: false, reason: `capacité non accordée (${executor.capability}) — active-la dans Réglages` };
+        if (executor.requiresCapability && !this.deps.hasEnabledConnector(executor.localConnectorType || ''))
+            return { ok: false, reason: `connecteur « ${executor.localConnectorType} » désactivé — active-le dans Connecteurs` };
         if ((effect.type === 'keyboard' || effect.type === 'gamepad') && !this.deps.isTargetFocused())
             return { ok: false, reason: 'fenêtre cible pas au premier plan (focus le jeu avant de tester)' };
         const ctx: FireContext = {
@@ -160,6 +173,7 @@ export class Engine {
             vars: this.deps.getVars(),
             connector: this.deps.resolveConnector(effect as BundleEffect, bundleSlug),
         };
+        this.applyConnectorVars(ctx);
         try {
             executor.validate(effect as BundleEffect);
             await executor.fire(effect as BundleEffect, ctx);

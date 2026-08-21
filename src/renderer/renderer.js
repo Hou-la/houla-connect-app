@@ -12,7 +12,7 @@ const CAPS = [
 ];
 // Protocoles qui passent par un CONNECTEUR (endpoint + identifiants).
 const CONNECTOR_TYPES = {
-    rcon: { label: 'RCON (jeu)', fields: [['host', 'Adresse du serveur', 'text'], ['port', 'Port (défaut 25575)', 'number'], ['password', 'Mot de passe RCON', 'password']] },
+    rcon: { label: 'RCON (jeu)', fields: [['host', 'Adresse du serveur', 'text'], ['port', 'Port (défaut 25575)', 'number'], ['password', 'Mot de passe RCON', 'password'], ['player', 'Ton pseudo en jeu (remplace {player})', 'text']] },
     obs: { label: 'OBS', fields: [['url', 'URL (ws://127.0.0.1:4455)', 'text'], ['password', 'Mot de passe (optionnel)', 'password']] },
     mqtt: { label: 'MQTT (domotique)', fields: [['url', 'URL (mqtt://127.0.0.1:1883)', 'text'], ['username', 'Utilisateur (optionnel)', 'text'], ['password', 'Mot de passe (optionnel)', 'password']] },
     ws: { label: 'WebSocket', fields: [['url', 'URL (wss://…)', 'text']] },
@@ -82,20 +82,19 @@ async function showApp() {
     $('app-main').classList.remove('hidden');
     await loadWorkspaces();
     await loadInstalled();
-    await loadCaps();
     switchView('capture');
 }
 
 // ── Nav ──
 function switchView(name) {
     document.querySelectorAll('.nav').forEach((n) => n.classList.toggle('active', n.dataset.view === name));
-    ['capture', 'store', 'lab', 'mine', 'settings'].forEach((v) =>
+    ['capture', 'store', 'lab', 'mine', 'connecteurs', 'settings'].forEach((v) =>
         $('view-' + v).classList.toggle('hidden', v !== name),
     );
     if (name === 'store') loadStore();
     if (name === 'mine') loadMyBundles();
     if (name === 'lab') loadLab();
-    if (name === 'settings') loadConnections();
+    if (name === 'connecteurs') loadConnectorsView();
 }
 document.querySelectorAll('.nav').forEach((n) => (n.onclick = () => switchView(n.dataset.view)));
 
@@ -669,23 +668,6 @@ async function loadMyBundles() {
 }
 
 // ── Settings ──
-async function loadCaps() {
-    const { capabilities } = await api.caps.get();
-    const granted = new Set(capabilities);
-    $('caps').innerHTML = '';
-    CAPS.forEach(([key, label]) => {
-        const row = document.createElement('div');
-        row.className = 'cap-row';
-        row.innerHTML = `<span>${label}</span>`;
-        const t = document.createElement('input');
-        t.type = 'checkbox';
-        t.style.width = 'auto';
-        t.checked = granted.has(key);
-        t.onchange = () => (t.checked ? api.caps.grant(key) : api.caps.revoke(key));
-        row.appendChild(t);
-        $('caps').appendChild(row);
-    });
-}
 $('lang').onchange = (e) => api.language(e.target.value);
 api.autoLaunch().then((v) => ($('autolaunch').checked = !!v));
 $('autolaunch').onchange = () => api.autoLaunch($('autolaunch').checked);
@@ -745,30 +727,30 @@ $('connector-save').onclick = async () => {
     } catch (e) { $('connector-msg').textContent = 'Erreur : ' + e.message; }
 };
 
-// ── Vue Connecteurs (Réglages) ──
+// ── Vue Connecteurs ──
+function connectorTypeLabel(type) { return (CONNECTOR_TYPES[type] || {}).label || 'Local'; }
 function renderConnectorsList() {
     const box = $('cx-list');
-    if (!myConnectors.length) { box.innerHTML = '<p class="muted">Aucun connecteur. Ajoute-en un pour RCON, OBS, MQTT…</p>'; return; }
-    box.innerHTML = myConnectors.map((c) =>
-        `<div class="cx-row" data-id="${esc(c.id)}"><span class="cx-type">${esc((CONNECTOR_TYPES[c.type] || {}).label || c.type)}</span><b>${esc(c.name)}</b><button class="cx-edit">Éditer</button><button class="cx-del" title="Supprimer">&#10005;</button></div>`
-    ).join('');
+    if (!myConnectors.length) { box.innerHTML = '<p class="muted">Aucun connecteur.</p>'; return; }
+    box.innerHTML = myConnectors.map((c) => {
+        const isLocal = !CONNECTOR_TYPES[c.type];
+        return `<div class="cx-row" data-id="${esc(c.id)}">`
+            + `<label class="switch" title="Activer / désactiver"><input type="checkbox" class="cx-enable"${c.enabled ? ' checked' : ''}/><span class="switch__track"><span class="switch__thumb"></span></span></label>`
+            + `<span class="cx-type">${esc(connectorTypeLabel(c.type))}</span><b>${esc(c.name)}</b>`
+            + (isLocal ? '' : `<button class="cx-edit">Éditer</button><button class="cx-del" title="Supprimer">&#10005;</button>`)
+            + `</div>`;
+    }).join('');
     box.querySelectorAll('.cx-row').forEach((row) => {
         const c = myConnectors.find((x) => x.id === row.dataset.id);
-        row.querySelector('.cx-edit').onclick = () => openConnectorModal(c, () => { renderConnectorsList(); });
-        row.querySelector('.cx-del').onclick = async () => { await api.connectors.remove(c.id); await loadConnectors(); renderConnectorsList(); };
+        row.querySelector('.cx-enable').onchange = async (e) => { await api.connectors.enable(c.id, e.target.checked); await loadConnectors(); renderConnectorsList(); };
+        const edit = row.querySelector('.cx-edit'); if (edit) edit.onclick = () => openConnectorModal(c, () => renderConnectorsList());
+        const del = row.querySelector('.cx-del'); if (del) del.onclick = async () => { await api.connectors.remove(c.id); await loadConnectors(); renderConnectorsList(); };
     });
 }
-async function loadConnections() {
-    await loadCaps();
-    await loadConnectors();
-    renderConnectorsList();
-    try { const set = new Set((await api.secrets.names()) || []); if (set.has('player')) $('cx-player').placeholder = '✓ défini (laisser vide pour garder)'; } catch { /* noop */ }
-}
+async function loadConnectorsView() { await loadConnectors(); renderConnectorsList(); }
 $('cx-add').onclick = () => openConnectorModal(null, () => renderConnectorsList());
-$('cx-save-player').onclick = async () => {
-    const v = $('cx-player').value.trim();
-    if (v) { await api.secrets.set('player', v); $('cx-player').value = ''; $('cx-msg').textContent = 'Pseudo enregistré ✓'; }
-};
+$('cx-info').onclick = () => $('cx-info-modal').classList.remove('hidden');
+$('cx-info-close').onclick = () => $('cx-info-modal').classList.add('hidden');
 
 // ── Mises à jour ──
 function renderUpdate(u) {
