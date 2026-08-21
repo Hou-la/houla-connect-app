@@ -116,7 +116,7 @@ $('btn-start').onclick = async () => {
     try { await api.engine.start(slug); } catch (e) { logLine({ allowed: false, reason: e.message, ruleId: 'start' }); }
 };
 $('btn-stop').onclick = () => api.engine.stop();
-$('btn-test').onclick = () => api.engine.test('ix_slot_01');
+$('btn-test').onclick = () => api.engine.test();
 $('btn-panic').onclick = () => api.engine.panic();
 
 api.onState((s) => {

@@ -186,7 +186,7 @@ function registerIpc(): void {
         const d = await api.fetchVerifiedManifest(slug); // re-vérifie signature avant exécution
         activeManifest = d.manifest as BundleManifest;
         router.setManifest(activeManifest);
-        const reactSlugs = activeManifest.rules.filter((r) => r.on.type === 'gift').map((r) => r.on.slot!);
+        const reactSlugs = activeManifest.rules.filter((r) => r.on.type === 'gift').map((r) => r.on.giftSlug ?? r.on.slot!);
         const events = ['gift', 'follow', 'comment', 'viewer', 'hearts'];
         const key = await api.ensureEventKey(events);
         conn.connect(key);
@@ -208,7 +208,13 @@ function registerIpc(): void {
         send('onState', { connected: false });
         return { ok: true };
     });
-    ipcMain.handle('engine:test', (_e, slug: string) => (conn.simulateGift(slug), { ok: true }));
+    ipcMain.handle('engine:test', (_e, slug?: string) => {
+        // Sans slug : simule la 1re interaction cadeau du pack actif (générique ou slot).
+        const firstGift = activeManifest?.rules.find((r) => r.on.type === 'gift');
+        const s = slug || firstGift?.on.giftSlug || firstGift?.on.slot || 'ix_slot_01';
+        conn.simulateGift(s);
+        return { ok: true, slug: s };
+    });
     ipcMain.handle('engine:status', () => ({ running: engineRunning, connected: conn.connected }));
     ipcMain.handle('prefs:language', (_e, lang?: string) => {
         if (lang) store.setLanguage(lang);
