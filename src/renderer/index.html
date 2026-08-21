@@ -172,6 +172,31 @@
                         <div id="caps"></div>
                     </div>
                     <div class="card">
+                        <label>Connexions (stockées en local, chiffrées — jamais envoyées à Hou.la)</label>
+                        <span class="lab-sub">Minecraft / RCON</span>
+                        <input id="cx-rconHost" placeholder="adresse du serveur (ex. 127.0.0.1 ou mc.exemple.fr)" />
+                        <div class="row gap">
+                            <input id="cx-rconPort" type="number" placeholder="port RCON (défaut 25575)" />
+                            <input id="cx-rconPassword" type="password" placeholder="mot de passe RCON" />
+                        </div>
+                        <input id="cx-player" placeholder="ton pseudo en jeu (remplace {player})" />
+                        <span class="lab-sub">OBS</span>
+                        <div class="row gap">
+                            <input id="cx-obsUrl" placeholder="ws://127.0.0.1:4455" />
+                            <input id="cx-obsPassword" type="password" placeholder="mot de passe OBS (optionnel)" />
+                        </div>
+                        <span class="lab-sub">MQTT (domotique)</span>
+                        <input id="cx-mqttUrl" placeholder="mqtt://127.0.0.1:1883" />
+                        <div class="row gap">
+                            <input id="cx-mqttUsername" placeholder="utilisateur (optionnel)" />
+                            <input id="cx-mqttPassword" type="password" placeholder="mot de passe (optionnel)" />
+                        </div>
+                        <span class="lab-sub">Hôtes autorisés (HTTP / WebSocket) — séparés par des virgules</span>
+                        <input id="cx-hosts" placeholder="ex. homeassistant.exemple.fr, 192.168.1.50" />
+                        <button id="cx-save" class="btn btn--primary">Enregistrer les connexions</button>
+                        <p id="cx-msg" class="hint"></p>
+                    </div>
+                    <div class="card">
                         <label>Langue</label>
                         <select id="lang">
                             <option value="fr">Français</option>

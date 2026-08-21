@@ -84,6 +84,7 @@ function switchView(name) {
     if (name === 'store') loadStore();
     if (name === 'mine') loadMyBundles();
     if (name === 'lab') loadLab();
+    if (name === 'settings') loadConnections();
 }
 document.querySelectorAll('.nav').forEach((n) => (n.onclick = () => switchView(n.dataset.view)));
 
@@ -543,6 +544,35 @@ async function loadCaps() {
     });
 }
 $('lang').onchange = (e) => api.language(e.target.value);
+
+// ── Connexions (RCON / OBS / MQTT + hôtes) ──
+// Les secrets sont WRITE-ONLY (jamais relus côté renderer) : on ne pré-remplit pas
+// leur valeur, on indique juste ce qui est déjà configuré. Les hôtes, eux, se relisent.
+const CX_SECRETS = ['rconHost', 'rconPort', 'rconPassword', 'player', 'obsUrl', 'obsPassword', 'mqttUrl', 'mqttUsername', 'mqttPassword'];
+async function loadConnections() {
+    await loadCaps();
+    const info = await api.caps.get();
+    $('cx-hosts').value = (info.hostAllowlist || []).join(', ');
+    let names = [];
+    try { names = (await api.secrets.names()) || []; } catch { /* noop */ }
+    const set = new Set(names);
+    CX_SECRETS.forEach((n) => { const el = $('cx-' + n); if (el && set.has(n)) el.placeholder = '✓ configuré (laisser vide pour garder)'; });
+}
+$('cx-save').onclick = async () => {
+    try {
+        for (const n of CX_SECRETS) {
+            const el = $('cx-' + n);
+            const val = (el && el.value || '').trim();
+            if (val) await api.secrets.set(n, val); // vide = on ne touche pas
+        }
+        const hosts = $('cx-hosts').value.split(',').map((s) => s.trim()).filter(Boolean);
+        await api.caps.setHosts(hosts);
+        $('cx-msg').textContent = 'Connexions enregistrées ✓';
+        // Ne pas laisser les mots de passe en clair à l'écran.
+        ['rconPassword', 'obsPassword', 'mqttPassword'].forEach((n) => { if ($('cx-' + n)) $('cx-' + n).value = ''; });
+        loadConnections();
+    } catch (e) { $('cx-msg').textContent = 'Erreur : ' + e.message; }
+};
 
 // ── Mises à jour ──
 function renderUpdate(u) {
