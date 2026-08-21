@@ -423,7 +423,17 @@ function renderRules() {
         if (q('.r-connector')) q('.r-connector').onchange = () => onConnectorPick(el, r);
         if (q('.r-iconguide')) q('.r-iconguide').onclick = () => $('icon-guide-modal').classList.remove('hidden');
         if (q('.r-iconbtn')) q('.r-iconbtn').onclick = async () => {
-            if (!labCurrentSlug) { $('lab-msg2').textContent = 'Crée d’abord le pack, puis ajoute les icônes.'; return; }
+            // L'icône est hébergée côté serveur : le pack doit exister. En création,
+            // on le crée à la volée (slug + titre requis) puis on passe en édition.
+            if (!labCurrentSlug) {
+                const slug = $('lab-slug').value.trim(), title = $('lab-title').value.trim();
+                if (!slug || !title) { $('lab-msg2').textContent = 'Renseigne d’abord le slug et le titre du pack (en haut), puis clique Icône.'; return; }
+                try {
+                    await api.lab.create({ slug, title, game: $('lab-game').value.trim() || undefined, tags: labTags });
+                    labCurrentSlug = slug; labLatestVersion = null; syncLabBindings(); setLabMode('edit');
+                    $('lab-msg2').textContent = 'Pack créé ✓ — choisis maintenant l’icône…';
+                } catch (e) { $('lab-msg2').textContent = friendlyError(e, 'Impossible de créer le pack.'); return; }
+            }
             readRule(el, r);
             $('lab-msg2').textContent = 'Envoi de l’icône…';
             try {
