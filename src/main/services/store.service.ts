@@ -26,8 +26,10 @@ interface Schema {
     hostAllowlist?: string[];
     secrets?: Record<string, string>; // valeurs chiffrées (rconHost, rconPassword, obsUrl, ...)
     vars?: Record<string, string>; // variables non secrètes ({player}, ...)
-    installedBundles?: InstalledBundle[];
-    activeBundleSlug?: string;
+    installedBundles?: InstalledBundle[]; // legacy (global) — migré vers installedByEnv
+    activeBundleSlug?: string; // legacy (global) — migré vers activeByEnv
+    installedByEnv?: Record<string, InstalledBundle[]>; // packs installés PAR environnement
+    activeByEnv?: Record<string, string>; // pack actif PAR environnement
     connectors?: StoredConnector[]; // connecteurs nommés (multiple par type)
     bundleBindings?: Record<string, Record<string, string>>; // slug -> role -> connectorId
     environment?: string; // 'prod' | 'staging' | 'dev' (sélecteur admin)
@@ -280,15 +282,44 @@ export class StoreService {
         this.store.set('bundleBindings', all);
     }
 
-    // ── Bundles installés ──
+    // ── Bundles installés (SCOPÉS par environnement) ──
+    // Un pack n'existe que dans la base de SON environnement : un pack installé en
+    // prod n'a pas de manifeste en dev (-> 404 au démarrage). On isole donc la liste
+    // installée ET le pack actif PAR environnement, pour ne jamais proposer un pack
+    // fantôme après un changement d'env. Les anciennes clés globales sont migrées
+    // une fois vers le bucket 'prod' (l'app ne parlait qu'à la prod avant le sélecteur).
+    private envKey(): string {
+        const e = this.getEnvironment();
+        return !e || e === 'prod' ? 'prod' : e;
+    }
+    private installedMap(): Record<string, InstalledBundle[]> {
+        let byEnv = this.store.get('installedByEnv') as Record<string, InstalledBundle[]> | undefined;
+        if (!byEnv) {
+            const legacy = this.store.get('installedBundles', [] as InstalledBundle[]);
+            byEnv = legacy.length ? { prod: legacy } : {};
+            this.store.set('installedByEnv', byEnv);
+        }
+        return byEnv;
+    }
+    private activeMap(): Record<string, string> {
+        let byEnv = this.store.get('activeByEnv') as Record<string, string> | undefined;
+        if (!byEnv) {
+            const legacy = this.store.get('activeBundleSlug') as string | undefined;
+            byEnv = legacy ? { prod: legacy } : {};
+            this.store.set('activeByEnv', byEnv);
+        }
+        return byEnv;
+    }
     getInstalled(): InstalledBundle[] {
-        return this.store.get('installedBundles', [] as InstalledBundle[]);
+        return this.installedMap()[this.envKey()] || [];
     }
     setInstalled(list: InstalledBundle[]) {
-        this.store.set('installedBundles', list);
+        const byEnv = this.installedMap();
+        byEnv[this.envKey()] = list;
+        this.store.set('installedByEnv', byEnv);
     }
-    getActiveBundleSlug() {
-        return this.store.get('activeBundleSlug');
+    getActiveBundleSlug(): string | undefined {
+        return this.activeMap()[this.envKey()];
     }
 
     // ── Démarrage automatique (arrière-plan) — activé par défaut ──
@@ -323,7 +354,9 @@ export class StoreService {
         this.store.set('giftCatalogCache', { at: Date.now(), gifts });
     }
     setActiveBundleSlug(slug?: string) {
-        if (slug) this.store.set('activeBundleSlug', slug);
-        else this.store.delete('activeBundleSlug');
+        const byEnv = this.activeMap();
+        if (slug) byEnv[this.envKey()] = slug;
+        else delete byEnv[this.envKey()];
+        this.store.set('activeByEnv', byEnv);
     }
 }

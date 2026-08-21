@@ -89,7 +89,7 @@ const engine = new Engine({
 });
 const router = new TriggerRouter(engine, () => store.resolveVars());
 
-const conn = new ConnectionService(router, (s: ConnState) => send('onState', s));
+const conn = new ConnectionService(router, (s: ConnState) => send('onState', s), () => api.base());
 
 // ═══════════════════════ Fenêtre frameless ═══════════════════════
 function createWindow(): void {
@@ -322,8 +322,8 @@ function registerIpc(): void {
 
     // Runtime
     ipcMain.handle('engine:start', async (_e, slug: string) => {
-        store.setActiveBundleSlug(slug);
         const d = await api.fetchVerifiedManifest(slug); // re-vérifie signature avant exécution
+        store.setActiveBundleSlug(slug); // seulement APRÈS un fetch réussi (pas de pack fantôme)
         activeManifest = d.manifest as BundleManifest;
         router.setManifest(activeManifest);
         const reactSlugs = activeManifest.rules.filter((r) => r.on.type === 'gift').map((r) => r.on.giftSlug ?? r.on.slot!);

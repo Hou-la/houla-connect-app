@@ -8,8 +8,11 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': 
 // Le détail complet part TOUJOURS en console pour le debug.
 function friendlyError(e, fallback) {
     if (e) console.error(e);
-    const m = (e && e.message != null ? String(e.message) : String(e || '')).split('\n')[0].trim();
-    if (!m || m.length > 160 || /HttpError|node_modules|\bat\s|Failed to fetch|NetworkError|ENOTFOUND|ECONN|getaddrinfo|<!DOCTYPE|\bstack\b/i.test(m)) {
+    let m = (e && e.message != null ? String(e.message) : String(e || '')).split('\n')[0].trim();
+    // Electron enveloppe les rejets IPC : « Error invoking remote method 'x': Error: <vrai msg> ».
+    // On retire l'enveloppe (et un « Error: » résiduel) pour ne garder QUE le message métier.
+    m = m.replace(/^Error invoking remote method '[^']*':\s*/i, '').replace(/^(Uncaught\s+)?Error:\s*/i, '').trim();
+    if (!m || m.length > 240 || /HttpError|node_modules|\bat\s|Failed to fetch|NetworkError|ENOTFOUND|ECONN|getaddrinfo|<!DOCTYPE|\bstack\b/i.test(m)) {
         return fallback || 'Une erreur est survenue. Réessaie.';
     }
     return m;
@@ -165,7 +168,7 @@ async function loadInstalled(toMine) {
 $('btn-start').onclick = async () => {
     const slug = $('active-bundle').value;
     if (!slug) return;
-    try { await api.engine.start(slug); } catch (e) { logLine({ allowed: false, reason: friendlyError(e, 'Connexion au live impossible.'), ruleId: 'start' }); }
+    try { await api.engine.start(slug); } catch (e) { logLine({ allowed: false, reason: friendlyError(e, "Le pack n'a pas pu démarrer."), ruleId: 'start' }); }
 };
 $('btn-stop').onclick = () => api.engine.stop();
 $('btn-test').onclick = () => api.engine.test();

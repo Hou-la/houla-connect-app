@@ -211,11 +211,27 @@ export class ApiService {
         return res.json();
     }
 
+    /** Libellé humain de l'environnement courant (pour les messages d'erreur). */
+    private envLabel(): string {
+        const e = this.store.getEnvironment();
+        return e === 'dev' ? 'Développement' : e === 'staging' ? 'Staging' : 'Production';
+    }
+
     /** Récupère + VÉRIFIE le manifeste signé d'un bundle. Lève si signature invalide. */
     async fetchVerifiedManifest(slug: string, version?: string): Promise<any> {
         const qs = version ? `?version=${encodeURIComponent(version)}` : '';
         const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}/manifest${qs}`);
-        if (!res.ok) throw new Error(`manifest fetch failed: ${res.status}`);
+        if (!res.ok) {
+            // 404/403 = le pack n'existe pas (ou pas publié) SUR CET ENVIRONNEMENT.
+            // Un pack installé en Production n'a pas de manifeste en Développement.
+            if (res.status === 404 || res.status === 403) {
+                throw new Error(
+                    `Le pack « ${slug} » est introuvable sur l'environnement ${this.envLabel()}. ` +
+                        `Il n'existe peut-être que sur un autre environnement — bascule d'environnement dans les Réglages, ou (re)crée-le dans le Lab.`,
+                );
+            }
+            throw new Error(`Impossible de récupérer le pack « ${slug} » (${res.status}). Réessaie dans un instant.`);
+        }
         const d: any = await res.json();
         await this.verifySignature(d);
         return d;

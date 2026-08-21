@@ -1,5 +1,4 @@
 import { HoulaLiveConnection } from '@houla/live-connector';
-import { CONFIG } from '../config';
 import { TriggerRouter } from '../engine/trigger-router';
 
 export interface ConnState {
@@ -16,11 +15,14 @@ export class ConnectionService {
     constructor(
         private readonly router: TriggerRouter,
         private readonly onState: (s: ConnState) => void,
+        // URL de l'API de l'environnement COURANT (prod/staging/dev). La clé event
+        // est mintée sur cet env : le socket DOIT viser le même, sinon auth rejetée.
+        private readonly baseUrl: () => string,
     ) {}
 
     connect(eventKey: string): void {
         this.disconnect();
-        this.conn = new HoulaLiveConnection({ token: eventKey, url: CONFIG.apiUrl });
+        this.conn = new HoulaLiveConnection({ token: eventKey, url: this.baseUrl() });
         this.conn.on('connected', (info: any) => this.onState({ connected: true, events: info.events }));
         this.conn.on('disconnected', () => this.onState({ connected: false }));
         this.conn.on('error', (e: any) => this.onState({ connected: false, error: e.message }));
