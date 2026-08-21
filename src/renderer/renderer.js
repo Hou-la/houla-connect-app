@@ -3,17 +3,28 @@ const api = window.houlaConnect;
 const $ = (id) => document.getElementById(id);
 const TRANSPARENT = 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=';
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+// Seule l'injection LOCALE invasive exige un consentement explicite. Les protocoles
+// réseau (RCON/OBS/MQTT/WS/HTTP/OSC) sont gardés par la présence d'un CONNECTEUR.
 const CAPS = [
     ['allowKeyboard', 'Clavier (nut.js)'],
     ['allowGamepad', 'Manette virtuelle (ViGEm)'],
     ['allowPythonDriver', 'Pilotage bas niveau (Interception/ViGEm)'],
-    ['allowRcon', 'RCON (Minecraft…)'],
-    ['allowObs', 'OBS'],
-    ['allowHttp', 'HTTP / domotique'],
-    ['allowMqtt', 'MQTT (domotique / IoT)'],
-    ['allowOsc', 'OSC (VRChat, VJ, lumières)'],
-    ['allowWs', 'WebSocket (overlays custom)'],
 ];
+// Protocoles qui passent par un CONNECTEUR (endpoint + identifiants).
+const CONNECTOR_TYPES = {
+    rcon: { label: 'RCON (jeu)', fields: [['host', 'Adresse du serveur', 'text'], ['port', 'Port (défaut 25575)', 'number'], ['password', 'Mot de passe RCON', 'password']] },
+    obs: { label: 'OBS', fields: [['url', 'URL (ws://127.0.0.1:4455)', 'text'], ['password', 'Mot de passe (optionnel)', 'password']] },
+    mqtt: { label: 'MQTT (domotique)', fields: [['url', 'URL (mqtt://127.0.0.1:1883)', 'text'], ['username', 'Utilisateur (optionnel)', 'text'], ['password', 'Mot de passe (optionnel)', 'password']] },
+    ws: { label: 'WebSocket', fields: [['url', 'URL (wss://…)', 'text']] },
+    http: { label: 'HTTP / API', fields: [['baseUrl', 'URL de base (https://…)', 'text']] },
+    osc: { label: 'OSC (VRChat, VJ)', fields: [['host', 'Adresse (défaut 127.0.0.1)', 'text'], ['port', 'Port (défaut 9000)', 'number']] },
+};
+const CONNECTOR_PROTOCOLS = Object.keys(CONNECTOR_TYPES);
+function slugifyRole(s) {
+    return String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'connecteur';
+}
+let myConnectors = []; // [{id,name,type,config,hasSecret}]
+async function loadConnectors() { try { myConnectors = (await api.connectors.list()) || []; } catch { myConnectors = []; } }
 
 // ── Window controls ──
 $('win-min').onclick = () => api.win.minimize();
@@ -259,12 +270,20 @@ function execFieldHtml(r) {
         case 'gamepad': return `<select class="r-button">${GP_BUTTONS.map((b) => `<option>${b}</option>`).join('')}</select>`;
         case 'rcon': return `<input type="text" class="r-command" placeholder="commande (ex. give {player} minecraft:diamond 1)" />`;
         case 'obs': return `<input type="text" class="r-request" placeholder="requête OBS (ex. SetCurrentProgramScene)" />`;
-        case 'http': return `<select class="r-method"><option>GET</option><option>POST</option><option>PUT</option></select><input type="text" class="r-url" placeholder="https://…" />`;
+        case 'http': return `<select class="r-method"><option>GET</option><option>POST</option><option>PUT</option></select><input type="text" class="r-path" placeholder="chemin (ex. /api/toggle) — optionnel" />`;
         case 'mqtt': return `<input type="text" class="r-topic" placeholder="topic (ex. maison/led/set)" /><input type="text" class="r-payload" placeholder="message (ex. ON)" />`;
         case 'osc': return `<input type="text" class="r-address" placeholder="/avatar/parameters/… (VRChat)" /><input type="text" class="r-oscargs" placeholder="valeurs séparées par , (ex. 1, true)" />`;
-        case 'ws': return `<input type="text" class="r-wsurl" placeholder="wss://…" /><input type="text" class="r-wsmsg" placeholder="message à envoyer" />`;
+        case 'ws': return `<input type="text" class="r-wsmsg" placeholder="message à envoyer" />`;
         default: return '';
     }
+}
+/** Sélecteur de connecteur (protocoles réseau) : les connecteurs de CE type + « Nouveau ». */
+function connectorPickerHtml(r) {
+    const t = r.effect.type;
+    if (!CONNECTOR_PROTOCOLS.includes(t)) return '';
+    const opts = myConnectors.filter((c) => c.type === t)
+        .map((c) => `<option value="${esc(c.id)}"${r.effect._connectorId === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+    return `<select class="r-connector" title="Connecteur (adresse + identifiants)"><option value="">— connecteur —</option>${opts}<option value="__new__">+ Nouveau…</option></select>`;
 }
 function newRule() { return { event: { type: 'gift', giftSlug: defaultGiftSlug() }, effect: { type: 'keyboard', keys: 'space', backend: 'auto' }, followersOnly: false, moderatorsOnly: false }; }
 
@@ -277,13 +296,13 @@ function readRule(el, r) {
     if (r.effect.type === 'gamepad') r.effect.button = q('.r-button') ? q('.r-button').value : 'A';
     if (r.effect.type === 'rcon') r.effect.command = q('.r-command') ? q('.r-command').value : '';
     if (r.effect.type === 'obs') r.effect.request = q('.r-request') ? q('.r-request').value : '';
-    if (r.effect.type === 'http') { r.effect.method = q('.r-method') ? q('.r-method').value : 'POST'; r.effect.url = q('.r-url') ? q('.r-url').value : ''; }
+    if (r.effect.type === 'http') { r.effect.method = q('.r-method') ? q('.r-method').value : 'POST'; r.effect.path = q('.r-path') ? q('.r-path').value : ''; }
     if (r.effect.type === 'mqtt') { r.effect.topic = q('.r-topic') ? q('.r-topic').value : ''; r.effect.payload = q('.r-payload') ? q('.r-payload').value : ''; }
     if (r.effect.type === 'osc') {
         r.effect.address = q('.r-address') ? q('.r-address').value : '';
         r.effect.args = q('.r-oscargs') ? parseOscArgs(q('.r-oscargs').value) : [];
     }
-    if (r.effect.type === 'ws') { r.effect.url = q('.r-wsurl') ? q('.r-wsurl').value : ''; r.effect.message = q('.r-wsmsg') ? q('.r-wsmsg').value : ''; }
+    if (r.effect.type === 'ws') { r.effect.message = q('.r-wsmsg') ? q('.r-wsmsg').value : ''; }
     const role = q('.r-role') ? q('.r-role').value : 'all';
     r.followersOnly = role === 'followers';
     r.moderatorsOnly = role === 'moderators';
@@ -296,6 +315,47 @@ function parseOscArgs(raw) {
         const n = Number(s);
         return Number.isFinite(n) && s !== '' ? n : s;
     });
+}
+/** Lie (localement) le rôle de l'effet au connecteur choisi, pour le pack en cours. */
+function bindLabConnector(r) {
+    if (labCurrentSlug && r.effect.connector && r.effect._connectorId) {
+        api.bindings.set(labCurrentSlug, r.effect.connector, r.effect._connectorId);
+    }
+}
+/** Enregistre toutes les liaisons rôle->connecteur du pack (une fois le slug connu). */
+function syncLabBindings() {
+    if (!labCurrentSlug) return;
+    for (const r of labRules) bindLabConnector(r);
+}
+/** true s'il reste une interaction réseau sans connecteur choisi (non bloquant : on prévient). */
+function missingConnector() {
+    return labRules.some((r) => CONNECTOR_PROTOCOLS.includes(r.effect.type) && !r.effect._connectorId && !r.effect.connector);
+}
+function onConnectorPick(el, r) {
+    const sel = el.querySelector('.r-connector');
+    const val = sel.value;
+    if (val === '__new__') {
+        openConnectorModal(null, async (saved) => {
+            await loadConnectors();
+            if (saved) { r.effect._connectorId = saved.id; r.effect.connector = slugifyRole(saved.name); bindLabConnector(r); }
+            renderRules();
+        }, r.effect.type);
+        sel.value = r.effect._connectorId || '';
+        return;
+    }
+    if (!val) { r.effect._connectorId = null; r.effect.connector = undefined; return; }
+    const c = myConnectors.find((x) => x.id === val);
+    const role = c ? slugifyRole(c.name) : r.effect.type;
+    r.effect._connectorId = val; r.effect.connector = role;
+    bindLabConnector(r);
+    // Confort : applique le même connecteur aux autres interactions du MÊME type
+    // encore VIDES (ex. 30 règles RCON d'un coup). Override par règle toujours possible.
+    for (const other of labRules) {
+        if (other !== r && other.effect.type === r.effect.type && !other.effect._connectorId) {
+            other.effect._connectorId = val; other.effect.connector = role; bindLabConnector(other);
+        }
+    }
+    renderRules();
 }
 function renderRules() {
     const box = $('lab-rules');
@@ -311,7 +371,7 @@ function renderRules() {
             <div class="rule__part"><span class="rule__lbl">ALORS</span>
                 <div class="rule__fields">
                     <select class="r-exec">${EXECS.map(([v, l]) => `<option value="${v}"${r.effect.type === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
-                    ${execFieldHtml(r)}</div></div>
+                    ${execFieldHtml(r)}${connectorPickerHtml(r)}</div></div>
             <div class="rule__part rule__part--foot"><span class="rule__lbl">SI</span>
                 <div class="rule__fields">
                     <select class="r-role" title="Qui peut déclencher cette règle ?">${ROLES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
@@ -325,11 +385,12 @@ function renderRules() {
         if (r.effect.type === 'gamepad' && q('.r-button')) q('.r-button').value = r.effect.button || 'A';
         if (r.effect.type === 'rcon' && q('.r-command')) q('.r-command').value = r.effect.command || '';
         if (r.effect.type === 'obs' && q('.r-request')) q('.r-request').value = r.effect.request || '';
-        if (r.effect.type === 'http') { if (q('.r-method')) q('.r-method').value = r.effect.method || 'POST'; if (q('.r-url')) q('.r-url').value = r.effect.url || ''; }
+        if (r.effect.type === 'http') { if (q('.r-method')) q('.r-method').value = r.effect.method || 'POST'; if (q('.r-path')) q('.r-path').value = r.effect.path || ''; }
         if (r.effect.type === 'mqtt') { if (q('.r-topic')) q('.r-topic').value = r.effect.topic || ''; if (q('.r-payload')) q('.r-payload').value = r.effect.payload || ''; }
         if (r.effect.type === 'osc') { if (q('.r-address')) q('.r-address').value = r.effect.address || ''; if (q('.r-oscargs')) q('.r-oscargs').value = (r.effect.args || []).join(', '); }
-        if (r.effect.type === 'ws') { if (q('.r-wsurl')) q('.r-wsurl').value = r.effect.url || ''; if (q('.r-wsmsg')) q('.r-wsmsg').value = r.effect.message || ''; }
+        if (r.effect.type === 'ws') { if (q('.r-wsmsg')) q('.r-wsmsg').value = r.effect.message || ''; }
         if (q('.r-role')) q('.r-role').value = r.moderatorsOnly ? 'moderators' : r.followersOnly ? 'followers' : 'all';
+        if (q('.r-connector')) q('.r-connector').onchange = () => onConnectorPick(el, r);
         if (q('.r-iconguide')) q('.r-iconguide').onclick = () => $('icon-guide-modal').classList.remove('hidden');
         if (q('.r-iconbtn')) q('.r-iconbtn').onclick = async () => {
             if (!labCurrentSlug) { $('lab-msg2').textContent = 'Crée d’abord le pack, puis ajoute les icônes.'; return; }
@@ -349,7 +410,7 @@ function renderRules() {
         };
         q('.r-exec').onchange = (e) => { r.effect = { type: e.target.value }; renderRules(); };
         el.querySelectorAll('input, select').forEach((inp) => {
-            if (inp.classList.contains('r-event') || inp.classList.contains('r-exec')) return;
+            if (inp.classList.contains('r-event') || inp.classList.contains('r-exec') || inp.classList.contains('r-connector')) return;
             inp.addEventListener('input', () => readRule(el, r));
         });
         q('.r-del').onclick = () => { labRules.splice(i, 1); renderRules(); };
@@ -358,7 +419,7 @@ function renderRules() {
             const res = q('.rule__result');
             res.textContent = 'Test en cours…'; res.className = 'rule__result';
             try {
-                const v = await api.engine.testRule(buildRule(r, i));
+                const v = await api.engine.testRule(buildRule(r, i), labCurrentSlug);
                 if (v && v.ok) { res.textContent = '✓ Déclenché'; res.className = 'rule__result ok'; }
                 else { res.textContent = '✗ ' + ((v && v.reason) || 'échec'); res.className = 'rule__result no'; }
             } catch (e) { res.textContent = '✗ ' + e.message; res.className = 'rule__result no'; }
@@ -379,10 +440,12 @@ function buildRule(r, i) {
     if (r.effect.type === 'gamepad') effect.button = r.effect.button;
     if (r.effect.type === 'rcon') effect.command = r.effect.command;
     if (r.effect.type === 'obs') effect.request = r.effect.request;
-    if (r.effect.type === 'http') { effect.method = r.effect.method; effect.url = r.effect.url; }
+    if (r.effect.type === 'http') { effect.method = r.effect.method; if (r.effect.path) effect.path = r.effect.path; }
     if (r.effect.type === 'mqtt') { effect.topic = r.effect.topic; effect.payload = r.effect.payload || ''; }
     if (r.effect.type === 'osc') { effect.address = r.effect.address; if (r.effect.args && r.effect.args.length) effect.args = r.effect.args; }
-    if (r.effect.type === 'ws') { effect.url = r.effect.url; effect.message = r.effect.message || ''; }
+    if (r.effect.type === 'ws') { effect.message = r.effect.message || ''; }
+    // Rôle de connecteur (protocoles réseau) : l'endpoint est lié à l'installation.
+    if (CONNECTOR_PROTOCOLS.includes(r.effect.type) && r.effect.connector) effect.connector = r.effect.connector;
     const rule = { id: 'r' + (i + 1), on, effect };
     if (r.followersOnly) rule.followersOnly = true;
     if (r.moderatorsOnly) rule.moderatorsOnly = true;
@@ -492,6 +555,13 @@ async function enterEditMode(slug) {
     const lastVis = versions.length ? versions[0].visibility : b.visibility;
     $('lab-vis').checked = lastVis === 'public'; $('lab-vis-label').textContent = lastVis === 'public' ? 'Public' : 'Privé';
     labRules = versions.length ? manifestToRules(versions[0].manifestJson) : [newRule()];
+    // Restaure le connecteur choisi par rôle (liaisons locales du pack).
+    try {
+        const bindings = (await api.bindings.get(b.slug)) || {};
+        for (const r of labRules) {
+            if (r.effect.connector && bindings[r.effect.connector]) r.effect._connectorId = bindings[r.effect.connector];
+        }
+    } catch { /* noop */ }
     renderTags();
     if (labJsonMode) $('lab-manifest').value = JSON.stringify(buildManifest(), null, 2); else renderRules();
     setLabMode('edit');
@@ -499,7 +569,7 @@ async function enterEditMode(slug) {
 $('lab-new-btn').onclick = () => enterCreateMode();
 
 async function loadLab() {
-    await Promise.all([loadGiftCatalog(), loadDictionaries()]);
+    await Promise.all([loadGiftCatalog(), loadDictionaries(), loadConnectors()]);
     if (pendingEditSlug) { const s = pendingEditSlug; pendingEditSlug = null; await enterEditMode(s); }
     else if (!(labMode === 'edit' && labCurrentSlug)) enterCreateMode();
 }
@@ -525,6 +595,9 @@ function missingCustomIcon() {
 $('lab-submit-btn').onclick = async () => {
     const visibility = $('lab-vis').checked ? 'public' : 'private';
 
+    if (!labJsonMode && missingConnector())
+        return ($('lab-msg2').textContent = 'Chaque interaction réseau doit avoir un connecteur — choisis-en un ou crée-en un (+ Nouveau…).');
+
     if (labMode === 'create') {
         const slug = $('lab-slug').value.trim(), title = $('lab-title').value.trim();
         if (!slug || !title) return ($('lab-msg').textContent = 'Slug et titre sont obligatoires.');
@@ -532,6 +605,7 @@ $('lab-submit-btn').onclick = async () => {
         try {
             await api.lab.create({ slug, title, game: $('lab-game').value.trim() || undefined, tags: labTags });
             labCurrentSlug = slug; labLatestVersion = null;
+            syncLabBindings(); // enregistre les liaisons rôle->connecteur (slug désormais connu)
             if (hasCustom) {
                 // Icônes obligatoires : on ne peut les uploader qu'une fois le pack créé.
                 // On passe en ÉDITION (brouillon conservé) pour les ajouter avant de soumettre.
@@ -551,6 +625,7 @@ $('lab-submit-btn').onclick = async () => {
     // Édition : nouvelle version
     if (!labJsonMode && missingCustomIcon())
         return ($('lab-msg2').textContent = 'Chaque « cadeau personnalisé » doit avoir une icône.');
+    syncLabBindings();
     let manifest;
     if (labJsonMode) { try { manifest = JSON.parse($('lab-manifest').value); } catch { return ($('lab-msg2').textContent = 'JSON invalide.'); } }
     else manifest = buildManifest();
@@ -595,33 +670,84 @@ $('lang').onchange = (e) => api.language(e.target.value);
 api.autoLaunch().then((v) => ($('autolaunch').checked = !!v));
 $('autolaunch').onchange = () => api.autoLaunch($('autolaunch').checked);
 
-// ── Connexions (RCON / OBS / MQTT + hôtes) ──
-// Les secrets sont WRITE-ONLY (jamais relus côté renderer) : on ne pré-remplit pas
-// leur valeur, on indique juste ce qui est déjà configuré. Les hôtes, eux, se relisent.
-const CX_SECRETS = ['rconHost', 'rconPort', 'rconPassword', 'player', 'obsUrl', 'obsPassword', 'mqttUrl', 'mqttUsername', 'mqttPassword'];
+// ══════════ Connecteurs (composant partagé : modale + Réglages + Lab) ══════════
+/** Construit le formulaire d'un connecteur dans `container`. Réutilisé partout. */
+function buildConnectorForm(container, connector, presetType) {
+    const type = connector?.type || presetType || 'rcon';
+    container.dataset.connectorId = connector?.id || '';
+    const typeLocked = !!presetType && !connector; // depuis le Lab : type imposé
+    container.innerHTML =
+        `<input class="cf-name" placeholder="Nom (ex. Serveur Minecraft, Broker salon)" />`
+        + `<select class="cf-type"${typeLocked ? ' disabled' : ''}>${Object.entries(CONNECTOR_TYPES).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join('')}</select>`
+        + `<div class="cf-fields"></div>`;
+    const nameEl = container.querySelector('.cf-name'); nameEl.value = connector?.name || '';
+    const typeEl = container.querySelector('.cf-type'); typeEl.value = type;
+    const renderFields = () => {
+        const t = typeEl.value;
+        container.querySelector('.cf-fields').innerHTML = CONNECTOR_TYPES[t].fields.map(([k, label, kind]) => {
+            const val = connector && connector.type === t ? esc(connector.config?.[k] || '') : '';
+            const isPw = kind === 'password';
+            const ph = isPw && connector?.hasSecret ? '✓ défini (laisser vide pour garder)' : label;
+            return `<input class="cf-f" data-k="${k}" type="${kind === 'number' ? 'number' : isPw ? 'password' : 'text'}" placeholder="${esc(ph)}" value="${isPw ? '' : val}" />`;
+        }).join('');
+    };
+    typeEl.onchange = renderFields;
+    renderFields();
+}
+function readConnectorForm(container) {
+    const id = container.dataset.connectorId || undefined;
+    const name = container.querySelector('.cf-name').value.trim();
+    const type = container.querySelector('.cf-type').value;
+    const config = {};
+    container.querySelectorAll('.cf-f').forEach((el) => { config[el.dataset.k] = el.value.trim(); });
+    return { id, name, type, config };
+}
+let connectorOnSaved = null;
+function openConnectorModal(connector, onSaved, presetType) {
+    connectorOnSaved = onSaved || null;
+    $('connector-modal-title').textContent = connector ? 'Éditer le connecteur' : 'Nouveau connecteur';
+    $('connector-msg').textContent = '';
+    buildConnectorForm($('connector-form'), connector, presetType);
+    $('connector-modal').classList.remove('hidden');
+}
+function closeConnectorModal() { $('connector-modal').classList.add('hidden'); connectorOnSaved = null; }
+$('connector-close').onclick = closeConnectorModal;
+$('connector-cancel').onclick = closeConnectorModal;
+$('connector-save').onclick = async () => {
+    const dto = readConnectorForm($('connector-form'));
+    if (!dto.name) { $('connector-msg').textContent = 'Donne un nom au connecteur.'; return; }
+    try {
+        const res = await api.connectors.save(dto);
+        await loadConnectors();
+        const saved = myConnectors.find((c) => c.id === (res && res.id)) || null;
+        closeConnectorModal();
+        if (connectorOnSaved) connectorOnSaved(saved);
+    } catch (e) { $('connector-msg').textContent = 'Erreur : ' + e.message; }
+};
+
+// ── Vue Connecteurs (Réglages) ──
+function renderConnectorsList() {
+    const box = $('cx-list');
+    if (!myConnectors.length) { box.innerHTML = '<p class="muted">Aucun connecteur. Ajoute-en un pour RCON, OBS, MQTT…</p>'; return; }
+    box.innerHTML = myConnectors.map((c) =>
+        `<div class="cx-row" data-id="${esc(c.id)}"><span class="cx-type">${esc((CONNECTOR_TYPES[c.type] || {}).label || c.type)}</span><b>${esc(c.name)}</b><button class="cx-edit">Éditer</button><button class="cx-del" title="Supprimer">&#10005;</button></div>`
+    ).join('');
+    box.querySelectorAll('.cx-row').forEach((row) => {
+        const c = myConnectors.find((x) => x.id === row.dataset.id);
+        row.querySelector('.cx-edit').onclick = () => openConnectorModal(c, () => { renderConnectorsList(); });
+        row.querySelector('.cx-del').onclick = async () => { await api.connectors.remove(c.id); await loadConnectors(); renderConnectorsList(); };
+    });
+}
 async function loadConnections() {
     await loadCaps();
-    const info = await api.caps.get();
-    $('cx-hosts').value = (info.hostAllowlist || []).join(', ');
-    let names = [];
-    try { names = (await api.secrets.names()) || []; } catch { /* noop */ }
-    const set = new Set(names);
-    CX_SECRETS.forEach((n) => { const el = $('cx-' + n); if (el && set.has(n)) el.placeholder = '✓ configuré (laisser vide pour garder)'; });
+    await loadConnectors();
+    renderConnectorsList();
+    try { const set = new Set((await api.secrets.names()) || []); if (set.has('player')) $('cx-player').placeholder = '✓ défini (laisser vide pour garder)'; } catch { /* noop */ }
 }
-$('cx-save').onclick = async () => {
-    try {
-        for (const n of CX_SECRETS) {
-            const el = $('cx-' + n);
-            const val = (el && el.value || '').trim();
-            if (val) await api.secrets.set(n, val); // vide = on ne touche pas
-        }
-        const hosts = $('cx-hosts').value.split(',').map((s) => s.trim()).filter(Boolean);
-        await api.caps.setHosts(hosts);
-        $('cx-msg').textContent = 'Connexions enregistrées ✓';
-        // Ne pas laisser les mots de passe en clair à l'écran.
-        ['rconPassword', 'obsPassword', 'mqttPassword'].forEach((n) => { if ($('cx-' + n)) $('cx-' + n).value = ''; });
-        loadConnections();
-    } catch (e) { $('cx-msg').textContent = 'Erreur : ' + e.message; }
+$('cx-add').onclick = () => openConnectorModal(null, () => renderConnectorsList());
+$('cx-save-player').onclick = async () => {
+    const v = $('cx-player').value.trim();
+    if (v) { await api.secrets.set('player', v); $('cx-player').value = ''; $('cx-msg').textContent = 'Pseudo enregistré ✓'; }
 };
 
 // ── Mises à jour ──

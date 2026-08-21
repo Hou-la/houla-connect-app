@@ -9,6 +9,7 @@ const HELPERS: SidecarHelper[] = ['interception-keys', 'vigem-gamepad'];
 export class PythonExecutor implements Executor {
     readonly type = 'python' as const;
     readonly capability = 'allowPythonDriver';
+    readonly requiresCapability = true;
 
     constructor(private readonly sidecar: () => PythonSidecar) {}
 

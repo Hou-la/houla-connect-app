@@ -172,28 +172,17 @@
                         <div id="caps"></div>
                     </div>
                     <div class="card">
-                        <label>Connexions (stockées en local, chiffrées — jamais envoyées à Hou.la)</label>
-                        <span class="lab-sub">Minecraft / RCON</span>
-                        <input id="cx-rconHost" placeholder="adresse du serveur (ex. 127.0.0.1 ou mc.exemple.fr)" />
-                        <div class="row gap">
-                            <input id="cx-rconPort" type="number" placeholder="port RCON (défaut 25575)" />
-                            <input id="cx-rconPassword" type="password" placeholder="mot de passe RCON" />
+                        <div class="row between">
+                            <label>Connecteurs (RCON, OBS, MQTT, WebSocket, HTTP, OSC)</label>
+                            <button id="cx-add" class="btn btn--primary">+ Nouveau connecteur</button>
                         </div>
-                        <input id="cx-player" placeholder="ton pseudo en jeu (remplace {player})" />
-                        <span class="lab-sub">OBS</span>
+                        <p class="hint">Un connecteur = une adresse + des identifiants. Stockés en local, chiffrés, jamais envoyés à Hou.la. Tu peux en avoir plusieurs par protocole (ex. plusieurs brokers MQTT).</p>
+                        <div id="cx-list"></div>
+                        <span class="lab-sub">Variable pseudo en jeu ({player})</span>
                         <div class="row gap">
-                            <input id="cx-obsUrl" placeholder="ws://127.0.0.1:4455" />
-                            <input id="cx-obsPassword" type="password" placeholder="mot de passe OBS (optionnel)" />
+                            <input id="cx-player" placeholder="ton pseudo en jeu (remplace {player} dans les commandes RCON)" />
+                            <button id="cx-save-player" class="btn btn--ghost">OK</button>
                         </div>
-                        <span class="lab-sub">MQTT (domotique)</span>
-                        <input id="cx-mqttUrl" placeholder="mqtt://127.0.0.1:1883" />
-                        <div class="row gap">
-                            <input id="cx-mqttUsername" placeholder="utilisateur (optionnel)" />
-                            <input id="cx-mqttPassword" type="password" placeholder="mot de passe (optionnel)" />
-                        </div>
-                        <span class="lab-sub">Hôtes autorisés (HTTP / WebSocket) — séparés par des virgules</span>
-                        <input id="cx-hosts" placeholder="ex. homeassistant.exemple.fr, 192.168.1.50" />
-                        <button id="cx-save" class="btn btn--primary">Enregistrer les connexions</button>
                         <p id="cx-msg" class="hint"></p>
                     </div>
                     <div class="card">
@@ -247,6 +236,22 @@
                 <p id="modal-desc" class="muted"></p>
                 <div id="modal-caps" class="chips"></div>
                 <button id="modal-install" class="btn btn--primary">Installer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale connecteur (partagée : Réglages + Lab) -->
+    <div id="connector-modal" class="modal hidden">
+        <div class="modal__box">
+            <button id="connector-close" class="modal__close">&#10005;</button>
+            <div class="modal__body">
+                <h2 id="connector-modal-title">Nouveau connecteur</h2>
+                <div id="connector-form"></div>
+                <div class="row gap" style="margin-top:12px">
+                    <button id="connector-save" class="btn btn--primary">Enregistrer</button>
+                    <button id="connector-cancel" class="btn btn--ghost">Annuler</button>
+                </div>
+                <p id="connector-msg" class="hint"></p>
             </div>
         </div>
     </div>

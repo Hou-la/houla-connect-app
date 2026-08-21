@@ -15,12 +15,13 @@ const FORBIDDEN_RCON_VERBS = new Set([
     'shutdown', 'sudo', 'rm', 'del', 'format', 'mkfs',
 ]);
 
-// Exécuteur RCON (serveurs de jeu type Minecraft). Connexion lazy réutilisée.
+// Exécuteur RCON (serveurs de jeu type Minecraft). Connexions réutilisées PAR
+// endpoint (host:port) -> plusieurs connecteurs RCON possibles.
 export class RconExecutor implements Executor {
     readonly type = 'rcon' as const;
     readonly capability = 'allowRcon';
-    private client: any = null;
-    private connecting: Promise<any> | null = null;
+    readonly requiresCapability = false; // gardé par la présence d'un connecteur
+    private clients = new Map<string, any>();
 
     constructor(private readonly getConfig: () => RconConfig | null) {}
 
@@ -31,36 +32,39 @@ export class RconExecutor implements Executor {
         if (FORBIDDEN_RCON_VERBS.has(verb)) throw new Error(`verbe RCON interdit : ${verb}`);
     }
 
-    private async connect(): Promise<any> {
-        if (this.client) return this.client;
-        if (this.connecting) return this.connecting;
-        const cfg = this.getConfig();
-        if (!cfg?.host) throw new Error('RCON non configuré (host/port/password)');
-        // Import paresseux : optionalDependency.
+    private resolve(ctx: FireContext): RconConfig | null {
+        const c = ctx.connector?.type === 'rcon' ? ctx.connector.config : null;
+        if (c?.host) return { host: c.host, port: Number(c.port) || 25575, password: c.password || '' };
+        return this.getConfig(); // repli sur l'ancienne config unique
+    }
+
+    private async connect(cfg: RconConfig): Promise<any> {
+        const key = `${cfg.host}:${cfg.port}`;
+        const existing = this.clients.get(key);
+        if (existing) return existing;
         const { Rcon } = await import('rcon-client');
-        this.connecting = Rcon.connect({ host: cfg.host, port: cfg.port, password: cfg.password })
-            .then((c: any) => {
-                this.client = c;
-                c.on('end', () => (this.client = null));
-                return c;
-            })
-            .finally(() => (this.connecting = null));
-        return this.connecting;
+        const c: any = await Rcon.connect({ host: cfg.host, port: cfg.port, password: cfg.password });
+        c.on('end', () => this.clients.delete(key));
+        this.clients.set(key, c);
+        return c;
     }
 
     async fire(effect: BundleEffect, ctx: FireContext): Promise<void> {
-        const e = effect as RconEffect;
-        const command = resolveVars(e.command, ctx);
-        const client = await this.connect();
+        const cfg = this.resolve(ctx);
+        if (!cfg?.host) throw new Error('RCON non configuré (aucun connecteur lié)');
+        const command = resolveVars((effect as RconEffect).command, ctx);
+        const client = await this.connect(cfg);
         await client.send(command);
     }
 
     async dispose(): Promise<void> {
-        try {
-            await this.client?.end();
-        } catch {
-            /* noop */
+        for (const c of this.clients.values()) {
+            try {
+                await c.end();
+            } catch {
+                /* noop */
+            }
         }
-        this.client = null;
+        this.clients.clear();
     }
 }

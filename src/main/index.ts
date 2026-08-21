@@ -62,6 +62,15 @@ const engine = new Engine({
     getRconConfig: () => store.getRconConfig(),
     getObsConfig: () => store.getObsConfig(),
     getMqttConfig: () => store.getMqttConfig(),
+    // Résout le connecteur lié à un effet : rôle = effect.connector || type ;
+    // liaison du bundle (actif en live, ou passé en test depuis le Lab).
+    resolveConnector: (effect: any, bundleSlug?: string) => {
+        const slug = bundleSlug || store.getActiveBundleSlug();
+        if (!slug) return null;
+        const role = effect?.connector || effect?.type;
+        const id = store.getBindings(slug)[role];
+        return id ? store.getConnectorConfig(id) : null;
+    },
     sidecar,
     // TODO focus-guard natif (fenêtre au premier plan). Permissif tant que non implémenté.
     isTargetFocused: () => true,
@@ -241,6 +250,13 @@ function registerIpc(): void {
     ipcMain.handle('secrets:set', (_e, name: string, value: string) => (store.setSecret(name, value), { ok: true }));
     ipcMain.handle('secrets:names', () => store.listSecretNames());
 
+    // ── Connecteurs (multiple par protocole) + liaisons bundle -> rôle ──
+    ipcMain.handle('connectors:list', () => store.listConnectors());
+    ipcMain.handle('connectors:save', (_e, c: any) => store.saveConnector(c));
+    ipcMain.handle('connectors:delete', (_e, id: string) => (store.deleteConnector(id), { ok: true }));
+    ipcMain.handle('bindings:get', (_e, slug: string) => store.getBindings(slug));
+    ipcMain.handle('bindings:set', (_e, slug: string, role: string, connectorId: string) => (store.setBinding(slug, role, connectorId), { ok: true }));
+
     // ── Légal (CGU / charte d'usage acceptable) ──
     ipcMain.handle('legal:text', () => {
         for (const p of [
@@ -291,9 +307,9 @@ function registerIpc(): void {
     });
     // Test manuel d'UNE règle depuis le Lab (déclaratif : trigger + effet, joué via
     // le pipeline sécurisé du moteur). Renvoie un verdict {ok, reason} pour l'UI.
-    ipcMain.handle('engine:testRule', (_e, rule: any) => {
+    ipcMain.handle('engine:testRule', (_e, rule: any, bundleSlug?: string) => {
         if (!rule || typeof rule !== 'object' || !rule.effect) return { ok: false, reason: 'règle invalide' };
-        return engine.testFire({ id: rule.id || 'test', on: rule.on || { type: 'gift' }, effect: rule.effect });
+        return engine.testFire({ id: rule.id || 'test', on: rule.on || { type: 'gift' }, effect: rule.effect }, bundleSlug);
     });
     ipcMain.handle('engine:test', (_e, slug?: string) => {
         // Sans slug : simule la 1re interaction cadeau du pack actif (générique ou slot).

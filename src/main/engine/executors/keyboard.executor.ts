@@ -10,6 +10,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export class KeyboardExecutor implements Executor {
     readonly type = 'keyboard' as const;
     readonly capability = 'allowKeyboard';
+    readonly requiresCapability = true;
     private held: any[] = [];
 
     constructor(private readonly sidecar: () => PythonSidecar) {}

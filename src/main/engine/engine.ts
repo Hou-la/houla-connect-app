@@ -29,6 +29,8 @@ export interface EngineDeps {
     getRconConfig: () => RconConfig | null;
     getObsConfig: () => ObsConfig | null;
     getMqttConfig: () => MqttConfig | null;
+    /** Résout le connecteur lié à un effet (endpoint + identifiants), ou null. */
+    resolveConnector: (effect: BundleEffect, bundleSlug?: string) => { type: string; config: Record<string, string> } | null;
     sidecar: () => PythonSidecar;
     /** Fenêtre cible au premier plan ? (focus-guard clavier/manette). */
     isTargetFocused: () => boolean;
@@ -101,8 +103,9 @@ export class Engine {
         // 2. Gating rôles.
         if (rule.followersOnly && !ctx.isFollower) return audit(false, 'abonnés uniquement');
         if (rule.moderatorsOnly && !ctx.isModerator) return audit(false, 'modérateurs uniquement');
-        // 3. Capacité accordée ?
-        if (!this.deps.getCapabilities().has(executor.capability))
+        // 3. Capacité accordée ? (seulement pour l'injection locale ; le réseau est
+        //    gardé par la présence d'un connecteur configuré.)
+        if (executor.requiresCapability && !this.deps.getCapabilities().has(executor.capability))
             return audit(false, `capacité non accordée (${executor.capability})`);
         // 4. Focus-guard clavier/manette (default-deny si focus inconnu/mauvais).
         if ((effect.type === 'keyboard' || effect.type === 'gamepad') && !this.deps.isTargetFocused())
@@ -116,12 +119,13 @@ export class Engine {
         // 6. Token bucket global (anti-flood).
         if (!this.tokenOk()) return audit(false, 'rate-limit global');
 
-        // 7. Valider (une fois) + exécuter.
+        // 7. Valider (une fois) + résoudre le connecteur + exécuter.
         try {
             if (!this.validated.has(effect as object)) {
                 executor.validate(effect as BundleEffect);
                 this.validated.add(effect as object);
             }
+            ctx.connector = this.deps.resolveConnector(effect as BundleEffect);
             await executor.fire(effect as BundleEffect, ctx);
             this.lastFired.set(rule.id, this.now());
             audit(true);
@@ -137,11 +141,11 @@ export class Engine {
      * de la DONNÉE déclarative sur un exécuteur INTÉGRÉ : main ne joue rien que
      * l'exécuteur n'ait validé. Renvoie un verdict lisible pour l'UI.
      */
-    async testFire(rule: BundleRule): Promise<{ ok: boolean; reason?: string }> {
+    async testFire(rule: BundleRule, bundleSlug?: string): Promise<{ ok: boolean; reason?: string }> {
         const effect = rule?.effect;
         const executor = effect && this.executors.get(effect.type);
         if (!executor) return { ok: false, reason: 'exécuteur inconnu' };
-        if (!this.deps.getCapabilities().has(executor.capability))
+        if (executor.requiresCapability && !this.deps.getCapabilities().has(executor.capability))
             return { ok: false, reason: `capacité non accordée (${executor.capability}) — active-la dans Réglages` };
         if ((effect.type === 'keyboard' || effect.type === 'gamepad') && !this.deps.isTargetFocused())
             return { ok: false, reason: 'fenêtre cible pas au premier plan (focus le jeu avant de tester)' };
@@ -154,6 +158,7 @@ export class Engine {
             coins: 0,
             giftName: 'Test',
             vars: this.deps.getVars(),
+            connector: this.deps.resolveConnector(effect as BundleEffect, bundleSlug),
         };
         try {
             executor.validate(effect as BundleEffect);

@@ -6,6 +6,7 @@ import { PythonSidecar } from '../python-sidecar';
 export class GamepadExecutor implements Executor {
     readonly type = 'gamepad' as const;
     readonly capability = 'allowGamepad';
+    readonly requiresCapability = true;
 
     constructor(private readonly sidecar: () => PythonSidecar) {}
 

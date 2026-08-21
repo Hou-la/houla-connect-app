@@ -18,19 +18,23 @@ export interface GamepadEffect {
 export interface RconEffect {
     type: 'rcon';
     command: string;
+    connector?: string;
     cooldownMs?: number;
 }
 export interface ObsEffect {
     type: 'obs';
     request: string;
     params?: Record<string, unknown>;
+    connector?: string;
     cooldownMs?: number;
 }
 export interface HttpEffect {
     type: 'http';
     method: 'GET' | 'POST' | 'PUT';
-    url: string;
+    url?: string; // fallback si pas de connecteur
+    path?: string; // chemin relatif au baseUrl du connecteur
     json?: Record<string, unknown>;
+    connector?: string;
     cooldownMs?: number;
 }
 export interface PythonEffect {
@@ -45,20 +49,23 @@ export interface MqttEffect {
     payload: string;
     qos?: 0 | 1 | 2;
     retain?: boolean;
+    connector?: string;
     cooldownMs?: number;
 }
 export interface OscEffect {
     type: 'osc';
     address: string;
     args?: Array<string | number | boolean>;
-    host?: string;
-    port?: number;
+    host?: string; // fallback si pas de connecteur
+    port?: number; // fallback si pas de connecteur
+    connector?: string;
     cooldownMs?: number;
 }
 export interface WsEffect {
     type: 'ws';
-    url: string;
+    url?: string; // fallback si pas de connecteur
     message: string;
+    connector?: string;
     cooldownMs?: number;
 }
 export type BundleEffect =
@@ -107,6 +114,8 @@ export interface FireContext {
     giftName: string;
     /** Variables locales du streamer (secrets par NOM : {rconHost}, {ha_base}...). */
     vars: Record<string, string | number>;
+    /** Connecteur résolu pour CET effet (endpoint + identifiants), si lié. */
+    connector?: { type: string; config: Record<string, string> } | null;
 }
 
 /** Un exécuteur transforme un effet déclaratif en I/O réelle (dans le process MAIN). */
@@ -114,6 +123,12 @@ export interface Executor {
     readonly type: ExecutorType;
     /** La capacité que l'utilisateur doit avoir accordée pour que fire() tourne. */
     readonly capability: string;
+    /**
+     * true = injection locale invasive (clavier/manette/pilote) -> exige un
+     * consentement explicite (capacité accordée). false = protocole réseau ->
+     * le CONNECTEUR configuré tient lieu de consentement, pas de capacité.
+     */
+    readonly requiresCapability: boolean;
     /** Valide + encode l'effet (encodage PROPRE à l'exécuteur), lève si invalide. */
     validate(effect: BundleEffect): void;
     fire(effect: BundleEffect, ctx: FireContext): Promise<void>;

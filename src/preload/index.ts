@@ -50,12 +50,21 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         set: (name: string, value: string) => invoke('secrets:set', name, value), // write-only
         names: () => invoke('secrets:names'),
     },
+    connectors: {
+        list: () => invoke('connectors:list'),
+        save: (c: unknown) => invoke('connectors:save', c),
+        remove: (id: string) => invoke('connectors:delete', id),
+    },
+    bindings: {
+        get: (slug: string) => invoke('bindings:get', slug),
+        set: (slug: string, role: string, connectorId: string) => invoke('bindings:set', slug, role, connectorId),
+    },
     engine: {
         start: (slug: string) => invoke('engine:start', slug),
         stop: () => invoke('engine:stop'),
         panic: () => invoke('engine:panic'),
         test: (slug: string) => invoke('engine:test', slug),
-        testRule: (rule: unknown) => invoke('engine:testRule', rule),
+        testRule: (rule: unknown, bundleSlug?: string) => invoke('engine:testRule', rule, bundleSlug),
         status: () => invoke('engine:status'),
     },
     language: (lang?: string) => invoke('prefs:language', lang),

@@ -1,5 +1,6 @@
 import Store from 'electron-store';
 import { safeStorage } from 'electron';
+import { randomUUID } from 'crypto';
 
 // Stockage local : config non sensible en clair, secrets (tokens, mots de passe
 // RCON/OBS, clé d'événement) chiffrés via safeStorage (DPAPI Windows / Keychain).
@@ -27,7 +28,20 @@ interface Schema {
     vars?: Record<string, string>; // variables non secrètes ({player}, ...)
     installedBundles?: InstalledBundle[];
     activeBundleSlug?: string;
+    connectors?: StoredConnector[]; // connecteurs nommés (multiple par type)
+    bundleBindings?: Record<string, Record<string, string>>; // slug -> role -> connectorId
 }
+
+/** Un connecteur : endpoint + identifiants d'un protocole (RCON/OBS/MQTT/WS/HTTP/OSC). */
+export interface StoredConnector {
+    id: string;
+    name: string;
+    type: string; // rcon | obs | mqtt | ws | http | osc
+    config: Record<string, string>; // les champs 'password' sont chiffrés au repos
+}
+
+/** Champs sensibles (chiffrés) par type de connecteur. */
+const SECRET_FIELDS = new Set(['password']);
 
 export class StoreService {
     private store = new Store<Schema>({ name: 'houla-connect-config' });
@@ -159,6 +173,81 @@ export class StoreService {
             username: v.mqttUsername ? String(v.mqttUsername) : undefined,
             password: v.mqttPassword ? String(v.mqttPassword) : undefined,
         };
+    }
+
+    // ═══════════════════ Connecteurs (multiple par protocole) ═══════════════════
+    private rawConnectors(): StoredConnector[] {
+        return this.store.get('connectors', [] as StoredConnector[]);
+    }
+    /** Liste pour le renderer : SANS les champs secrets (juste un booléen hasSecret). */
+    listConnectors(): Array<{ id: string; name: string; type: string; config: Record<string, string>; hasSecret: boolean }> {
+        return this.rawConnectors().map((c) => {
+            const clean: Record<string, string> = {};
+            let hasSecret = false;
+            for (const [k, val] of Object.entries(c.config || {})) {
+                if (SECRET_FIELDS.has(k)) { hasSecret = hasSecret || !!val; continue; }
+                clean[k] = val;
+            }
+            return { id: c.id, name: c.name, type: c.type, config: clean, hasSecret };
+        });
+    }
+    /** Crée (sans id) ou met à jour (avec id) un connecteur. Champ 'password' vide en MAJ = inchangé. */
+    saveConnector(input: { id?: string; name: string; type: string; config: Record<string, string> }): { id: string } {
+        const list = this.rawConnectors();
+        const cfg: Record<string, string> = {};
+        const existing = input.id ? list.find((c) => c.id === input.id) : undefined;
+        for (const [k, val] of Object.entries(input.config || {})) {
+            if (SECRET_FIELDS.has(k)) {
+                if (val) cfg[k] = this.enc(val); // nouveau secret -> chiffré
+                else if (existing?.config?.[k]) cfg[k] = existing.config[k]; // vide -> garde l'ancien
+            } else {
+                cfg[k] = String(val ?? '');
+            }
+        }
+        if (existing) {
+            existing.name = input.name;
+            existing.type = input.type;
+            existing.config = cfg;
+            this.store.set('connectors', list);
+            return { id: existing.id };
+        }
+        const id = randomUUID();
+        list.push({ id, name: input.name, type: input.type, config: cfg });
+        this.store.set('connectors', list);
+        return { id };
+    }
+    deleteConnector(id: string): void {
+        this.store.set('connectors', this.rawConnectors().filter((c) => c.id !== id));
+        // Nettoie les liaisons qui pointaient dessus.
+        const bindings = this.store.get('bundleBindings', {} as Record<string, Record<string, string>>);
+        for (const slug of Object.keys(bindings)) {
+            for (const role of Object.keys(bindings[slug])) {
+                if (bindings[slug][role] === id) delete bindings[slug][role];
+            }
+        }
+        this.store.set('bundleBindings', bindings);
+    }
+    /** Config DÉCHIFFRÉE d'un connecteur (usage MAIN uniquement). */
+    getConnectorConfig(id: string): { type: string; config: Record<string, string> } | null {
+        const c = this.rawConnectors().find((x) => x.id === id);
+        if (!c) return null;
+        const out: Record<string, string> = {};
+        for (const [k, val] of Object.entries(c.config || {})) {
+            out[k] = SECRET_FIELDS.has(k) ? this.dec(val) ?? '' : val;
+        }
+        return { type: c.type, config: out };
+    }
+
+    // ── Liaisons bundle -> rôle -> connecteur ──
+    getBindings(slug: string): Record<string, string> {
+        return this.store.get('bundleBindings', {} as Record<string, Record<string, string>>)[slug] || {};
+    }
+    setBinding(slug: string, role: string, connectorId: string): void {
+        const all = this.store.get('bundleBindings', {} as Record<string, Record<string, string>>);
+        all[slug] = all[slug] || {};
+        if (connectorId) all[slug][role] = connectorId;
+        else delete all[slug][role];
+        this.store.set('bundleBindings', all);
     }
 
     // ── Bundles installés ──

@@ -7,13 +7,13 @@ export interface MqttConfig {
     password?: string;
 }
 
-// Exécuteur MQTT (domotique / IoT : Home Assistant, Zigbee2MQTT, ESP32…).
-// Broker + identifiants = config locale du streamer (secrets). Connexion lazy.
+// Exécuteur MQTT (domotique / IoT). Connexions réutilisées PAR broker (url) :
+// plusieurs connecteurs MQTT possibles (plusieurs brokers).
 export class MqttExecutor implements Executor {
     readonly type = 'mqtt' as const;
     readonly capability = 'allowMqtt';
-    private client: any = null;
-    private connecting: Promise<any> | null = null;
+    readonly requiresCapability = false;
+    private clients = new Map<string, any>();
 
     constructor(private readonly getConfig: () => MqttConfig | null) {}
 
@@ -21,41 +21,50 @@ export class MqttExecutor implements Executor {
         if (!(effect as MqttEffect).topic) throw new Error('mqtt.topic manquant');
     }
 
-    private async connect(): Promise<any> {
-        if (this.client && this.client.connected) return this.client;
-        if (this.connecting) return this.connecting;
-        const cfg = this.getConfig();
-        if (!cfg?.url) throw new Error('MQTT non configuré (broker)');
+    private resolve(ctx: FireContext): MqttConfig | null {
+        const c = ctx.connector?.type === 'mqtt' ? ctx.connector.config : null;
+        if (c?.url) return { url: c.url, username: c.username || undefined, password: c.password || undefined };
+        return this.getConfig();
+    }
+
+    private async connect(cfg: MqttConfig): Promise<any> {
+        const existing = this.clients.get(cfg.url);
+        if (existing && existing.connected) return existing;
         const mqtt = await import('mqtt');
-        this.connecting = new Promise((resolve, reject) => {
-            const c = mqtt.connect(cfg.url, {
+        const c = await new Promise<any>((resolve, reject) => {
+            const client = mqtt.connect(cfg.url, {
                 username: cfg.username,
                 password: cfg.password,
                 reconnectPeriod: 0,
                 connectTimeout: 4000,
             });
-            c.on('connect', () => { this.client = c; resolve(c); });
-            c.on('error', (err: any) => { reject(err); c.end(true); });
-        }).finally(() => (this.connecting = null));
-        return this.connecting;
+            client.on('connect', () => resolve(client));
+            client.on('error', (err: any) => { reject(err); client.end(true); });
+        });
+        this.clients.set(cfg.url, c);
+        return c;
     }
 
     async fire(effect: BundleEffect, ctx: FireContext): Promise<void> {
         const e = effect as MqttEffect;
+        const cfg = this.resolve(ctx);
+        if (!cfg?.url) throw new Error('MQTT non configuré (aucun connecteur lié)');
         const topic = resolveVars(e.topic, ctx);
         const payload = resolveVars(e.payload || '', ctx);
-        const c = await this.connect();
+        const c = await this.connect(cfg);
         await new Promise<void>((res, rej) =>
             c.publish(topic, payload, { qos: e.qos || 0, retain: !!e.retain }, (err: any) => (err ? rej(err) : res())),
         );
     }
 
     async dispose(): Promise<void> {
-        try {
-            this.client?.end(true);
-        } catch {
-            /* noop */
+        for (const c of this.clients.values()) {
+            try {
+                c.end(true);
+            } catch {
+                /* noop */
+            }
         }
-        this.client = null;
+        this.clients.clear();
     }
 }
