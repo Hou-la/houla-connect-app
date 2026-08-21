@@ -7,6 +7,14 @@ export interface RconConfig {
     password: string;
 }
 
+// Verbes RCON de sabotage serveur, refusés en DÉFENSE EN PROFONDEUR (miroir du
+// validateur serveur) : même un manifeste signé/altéré ne doit pas pouvoir les jouer.
+const FORBIDDEN_RCON_VERBS = new Set([
+    'stop', 'restart', 'op', 'deop', 'ban', 'ban-ip', 'banip', 'pardon',
+    'kick', 'whitelist', 'save-off', 'save-all', 'gamemode',
+    'shutdown', 'sudo', 'rm', 'del', 'format', 'mkfs',
+]);
+
 // Exécuteur RCON (serveurs de jeu type Minecraft). Connexion lazy réutilisée.
 export class RconExecutor implements Executor {
     readonly type = 'rcon' as const;
@@ -19,6 +27,8 @@ export class RconExecutor implements Executor {
     validate(effect: BundleEffect): void {
         const e = effect as RconEffect;
         if (!e.command) throw new Error('rcon.command manquant');
+        const verb = e.command.trim().replace(/^\//, '').split(/\s+/)[0]?.toLowerCase() ?? '';
+        if (FORBIDDEN_RCON_VERBS.has(verb)) throw new Error(`verbe RCON interdit : ${verb}`);
     }
 
     private async connect(): Promise<any> {

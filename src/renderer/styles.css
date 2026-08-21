@@ -175,7 +175,13 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
 /* Grille alignée : colonne label fixe | champs. Toutes les rangées s'alignent. */
 .rule__part { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: 12px; margin-bottom: 10px; }
 .rule__part:last-child { margin-bottom: 0; }
-.rule__part--foot { grid-template-columns: 52px minmax(0, 1fr) auto; }
+.rule__part--foot { grid-template-columns: 52px minmax(0, 1fr) auto auto; }
+.r-test { background: var(--bg-3); border: 1px solid var(--border); border-radius: 8px; color: var(--accent-2);
+    cursor: pointer; font-size: 12px; font-weight: 600; padding: 8px 10px; white-space: nowrap; }
+.r-test:hover { border-color: var(--accent); background: var(--accent); color: #fff; }
+.rule__result { font-size: 12px; margin-top: 8px; min-height: 1px; }
+.rule__result.ok { color: var(--ok); }
+.rule__result.no { color: var(--danger); }
 .rule__lbl { font-size: 11px; font-weight: 700; color: var(--accent-2); letter-spacing: .5px; }
 .rule__fields { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .rule__fields > select, .rule__fields > input { margin-bottom: 0; width: auto; flex: 1 1 0; min-width: 0; }

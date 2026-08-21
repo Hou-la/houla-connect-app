@@ -305,7 +305,9 @@ function renderRules() {
             <div class="rule__part rule__part--foot"><span class="rule__lbl">SI</span>
                 <div class="rule__fields">
                     <select class="r-role" title="Qui peut déclencher cette règle ?">${ROLES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
-                <button class="r-del" title="Supprimer cette interaction">&#10005;</button></div>`;
+                <button class="r-test" title="Déclencher cette interaction pour la tester">&#9654; Tester</button>
+                <button class="r-del" title="Supprimer cette interaction">&#10005;</button></div>
+            <div class="rule__result"></div>`;
         const q = (s) => el.querySelector(s);
         if (r.event.type === 'comment' && q('.r-contains')) q('.r-contains').value = r.event.contains || '';
         if (r.event.type === 'hearts' && q('.r-milestone')) q('.r-milestone').value = r.event.milestone || '';
@@ -325,32 +327,40 @@ function renderRules() {
             inp.addEventListener('input', () => readRule(el, r));
         });
         q('.r-del').onclick = () => { labRules.splice(i, 1); renderRules(); };
+        q('.r-test').onclick = async () => {
+            readRule(el, r); // synchronise la saisie DOM -> objet règle
+            const res = q('.rule__result');
+            res.textContent = 'Test en cours…'; res.className = 'rule__result';
+            try {
+                const v = await api.engine.testRule(buildRule(r, i));
+                if (v && v.ok) { res.textContent = '✓ Déclenché'; res.className = 'rule__result ok'; }
+                else { res.textContent = '✗ ' + ((v && v.reason) || 'échec'); res.className = 'rule__result no'; }
+            } catch (e) { res.textContent = '✗ ' + e.message; res.className = 'rule__result no'; }
+        };
         box.appendChild(el);
     });
 }
+function buildRule(r, i) {
+    const on = { type: r.event.type };
+    if (r.event.type === 'gift') on.giftSlug = r.event.giftSlug || r.event.slot;
+    if (r.event.type === 'comment') on.contains = r.event.contains;
+    if (r.event.type === 'hearts') on.milestone = r.event.milestone;
+    const effect = { type: r.effect.type };
+    if (r.effect.type === 'keyboard') { effect.keys = r.effect.keys; if (r.effect.backend && r.effect.backend !== 'auto') effect.backend = r.effect.backend; }
+    if (r.effect.type === 'gamepad') effect.button = r.effect.button;
+    if (r.effect.type === 'rcon') effect.command = r.effect.command;
+    if (r.effect.type === 'obs') effect.request = r.effect.request;
+    if (r.effect.type === 'http') { effect.method = r.effect.method; effect.url = r.effect.url; }
+    if (r.effect.type === 'mqtt') { effect.topic = r.effect.topic; effect.payload = r.effect.payload || ''; }
+    if (r.effect.type === 'osc') { effect.address = r.effect.address; if (r.effect.args && r.effect.args.length) effect.args = r.effect.args; }
+    if (r.effect.type === 'ws') { effect.url = r.effect.url; effect.message = r.effect.message || ''; }
+    const rule = { id: 'r' + (i + 1), on, effect };
+    if (r.followersOnly) rule.followersOnly = true;
+    if (r.moderatorsOnly) rule.moderatorsOnly = true;
+    return rule;
+}
 function buildManifest() {
-    return {
-        schema: 2,
-        rules: labRules.map((r, i) => {
-            const on = { type: r.event.type };
-            if (r.event.type === 'gift') on.giftSlug = r.event.giftSlug || r.event.slot;
-            if (r.event.type === 'comment') on.contains = r.event.contains;
-            if (r.event.type === 'hearts') on.milestone = r.event.milestone;
-            const effect = { type: r.effect.type };
-            if (r.effect.type === 'keyboard') { effect.keys = r.effect.keys; if (r.effect.backend && r.effect.backend !== 'auto') effect.backend = r.effect.backend; }
-            if (r.effect.type === 'gamepad') effect.button = r.effect.button;
-            if (r.effect.type === 'rcon') effect.command = r.effect.command;
-            if (r.effect.type === 'obs') effect.request = r.effect.request;
-            if (r.effect.type === 'http') { effect.method = r.effect.method; effect.url = r.effect.url; }
-            if (r.effect.type === 'mqtt') { effect.topic = r.effect.topic; effect.payload = r.effect.payload || ''; }
-            if (r.effect.type === 'osc') { effect.address = r.effect.address; if (r.effect.args && r.effect.args.length) effect.args = r.effect.args; }
-            if (r.effect.type === 'ws') { effect.url = r.effect.url; effect.message = r.effect.message || ''; }
-            const rule = { id: 'r' + (i + 1), on, effect };
-            if (r.followersOnly) rule.followersOnly = true;
-            if (r.moderatorsOnly) rule.moderatorsOnly = true;
-            return rule;
-        }),
-    };
+    return { schema: 2, rules: labRules.map((r, i) => buildRule(r, i)) };
 }
 function manifestToRules(m) {
     return ((m && m.rules) || []).map((rule) => {

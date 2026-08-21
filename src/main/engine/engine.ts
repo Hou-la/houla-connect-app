@@ -130,6 +130,40 @@ export class Engine {
         }
     }
 
+    /**
+     * TEST MANUEL d'une règle depuis le Lab. Passe par le MÊME pipeline de sécurité
+     * (capacité accordée -> focus-guard clavier/manette -> executor.validate ->
+     * fire), mais sans dedup ni cooldown (déclenchement volontaire). L'effet reste
+     * de la DONNÉE déclarative sur un exécuteur INTÉGRÉ : main ne joue rien que
+     * l'exécuteur n'ait validé. Renvoie un verdict lisible pour l'UI.
+     */
+    async testFire(rule: BundleRule): Promise<{ ok: boolean; reason?: string }> {
+        const effect = rule?.effect;
+        const executor = effect && this.executors.get(effect.type);
+        if (!executor) return { ok: false, reason: 'exécuteur inconnu' };
+        if (!this.deps.getCapabilities().has(executor.capability))
+            return { ok: false, reason: `capacité non accordée (${executor.capability}) — active-la dans Réglages` };
+        if ((effect.type === 'keyboard' || effect.type === 'gamepad') && !this.deps.isTargetFocused())
+            return { ok: false, reason: 'fenêtre cible pas au premier plan (focus le jeu avant de tester)' };
+        const ctx: FireContext = {
+            ruleId: rule.id || 'test',
+            senderName: 'Test',
+            isFollower: true,
+            isModerator: true,
+            quantity: 1,
+            coins: 0,
+            giftName: 'Test',
+            vars: this.deps.getVars(),
+        };
+        try {
+            executor.validate(effect as BundleEffect);
+            await executor.fire(effect as BundleEffect, ctx);
+            return { ok: true };
+        } catch (err: any) {
+            return { ok: false, reason: err?.message || 'échec exécuteur' };
+        }
+    }
+
     /** PANIC : relâche toute touche/bouton tenu sur tous les exécuteurs. */
     async panic(): Promise<void> {
         for (const ex of this.executors.values()) {

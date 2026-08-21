@@ -210,6 +210,12 @@ function registerIpc(): void {
         send('onState', { connected: false });
         return { ok: true };
     });
+    // Test manuel d'UNE règle depuis le Lab (déclaratif : trigger + effet, joué via
+    // le pipeline sécurisé du moteur). Renvoie un verdict {ok, reason} pour l'UI.
+    ipcMain.handle('engine:testRule', (_e, rule: any) => {
+        if (!rule || typeof rule !== 'object' || !rule.effect) return { ok: false, reason: 'règle invalide' };
+        return engine.testFire({ id: rule.id || 'test', on: rule.on || { type: 'gift' }, effect: rule.effect });
+    });
     ipcMain.handle('engine:test', (_e, slug?: string) => {
         // Sans slug : simule la 1re interaction cadeau du pack actif (générique ou slot).
         const firstGift = activeManifest?.rules.find((r) => r.on.type === 'gift');

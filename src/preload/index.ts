@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         stop: () => invoke('engine:stop'),
         panic: () => invoke('engine:panic'),
         test: (slug: string) => invoke('engine:test', slug),
+        testRule: (rule: unknown) => invoke('engine:testRule', rule),
         status: () => invoke('engine:status'),
     },
     language: (lang?: string) => invoke('prefs:language', lang),
