@@ -203,7 +203,16 @@ function registerIpc(): void {
         const list = store.getInstalled().filter((b) => b.slug !== slug);
         list.push({ slug, version: d.version, contentHash: d.contentHash });
         store.setInstalled(list);
-        return { ok: true, capabilities: d.capabilities, hosts: d.hosts };
+        // Connecteurs requis (rôle + type) à lier : protocoles réseau du manifeste.
+        const NET = ['rcon', 'obs', 'mqtt', 'ws', 'http', 'osc'];
+        const req = new Map<string, { role: string; type: string }>();
+        for (const r of (d.manifest?.rules || []) as any[]) {
+            const t = r?.effect?.type;
+            if (!NET.includes(t)) continue;
+            const role = r.effect.connector || t;
+            req.set(`${role}:${t}`, { role, type: t });
+        }
+        return { ok: true, capabilities: d.capabilities, hosts: d.hosts, requiredConnectors: [...req.values()] };
     });
     ipcMain.handle('store:installed', () => store.getInstalled());
 

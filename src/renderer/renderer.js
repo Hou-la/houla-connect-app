@@ -155,12 +155,32 @@ function publisherHtml(pub, installs) {
         ${pub.isVerified ? '<span class="verified" title="Vérifié">✓</span>' : ''}
         <span>· ${installs || 0} installs</span>`;
 }
-function installBundle(slug, btn) {
+async function installBundle(slug, btn) {
     if (btn) btn.textContent = '…';
-    api.store
-        .install(slug)
-        .then(() => { if (btn) btn.textContent = 'Installé ✓'; return loadInstalled(); })
-        .catch(() => { if (btn) btn.textContent = 'Échec'; });
+    try {
+        const res = await api.store.install(slug);
+        await bindRequiredConnectors(slug, (res && res.requiredConnectors) || []);
+        if (btn) btn.textContent = 'Installé ✓';
+        await loadInstalled();
+    } catch { if (btn) btn.textContent = 'Échec'; }
+}
+/** À l'install : lie chaque connecteur requis (auto sur le 1er du type, sinon création). */
+async function bindRequiredConnectors(slug, required) {
+    if (!required.length) return;
+    await loadConnectors();
+    const existing = (await api.bindings.get(slug)) || {};
+    for (const rc of required) {
+        if (existing[rc.role]) continue; // déjà lié
+        const ofType = myConnectors.filter((c) => c.type === rc.type);
+        if (ofType.length) {
+            await api.bindings.set(slug, rc.role, ofType[0].id);
+        } else {
+            await new Promise((resolve) => openConnectorModal(null, async (saved) => {
+                if (saved) await api.bindings.set(slug, rc.role, saved.id);
+                resolve();
+            }, rc.type));
+        }
+    }
 }
 async function loadStore() {
     const list = (await api.store.list()) || [];
