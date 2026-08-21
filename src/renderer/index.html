@@ -207,6 +207,10 @@
                         </select>
                     </div>
                     <div class="card">
+                        <label>Légal</label>
+                        <button id="cgu-open" class="btn btn--ghost">Conditions d'utilisation</button>
+                    </div>
+                    <div class="card">
                         <label>Mises à jour</label>
                         <div class="row between">
                             <span id="update-status" class="muted">—</span>
@@ -232,6 +236,20 @@
                 <p id="modal-desc" class="muted"></p>
                 <div id="modal-caps" class="chips"></div>
                 <button id="modal-install" class="btn btn--primary">Installer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Conditions d'utilisation / charte d'usage acceptable -->
+    <div id="cgu-modal" class="modal hidden">
+        <div class="modal__box cgu__box">
+            <button id="cgu-close" class="modal__close hidden">&#10005;</button>
+            <div class="modal__body">
+                <div id="cgu-content" class="cgu__content">Chargement…</div>
+                <div id="cgu-actions" class="row gap cgu__actions hidden">
+                    <span class="muted" style="flex:1">En cliquant sur « J'accepte », tu confirmes avoir lu et accepté les conditions.</span>
+                    <button id="cgu-accept" class="btn btn--primary">J'accepte</button>
+                </div>
             </div>
         </div>
     </div>

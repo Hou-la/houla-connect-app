@@ -58,6 +58,11 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         status: () => invoke('engine:status'),
     },
     language: (lang?: string) => invoke('prefs:language', lang),
+    legal: {
+        text: () => invoke('legal:text'),
+        status: () => invoke('legal:status'),
+        accept: () => invoke('legal:accept'),
+    },
     update: {
         check: () => invoke('update:check'),
         install: () => invoke('update:install'),

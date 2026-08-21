@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, globalShortcut, shell, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
+import * as fs from 'fs';
 import { CONFIG } from './config';
 import { StoreService } from './services/store.service';
 import { ApiService } from './services/api.service';
@@ -14,6 +15,9 @@ import { BundleManifest } from './engine/types';
 const store = new StoreService();
 const api = new ApiService(store);
 const auth = new AuthService(api, store);
+
+// Version des CGU : à incrémenter à chaque révision substantielle -> re-acceptation.
+const LEGAL_VERSION = '1.0';
 
 let win: BrowserWindow | null = null;
 let sidecarInstance: PythonSidecar | null = null;
@@ -181,6 +185,26 @@ function registerIpc(): void {
     ipcMain.handle('caps:setFocusTarget', (_e, t) => (store.setFocusTarget(t || {}), { ok: true }));
     ipcMain.handle('secrets:set', (_e, name: string, value: string) => (store.setSecret(name, value), { ok: true }));
     ipcMain.handle('secrets:names', () => store.listSecretNames());
+
+    // ── Légal (CGU / charte d'usage acceptable) ──
+    ipcMain.handle('legal:text', () => {
+        for (const p of [
+            path.join(app.getAppPath(), 'docs', 'CONDITIONS_UTILISATION.md'),
+            path.join(process.resourcesPath || '', 'docs', 'CONDITIONS_UTILISATION.md'),
+        ]) {
+            try {
+                return fs.readFileSync(p, 'utf8');
+            } catch {
+                /* essaie le chemin suivant */
+            }
+        }
+        return '# Conditions d\'utilisation\n\nTexte indisponible.';
+    });
+    ipcMain.handle('legal:status', () => ({
+        version: LEGAL_VERSION,
+        accepted: store.getLegalAcceptedVersion() === LEGAL_VERSION,
+    }));
+    ipcMain.handle('legal:accept', () => (store.setLegalAcceptedVersion(LEGAL_VERSION), { ok: true }));
 
     // Runtime
     ipcMain.handle('engine:start', async (_e, slug: string) => {

@@ -222,3 +222,16 @@ input[readonly] { opacity: .6; cursor: not-allowed; }
 .card--click { cursor: pointer; transition: border-color .12s, background .12s; }
 .card--click:hover { border-color: var(--accent); background: var(--bg-3); }
 .link { color: var(--accent-2); }
+
+/* Modale CGU */
+.cgu__box { width: 760px; max-width: 94vw; max-height: 90vh; display: flex; flex-direction: column; }
+.cgu__content { max-height: 62vh; overflow-y: auto; padding-right: 8px; font-size: 14px; line-height: 1.6; }
+.cgu__content h1 { font-size: 20px; margin: 0 0 10px; }
+.cgu__content h2 { font-size: 16px; margin: 18px 0 6px; color: var(--accent-2); }
+.cgu__content h3 { font-size: 14px; margin: 12px 0 4px; }
+.cgu__content p { margin: 8px 0; color: var(--text); }
+.cgu__content ul { margin: 6px 0 6px 20px; }
+.cgu__content li { margin: 3px 0; }
+.cgu__content strong { color: #fff; }
+.cgu__content hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
+.cgu__actions { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); align-items: center; }

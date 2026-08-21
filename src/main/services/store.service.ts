@@ -172,6 +172,14 @@ export class StoreService {
         return this.store.get('activeBundleSlug');
     }
 
+    // ── Acceptation des CGU (version acceptée) ──
+    getLegalAcceptedVersion(): string | undefined {
+        return this.store.get('legalAcceptedVersion') as any;
+    }
+    setLegalAcceptedVersion(v: string) {
+        this.store.set('legalAcceptedVersion', v);
+    }
+
     // ── Cache du catalogue de cadeaux (rafraîchi depuis l'API publique) ──
     getGiftCatalogCache(): { at: number; gifts: any[] } | undefined {
         return this.store.get('giftCatalogCache') as any;

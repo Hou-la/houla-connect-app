@@ -51,7 +51,8 @@
     ],
     "files": [
       "dist/**/*",
-      "resources/**/*"
+      "resources/**/*",
+      "docs/CONDITIONS_UTILISATION.md"
     ],
     "extraResources": [
       {

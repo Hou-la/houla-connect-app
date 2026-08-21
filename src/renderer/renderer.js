@@ -598,8 +598,49 @@ api.onUpdate(renderUpdate);
 $('update-check').onclick = () => api.update.check();
 $('update-install').onclick = () => api.update.install();
 
+// ── CGU / charte d'usage acceptable ──
+// Mini-rendu markdown (sous-ensemble : titres, gras, listes, hr, paragraphes),
+// échappé d'abord (contenu de confiance, mais on reste prudent).
+function mdToHtml(md) {
+    const lines = String(md || '').replace(/\r/g, '').split('\n');
+    const out = [];
+    let inList = false;
+    const inline = (s) => esc(s).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+    for (const raw of lines) {
+        const l = raw.trimEnd();
+        if (/^###\s+/.test(l)) { closeList(); out.push('<h3>' + inline(l.replace(/^###\s+/, '')) + '</h3>'); }
+        else if (/^##\s+/.test(l)) { closeList(); out.push('<h2>' + inline(l.replace(/^##\s+/, '')) + '</h2>'); }
+        else if (/^#\s+/.test(l)) { closeList(); out.push('<h1>' + inline(l.replace(/^#\s+/, '')) + '</h1>'); }
+        else if (/^---+\s*$/.test(l)) { closeList(); out.push('<hr/>'); }
+        else if (/^\s*-\s+/.test(l)) { if (!inList) { out.push('<ul>'); inList = true; } out.push('<li>' + inline(l.replace(/^\s*-\s+/, '')) + '</li>'); }
+        else if (l === '') { closeList(); }
+        else { closeList(); out.push('<p>' + inline(l) + '</p>'); }
+    }
+    closeList();
+    return out.join('');
+}
+let cguLoaded = false;
+async function openCgu(gate) {
+    $('cgu-modal').classList.remove('hidden');
+    $('cgu-close').classList.toggle('hidden', !!gate); // pas de fermeture tant que non accepté
+    $('cgu-actions').classList.toggle('hidden', !gate);
+    if (!cguLoaded) {
+        try { $('cgu-content').innerHTML = mdToHtml(await api.legal.text()); cguLoaded = true; }
+        catch { $('cgu-content').textContent = 'Conditions indisponibles.'; }
+    }
+    $('cgu-content').scrollTop = 0;
+}
+$('cgu-open').onclick = () => openCgu(false);
+$('cgu-close').onclick = () => $('cgu-modal').classList.add('hidden');
+$('cgu-accept').onclick = async () => { await api.legal.accept(); $('cgu-modal').classList.add('hidden'); };
+async function checkLegalGate() {
+    try { const s = await api.legal.status(); if (s && !s.accepted) await openCgu(true); } catch { /* noop */ }
+}
+
 // ── Boot ──
 refreshAuth();
+checkLegalGate(); // acceptation obligatoire au premier lancement (bloquant)
 api.language().then((l) => ($('lang').value = l));
 api.appVersion().then((v) => ($('app-ver').textContent = 'v' + v));
 api.update.check(); // check silencieux au démarrage (installe en tâche de fond)
