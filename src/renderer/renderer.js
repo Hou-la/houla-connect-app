@@ -586,6 +586,19 @@ function onConnectorPick(el, r) {
     }
     renderRules();
 }
+// Prochaine règle « Cadeau personnalisé » dans la liste (au-dessus si dir=-1, au-dessous si +1).
+function adjacentCustomIndex(i, dir) {
+    for (let j = i + dir; j >= 0 && j < labRules.length; j += dir) {
+        if (labRules[j].event.type === 'gift-custom') return j;
+    }
+    return -1;
+}
+// Échange les SLOTS (donc les prix) de deux cadeaux interactifs.
+function swapSlots(i, j) {
+    const a = labRules[i], b = labRules[j];
+    if (!a || !b) return;
+    const t = a.event.giftSlug; a.event.giftSlug = b.event.giftSlug; b.event.giftSlug = t;
+}
 function renderRules() {
     const box = $('lab-rules');
     box.innerHTML = '';
@@ -604,6 +617,7 @@ function renderRules() {
             <div class="rule__part rule__part--foot"><span class="rule__lbl">SI</span>
                 <div class="rule__fields">
                     <select class="r-role" title="Qui peut déclencher cette règle ?">${ROLES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
+                ${r.event.type === 'gift-custom' ? '<button class="r-up" title="Échanger le slot (prix) avec le cadeau au-dessus">&#8593;</button><button class="r-down" title="Échanger le slot (prix) avec le cadeau en dessous">&#8595;</button>' : ''}
                 <button class="r-test" title="Déclencher cette interaction pour la tester">&#9654; Tester</button>
                 <button class="r-del" title="Supprimer cette interaction">&#10005;</button></div>
             <div class="rule__result"></div>`;
@@ -685,6 +699,8 @@ function renderRules() {
             if (inp.classList.contains('r-event') || inp.classList.contains('r-exec') || inp.classList.contains('r-connector')) return;
             inp.addEventListener('input', () => readRule(el, r));
         });
+        if (q('.r-up')) q('.r-up').onclick = () => { const j = adjacentCustomIndex(i, -1); if (j >= 0) { swapSlots(i, j); renderRules(); } };
+        if (q('.r-down')) q('.r-down').onclick = () => { const j = adjacentCustomIndex(i, 1); if (j >= 0) { swapSlots(i, j); renderRules(); } };
         q('.r-del').onclick = () => { labRules.splice(i, 1); renderRules(); };
         q('.r-test').onclick = async () => {
             readRule(el, r); // synchronise la saisie DOM -> objet règle

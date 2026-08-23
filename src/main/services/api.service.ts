@@ -104,7 +104,12 @@ export class ApiService {
         try {
             const res = await this.authFetch('/api/manager/event-key');
             const list = res.ok ? await res.json() : [];
-            const match = Array.isArray(list) ? list.find((k: any) => k?.keyPrefix && key.startsWith(k.keyPrefix)) : null;
+            // keyPrefix est MASQUÉ en base (ex. « hle_jca1... ») : on retire les points
+            // de suspension avant de tester si c'est un préfixe du secret en cache.
+            const norm = (p: unknown) => String(p || '').replace(/\.+$/, '');
+            const match = Array.isArray(list)
+                ? list.find((k: any) => { const p = norm(k?.keyPrefix); return p.length >= 6 && key.startsWith(p); })
+                : null;
             if (match?.id) { this.store.setEventKeyId(match.id); return match.id; }
         } catch { /* best-effort */ }
         return null;
