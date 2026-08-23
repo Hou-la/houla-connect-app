@@ -120,11 +120,15 @@ export class Engine {
 
         if (!executor) return audit(false, 'exécuteur inconnu');
 
-        // 1. Dedup (le même cadeau peut arriver 2x sur reconnexion) — silencieux :
-        //    c'est un VRAI doublon de livraison, pas un cadeau distinct.
+        // 1. Dedup PAR RÈGLE (transactionId + rule.id) — silencieux : c'est un VRAI
+        //    doublon de livraison du MÊME cadeau pour la MÊME règle. La clé inclut
+        //    rule.id car PLUSIEURS règles peuvent légitimement réagir au même cadeau
+        //    (ex. une annonce chat + un effet) : dédoublonner par transactionId seul
+        //    aurait mangé toutes les règles sauf la première.
         if (transactionId) {
-            if (this.seen.has(transactionId)) return;
-            this.seen.add(transactionId);
+            const dedupKey = `${transactionId}:${rule.id}`;
+            if (this.seen.has(dedupKey)) return;
+            this.seen.add(dedupKey);
             if (this.seen.size > 5000) this.seen.clear();
         }
         // 2. Gating rôles.
