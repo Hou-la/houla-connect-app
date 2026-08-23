@@ -329,15 +329,21 @@ function registerIpc(): void {
         const reactSlugs = activeManifest.rules.filter((r) => r.on.type === 'gift').map((r) => r.on.giftSlug ?? r.on.slot!);
         const events = ['gift', 'follow', 'comment', 'viewer', 'hearts'];
         const key = await api.ensureEventKey(events);
+        // Pose le pack VISUEL du pack actif sur la clé AVANT la connexion : à l'auth
+        // socket, la passerelle lit ce bundleId et l'active côté viewer (le viewer voit
+        // CE pack). setKeyBundle invalide le cache de validation -> lu frais au connect.
+        await api.setActivePackBundle(d.visualBundleId ?? null).catch(() => {});
         conn.connect(key);
         engineRunning = true;
         send('onState', { connected: false, events, reactSlugs });
         return { ok: true };
     });
-    ipcMain.handle('engine:stop', () => {
+    ipcMain.handle('engine:stop', async () => {
         conn.disconnect();
         router.setManifest(null);
         engineRunning = false;
+        // Retire le pack visuel côté viewer : plus de pack actif -> plus rien à montrer.
+        await api.setActivePackBundle(null).catch(() => {});
         return { ok: true };
     });
     ipcMain.handle('engine:panic', async () => {
@@ -345,6 +351,7 @@ function registerIpc(): void {
         await engine.panic();
         sidecarInstance?.kill();
         engineRunning = false;
+        await api.setActivePackBundle(null).catch(() => {});
         send('onState', { connected: false });
         return { ok: true };
     });

@@ -17,6 +17,7 @@ interface Schema {
     refreshToken?: string; // chiffré
     pkceVerifier?: string; // PKCE verifier en cours (survit à une instance fraîche)
     eventKey?: string; // chiffré (hle_...)
+    eventKeyId?: string; // id de la clé event (pour poser son bundle visuel)
     workspaceId?: string;
     workspaceName?: string;
     language?: string;
@@ -88,6 +89,12 @@ export class StoreService {
     getEventKey() {
         return this.dec(this.store.get('eventKey'));
     }
+    setEventKeyId(id: string) {
+        this.store.set('eventKeyId', id);
+    }
+    getEventKeyId(): string | undefined {
+        return this.store.get('eventKeyId');
+    }
     setWorkspace(id: string, name: string) {
         this.store.set('workspaceId', id);
         this.store.set('workspaceName', name);
@@ -99,11 +106,12 @@ export class StoreService {
         return this.store.get('workspaceName');
     }
     clearAuth() {
-        for (const k of ['accessToken', 'refreshToken', 'eventKey', 'workspaceId', 'workspaceName'] as const)
+        for (const k of ['accessToken', 'refreshToken', 'eventKey', 'eventKeyId', 'workspaceId', 'workspaceName'] as const)
             this.store.delete(k);
     }
     clearEventKey() {
         this.store.delete('eventKey');
+        this.store.delete('eventKeyId');
     }
     setPkceVerifier(v: string) {
         this.store.set('pkceVerifier', v);

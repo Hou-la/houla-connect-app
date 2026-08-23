@@ -90,7 +90,38 @@ export class ApiService {
         if (!res.ok) throw new Error(`mint event-key failed: ${res.status}`);
         const d: any = await res.json();
         this.store.setEventKey(d.key);
+        if (d.id) this.store.setEventKeyId(d.id);
         return d.key;
+    }
+
+    /** Id de la clé event courante (pour poser son bundle visuel). Le retrouve via la
+     *  liste si on n'a que le secret en cache (clé mintée avant cette version). */
+    private async resolveEventKeyId(): Promise<string | null> {
+        const cached = this.store.getEventKeyId();
+        if (cached) return cached;
+        const key = this.store.getEventKey();
+        if (!key) return null;
+        try {
+            const res = await this.authFetch('/api/manager/event-key');
+            const list = res.ok ? await res.json() : [];
+            const match = Array.isArray(list) ? list.find((k: any) => k?.keyPrefix && key.startsWith(k.keyPrefix)) : null;
+            if (match?.id) { this.store.setEventKeyId(match.id); return match.id; }
+        } catch { /* best-effort */ }
+        return null;
+    }
+
+    /** Pose (ou retire avec null) le pack VISUEL que le viewer voit pendant le live,
+     *  d'après le pack ACTIF de l'app. Best-effort : ne bloque jamais le live. */
+    async setActivePackBundle(bundleId: string | null): Promise<void> {
+        const keyId = await this.resolveEventKeyId();
+        if (!keyId) return;
+        try {
+            await this.authFetch(`/api/manager/event-key/${encodeURIComponent(keyId)}/bundle`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bundleId }),
+            });
+        } catch { /* best-effort */ }
     }
 
     // ── Catalogue de cadeaux (public, évolue -> l'app le rafraîchit toute seule) ──
