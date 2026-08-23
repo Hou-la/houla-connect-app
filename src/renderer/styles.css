@@ -143,6 +143,12 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
     font-size: 12px; line-height: 1.7; background: var(--bg); border-radius: 8px; padding: 12px;
 }
 .log-t { color: var(--muted); margin-right: 6px; font-variant-numeric: tabular-nums; }
+
+/* Éditeur Lab : poignée de glisser + prix du slot + cible de dépôt. */
+.rule__drag { cursor: grab; color: var(--muted); padding: 0 4px; user-select: none; font-size: 16px; line-height: 1; align-self: center; }
+.rule__drag:active { cursor: grabbing; }
+.r-price { color: var(--muted); font-size: 12px; align-self: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rule--dropthere { outline: 2px dashed var(--accent); outline-offset: 2px; border-radius: 8px; }
 .log .ok { color: var(--ok); }
 .log .no { color: var(--danger); }
 

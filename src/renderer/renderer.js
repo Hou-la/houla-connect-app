@@ -425,6 +425,7 @@ const EXECS = [['keyboard', 'Clavier'], ['gamepad', 'Manette'], ['rcon', 'RCON']
 const ROLES = [['all', 'Tout le monde'], ['followers', 'Abonnés'], ['moderators', 'Modérateurs']];
 const GP_BUTTONS = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'START', 'BACK', 'LS', 'RS'];
 let labRules = [];
+let labDragIndex = -1; // index de la règle en cours de glisser (échange de slot)
 let labCurrentSlug = null;
 let labLatestVersion = null;
 let labJsonMode = false;
@@ -432,6 +433,20 @@ let labMode = 'create'; // 'create' | 'edit'
 let labTags = []; // types d'intégration (slugs)
 let pendingEditSlug = null; // pack à ouvrir en édition quand on arrive sur le Lab
 let giftCatalog = []; // [{slug,name,thumbnailUrl,coinCost,isInteractiveSlot}] depuis GET /api/gifts
+
+// Échelle FIXE des 30 slots interactifs (coins) — miroir de la config plateforme
+// (les slots interactifs ne sont pas exposés dans /api/gifts, on porte l'échelle ici).
+// Le PRIX est lié au NUMÉRO de slot : ranger un cadeau dans un slot moins cher = moins cher.
+const INTERACTIVE_SLOT_COINS = [5, 10, 15, 20, 30, 45, 60, 80, 100, 125, 155, 190, 230, 280, 340, 410, 490, 580, 680, 790, 900, 1010, 1120, 1230, 1340, 1440, 1530, 1600, 1660, 1700];
+const COIN_EUR_CENTS = 1.3; // ~1,3 cent / coin (packs de coins 0,99 €/70 … 99,99 €/8500)
+function slotIndex(slug) { const m = /^ix_slot_(\d{2})$/.exec(slug || ''); return m ? (+m[1] - 1) : -1; }
+function slotCoins(slug) { const i = slotIndex(slug); return i >= 0 ? INTERACTIVE_SLOT_COINS[i] : null; }
+function slotPriceLabel(slug) {
+    const c = slotCoins(slug);
+    if (c == null) return '';
+    const eur = (c * COIN_EUR_CENTS) / 100;
+    return `${c} coins ≈ ${eur.toFixed(2).replace('.', ',')} €`;
+}
 
 async function loadGiftCatalog() {
     try { giftCatalog = (await api.gifts.catalog()) || []; } catch { giftCatalog = []; }
@@ -452,7 +467,7 @@ function slotOptions(selected) {
     let s = '';
     for (let i = 1; i <= 30; i++) {
         const v = `ix_slot_${String(i).padStart(2, '0')}`;
-        s += `<option value="${v}"${v === selected ? ' selected' : ''}>Slot interactif ${i}</option>`;
+        s += `<option value="${v}"${v === selected ? ' selected' : ''}>Slot ${i} · ${INTERACTIVE_SLOT_COINS[i - 1]} coins</option>`;
     }
     return s;
 }
@@ -467,7 +482,9 @@ function eventFieldHtml(r) {
     if (r.event.type === 'gift-custom') {
         const src = r.event.iconUrl || r.event._iconPreview;
         const ic = src ? `background-image:url('${esc(src)}')` : '';
-        return `<select class="r-giftslug">${slotOptions(r.event.giftSlug)}</select>`
+        return `<span class="rule__drag" draggable="true" title="Glisser sur un autre cadeau pour échanger les slots (donc les prix)">⠿</span>`
+            + `<select class="r-giftslug">${slotOptions(r.event.giftSlug)}</select>`
+            + `<span class="r-price" title="Ce que le viewer paie pour ce cadeau">${esc(slotPriceLabel(r.event.giftSlug))}</span>`
             + `<span class="r-icon" title="icône du cadeau" style="${ic}"></span>`
             + `<button type="button" class="r-iconbtn">Icône…</button>`
             + `<button type="button" class="r-iconguide" title="Comment réaliser l'icône ?">i</button>`;
@@ -631,6 +648,39 @@ function renderRules() {
             renderRules();
         };
         q('.r-exec').onchange = (e) => { r.effect = { type: e.target.value }; renderRules(); };
+        // Slot interactif : re-render au changement pour rafraîchir le prix affiché + l'icône.
+        if (r.event.type === 'gift-custom' && q('.r-giftslug')) {
+            q('.r-giftslug').addEventListener('change', () => { readRule(el, r); renderRules(); });
+        }
+        // Drag & drop : glisser un cadeau interactif sur un autre ÉCHANGE leurs slots
+        // (donc leurs prix). Réservé aux cadeaux interactifs (les seuls à avoir un slot).
+        const handle = q('.rule__drag');
+        if (handle) {
+            handle.ondragstart = (e) => {
+                labDragIndex = i;
+                try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); } catch { /* noop */ }
+            };
+        }
+        if (r.event.type === 'gift-custom') {
+            el.addEventListener('dragover', (e) => {
+                const src = labRules[labDragIndex];
+                if (labDragIndex >= 0 && labDragIndex !== i && src && src.event.type === 'gift-custom') {
+                    e.preventDefault();
+                    el.classList.add('rule--dropthere');
+                }
+            });
+            el.addEventListener('dragleave', () => el.classList.remove('rule--dropthere'));
+            el.addEventListener('drop', (e) => {
+                e.preventDefault();
+                el.classList.remove('rule--dropthere');
+                const from = labDragIndex; labDragIndex = -1;
+                if (from < 0 || from === i) return;
+                const a = labRules[from], b = labRules[i];
+                if (!a || !b || a.event.type !== 'gift-custom' || b.event.type !== 'gift-custom') return;
+                const tmp = a.event.giftSlug; a.event.giftSlug = b.event.giftSlug; b.event.giftSlug = tmp;
+                renderRules();
+            });
+        }
         el.querySelectorAll('input, select').forEach((inp) => {
             if (inp.classList.contains('r-event') || inp.classList.contains('r-exec') || inp.classList.contains('r-connector')) return;
             inp.addEventListener('input', () => readRule(el, r));
