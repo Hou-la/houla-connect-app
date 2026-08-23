@@ -114,10 +114,29 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
 .btn--ghost { background: var(--bg-3); color: var(--text); border: 1px solid var(--border); }
 .btn--panic { background: var(--danger); color: #fff; font-weight: 700; }
 .btn--panic:hover { filter: brightness(1.1); }
+/* État CONNECTÉ du bouton toggle : contour (forme différente du plein « Démarrer »),
+   pas seulement une couleur -> lisible même sans distinguer les teintes. */
+.btn--stop { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.btn--stop:hover { background: var(--bg-3); }
+.btn--stop::before { content: "◼"; margin-right: 7px; font-size: 11px; vertical-align: 1px; }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.is-loading { opacity: .9; cursor: progress; }
+/* Spinner de chargement (état « Connexion… »). */
+.spinner { display: inline-block; width: 12px; height: 12px; margin-right: 7px; vertical-align: -1px;
+    border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%;
+    animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.6s; } }
 
 .badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 .badge--off { background: var(--bg-3); color: var(--muted); border: 1px solid var(--border); }
 .badge--on { background: rgba(53,208,127,.15); color: var(--ok); border: 1px solid var(--ok); }
+/* « Connexion… » : distinct par le texte + un point clignotant (pas que la couleur). */
+.badge--pending { background: var(--bg-3); color: var(--text); border: 1px solid var(--border); }
+.badge--pending::before { content: "●"; margin-right: 6px; font-size: 9px; vertical-align: 1px;
+    animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .badge--pending::before { animation: none; } }
 
 .log {
     height: 300px; overflow-y: auto; font-family: ui-monospace, monospace;

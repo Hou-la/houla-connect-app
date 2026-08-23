@@ -101,6 +101,9 @@ async function loadWorkspaces() {
             await api.selectWorkspace({ id: ws.id, name: ws.name || '' });
             setCurrentWs(ws);
             api.engine.stop();
+            engineState = 'idle';
+            loggedConnected = false;
+            setBadge('off', 'Déconnecté');
             await loadInstalled();
         };
         menu.appendChild(item);
@@ -143,19 +146,51 @@ async function loadSettings() {
 document.querySelectorAll('.nav').forEach((n) => (n.onclick = () => switchView(n.dataset.view)));
 
 // ── Capture ──
+// Machine à états du bouton toggle : un SEUL bouton, l'état est lisible par le TEXTE
+// + la forme (plein « Démarrer » / spinner « Connexion… » / contour « Déconnecter »),
+// pas seulement la couleur (propriétaire daltonien). Le chip haut-droite est doublé
+// par une ligne dans le journal.
+let engineState = 'idle'; // 'idle' | 'connecting' | 'running'
+let hasPack = false;
+let connectingSince = 0;
+let connectWatchdog = null;
+let loggedConnected = false;
+
+function setBadge(kind, text) {
+    const badge = $('conn-badge');
+    badge.textContent = text;
+    badge.className = 'badge badge--' + kind; // 'on' | 'off' | 'pending'
+}
+function setEngineButton() {
+    const b = $('btn-start');
+    b.classList.remove('btn--primary', 'btn--stop', 'is-loading');
+    if (engineState === 'connecting') {
+        b.classList.add('btn--primary', 'is-loading');
+        b.disabled = true;
+        b.innerHTML = '<span class="spinner"></span>Connexion…';
+    } else if (engineState === 'running') {
+        b.classList.add('btn--stop');
+        b.disabled = false;
+        b.textContent = 'Déconnecter';
+    } else {
+        b.classList.add('btn--primary');
+        b.disabled = !hasPack;
+        b.textContent = 'Démarrer';
+    }
+    $('btn-test').disabled = engineState !== 'running'; // le test-fire exige une connexion active
+}
+
 async function loadInstalled(toMine) {
     const installed = (await api.store.installed()) || [];
     const sel = $('active-bundle');
     const noPack = $('no-pack');
-    if (!installed.length) {
-        // Aucun pack : on cache le select et on affiche l'état vide.
+    hasPack = installed.length > 0;
+    if (!hasPack) {
         sel.classList.add('hidden');
         noPack.classList.remove('hidden');
-        $('btn-start').disabled = true;
     } else {
         sel.classList.remove('hidden');
         noPack.classList.add('hidden');
-        $('btn-start').disabled = false;
         sel.innerHTML = '';
         installed.forEach((b) => {
             const o = document.createElement('option');
@@ -164,20 +199,93 @@ async function loadInstalled(toMine) {
             sel.appendChild(o);
         });
     }
+    // Resynchronise l'état réel du moteur (si on revient sur la vue en plein live).
+    try {
+        const st = await api.engine.status();
+        if (st && st.connected && engineState === 'idle') { engineState = 'running'; setBadge('on', 'Connecté'); }
+    } catch { /* noop */ }
+    setEngineButton();
 }
+
 $('btn-start').onclick = async () => {
+    // Toggle : connecté ou en cours de connexion -> on coupe.
+    if (engineState === 'running' || engineState === 'connecting') {
+        clearTimeout(connectWatchdog);
+        try { await api.engine.stop(); } catch { /* noop */ }
+        engineState = 'idle';
+        loggedConnected = false;
+        setBadge('off', 'Déconnecté');
+        setEngineButton();
+        logLine({ allowed: false, ruleId: 'live', reason: 'Déconnecté' });
+        return;
+    }
     const slug = $('active-bundle').value;
     if (!slug) return;
-    try { await api.engine.start(slug); } catch (e) { logLine({ allowed: false, reason: friendlyError(e, "Le pack n'a pas pu démarrer."), ruleId: 'start' }); }
+    engineState = 'connecting';
+    connectingSince = Date.now();
+    loggedConnected = false;
+    setBadge('pending', 'Connexion…');
+    setEngineButton();
+    logLine({ allowed: true, ruleId: 'live', reason: 'Connexion au live…' });
+    // Garde-fou : sans confirmation de connexion sous 12 s, retour à l'état initial.
+    clearTimeout(connectWatchdog);
+    connectWatchdog = setTimeout(() => {
+        if (engineState === 'connecting') {
+            engineState = 'idle';
+            api.engine.stop().catch(() => {});
+            setBadge('off', 'Déconnecté');
+            setEngineButton();
+            logLine({ allowed: false, ruleId: 'live', reason: 'Connexion impossible (délai dépassé). Réessaie.' });
+        }
+    }, 12000);
+    try {
+        await api.engine.start(slug);
+    } catch (e) {
+        clearTimeout(connectWatchdog);
+        engineState = 'idle';
+        setBadge('off', 'Déconnecté');
+        setEngineButton();
+        logLine({ allowed: false, reason: friendlyError(e, "Le pack n'a pas pu démarrer."), ruleId: 'start' });
+    }
 };
-$('btn-stop').onclick = () => api.engine.stop();
 $('btn-test').onclick = () => api.engine.test();
-$('btn-panic').onclick = () => api.engine.panic();
+$('btn-panic').onclick = () => {
+    clearTimeout(connectWatchdog);
+    api.engine.panic();
+    engineState = 'idle';
+    loggedConnected = false;
+    setBadge('off', 'Déconnecté');
+    setEngineButton();
+};
 
 api.onState((s) => {
-    const badge = $('conn-badge');
-    badge.textContent = s.connected ? 'Connecté' : (s.error ? 'Erreur: ' + s.error : 'Déconnecté');
-    badge.className = 'badge ' + (s.connected ? 'badge--on' : 'badge--off');
+    if (s.connected) {
+        clearTimeout(connectWatchdog);
+        setBadge('on', 'Connecté');
+        if (engineState === 'connecting') {
+            // Au moins ~1,2 s d'animation « Connexion… » pour que le clic soit ressenti.
+            const wait = Math.max(0, 1200 - (Date.now() - connectingSince));
+            setTimeout(() => {
+                // Si l'utilisateur a coupé entre-temps (état revenu à idle), on n'affiche pas « running ».
+                if (engineState !== 'connecting') return;
+                engineState = 'running';
+                setEngineButton();
+                if (!loggedConnected) { loggedConnected = true; logLine({ allowed: true, ruleId: 'live', reason: 'Connecté au live' }); }
+            }, wait);
+        }
+    } else if (s.error) {
+        clearTimeout(connectWatchdog);
+        engineState = 'idle';
+        loggedConnected = false;
+        setBadge('off', 'Déconnecté');
+        setEngineButton();
+        logLine({ allowed: false, ruleId: 'live', reason: friendlyError({ message: s.error }, 'Connexion perdue.') });
+    } else if (engineState === 'connecting') {
+        // onState{connected:false} émis juste après engine:start : on l'ignore, on attend la vraie connexion.
+    } else {
+        setBadge('off', 'Déconnecté');
+        if (engineState === 'running') { engineState = 'idle'; setEngineButton(); }
+    }
 });
 api.onLog((l) => logLine(l));
 function logLine(l) {
