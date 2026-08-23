@@ -142,6 +142,7 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
     height: 300px; overflow-y: auto; font-family: ui-monospace, monospace;
     font-size: 12px; line-height: 1.7; background: var(--bg); border-radius: 8px; padding: 12px;
 }
+.log-t { color: var(--muted); margin-right: 6px; font-variant-numeric: tabular-nums; }
 .log .ok { color: var(--ok); }
 .log .no { color: var(--danger); }
 

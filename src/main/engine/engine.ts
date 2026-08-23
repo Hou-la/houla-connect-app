@@ -15,6 +15,12 @@ export interface AuditEntry {
     ruleId: string;
     trigger: string;
     sender: string;
+    /** Nom du cadeau déclencheur (pour un journal lisible). */
+    giftName?: string;
+    /** Quantité du combo (un envoi ×N). */
+    quantity?: number;
+    /** Nombre d'exécutions réellement jouées (honore la quantité, plafonné). */
+    fired?: number;
     executor: ExecutorType;
     allowed: boolean;
     reason?: string;
@@ -49,7 +55,10 @@ export class Engine {
     private readonly validated = new WeakSet<object>();
     private bucket = 0;
     private bucketResetAt = 0;
-    private readonly MAX_PER_SEC = 12;
+    private readonly MAX_PER_SEC = 20;
+    /** Plafond d'exécutions pour UN combo (un cadeau ×N) : « 3 cadeaux = 3 effets »,
+     *  mais un combo géant ne fait pas spawn 1000 entités. */
+    private static readonly MAX_REPS = 20;
 
     constructor(private readonly deps: EngineDeps) {
         this.executors = new Map<ExecutorType, Executor>([
@@ -93,12 +102,15 @@ export class Engine {
     async dispatch(rule: BundleRule, ctx: FireContext, transactionId?: string | null): Promise<void> {
         const effect = rule.effect;
         const executor = this.executors.get(effect.type);
-        const audit = (allowed: boolean, reason?: string) =>
+        const audit = (allowed: boolean, reason?: string, fired?: number) =>
             this.deps.audit({
                 ts: this.now(),
                 ruleId: rule.id,
                 trigger: rule.on.type,
                 sender: ctx.senderName,
+                giftName: ctx.giftName || undefined,
+                quantity: ctx.quantity || 1,
+                fired,
                 executor: effect.type,
                 allowed,
                 reason,
@@ -106,9 +118,10 @@ export class Engine {
 
         if (!executor) return audit(false, 'exécuteur inconnu');
 
-        // 1. Dedup (le même cadeau peut arriver 2x sur reconnexion).
+        // 1. Dedup (le même cadeau peut arriver 2x sur reconnexion) — silencieux :
+        //    c'est un VRAI doublon de livraison, pas un cadeau distinct.
         if (transactionId) {
-            if (this.seen.has(transactionId)) return; // silencieux
+            if (this.seen.has(transactionId)) return;
             this.seen.add(transactionId);
             if (this.seen.size > 5000) this.seen.clear();
         }
@@ -116,22 +129,24 @@ export class Engine {
         if (rule.followersOnly && !ctx.isFollower) return audit(false, 'abonnés uniquement');
         if (rule.moderatorsOnly && !ctx.isModerator) return audit(false, 'modérateurs uniquement');
         // 3. Injection locale : gardée par un connecteur LOCAL activé (clavier/manette/
-        //    pilote). Le réseau est gardé par la résolution d'un connecteur (étape 7).
+        //    pilote). Le réseau est gardé par la résolution d'un connecteur (étape 6).
         if (executor.requiresCapability && !this.deps.hasEnabledConnector(executor.localConnectorType || ''))
             return audit(false, `connecteur « ${executor.localConnectorType} » désactivé`);
         // 4. Focus-guard clavier/manette (default-deny si focus inconnu/mauvais).
         if ((effect.type === 'keyboard' || effect.type === 'gamepad') && !this.deps.isTargetFocused())
             return audit(false, 'fenêtre cible pas au premier plan');
-        // 5. Cooldown par règle.
+        // 5. Cooldown par règle (OPT-IN, défaut 0) — VISIBLE quand il throttle, pour ne
+        //    pas donner l'impression que « rien ne se passe ». Ne collapse PAS des
+        //    cadeaux distincts par défaut : chaque cadeau payé compte.
         const cd = (effect as any).cooldownMs ?? 0;
         if (cd > 0) {
             const last = this.lastFired.get(rule.id) ?? 0;
-            if (this.now() - last < cd) return; // silencieux
+            if (this.now() - last < cd) return audit(false, `cooldown ${cd} ms`);
         }
-        // 6. Token bucket global (anti-flood).
-        if (!this.tokenOk()) return audit(false, 'rate-limit global');
 
-        // 7. Valider (une fois) + résoudre le connecteur + exécuter.
+        // 6. Valider (une fois) + résoudre le connecteur + exécuter QUANTITÉ fois.
+        //    Un combo de N cadeaux -> N effets (« 3 cadeaux = 3 zombies »), plafonné
+        //    par MAX_REPS et par le token-bucket global anti-flood.
         try {
             if (!this.validated.has(effect as object)) {
                 executor.validate(effect as BundleEffect);
@@ -139,11 +154,18 @@ export class Engine {
             }
             ctx.connector = this.deps.resolveConnector(effect as BundleEffect);
             this.applyConnectorVars(ctx);
-            await executor.fire(effect as BundleEffect, ctx);
+            const reps = Math.max(1, Math.min(Number(ctx.quantity) || 1, Engine.MAX_REPS));
+            let fired = 0;
+            for (let i = 0; i < reps; i++) {
+                if (!this.tokenOk()) break; // anti-flood global atteint
+                await executor.fire(effect as BundleEffect, ctx);
+                fired++;
+            }
             this.lastFired.set(rule.id, this.now());
-            audit(true);
+            if (fired === 0) return audit(false, 'rate-limit global');
+            audit(true, fired < reps ? `rate-limit (${fired}/${reps})` : undefined, fired);
         } catch (err: any) {
-            audit(false, err?.message || 'échec exécuteur');
+            audit(false, err?.message || 'échec exécuteur', undefined);
         }
     }
 

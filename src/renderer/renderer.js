@@ -290,9 +290,32 @@ api.onState((s) => {
 api.onLog((l) => logLine(l));
 function logLine(l) {
     const el = document.createElement('div');
-    const cls = l.allowed ? 'ok' : 'no';
-    const sign = l.allowed ? '✓' : '✕';
-    el.innerHTML = `<span class="${cls}">${sign}</span> ${l.ruleId || ''} ${l.executor || ''} ${l.sender ? '— ' + l.sender : ''} ${l.reason ? '(' + l.reason + ')' : ''}`;
+    const ok = !!l.allowed;
+    const cls = ok ? 'ok' : 'no';
+    const sign = ok ? '✓' : '✕';
+    let body;
+    if (l.ruleId === 'live' || l.ruleId === 'start') {
+        // Lignes système / connexion : afficher le motif tel quel.
+        body = esc(l.reason || (ok ? 'OK' : 'Échec'));
+    } else {
+        // Ligne d'interaction : QUI a envoyé QUOI (× combien) → QUEL exécuteur → résultat.
+        const who = esc(l.sender || 'Quelqu\'un');
+        const qty = l.quantity && l.quantity > 1 ? `${l.quantity}× ` : '';
+        const what = l.giftName
+            ? `${qty}${esc(l.giftName)}`
+            : (l.trigger === 'gift' ? `${qty}cadeau` : esc(l.trigger || 'événement'));
+        const exec = esc((l.executor || '').toUpperCase());
+        let outcome;
+        if (ok) {
+            const reps = l.fired && l.fired > 1 ? ` ×${l.fired}` : '';
+            outcome = `${exec}${reps} exécuté${l.reason ? ' — ' + esc(l.reason) : ''}`;
+        } else {
+            outcome = `ignoré — ${esc(l.reason || 'refusé')}`;
+        }
+        body = `<b>${who}</b> → ${what} → ${outcome}`;
+    }
+    const time = l.ts ? new Date(l.ts).toLocaleTimeString() : '';
+    el.innerHTML = `<span class="log-t">${esc(time)}</span> <span class="${cls}">${sign}</span> ${body}`;
     const log = $('log');
     log.appendChild(el);
     log.scrollTop = log.scrollHeight;
@@ -334,32 +357,41 @@ async function bindRequiredConnectors(slug, required) {
     }
 }
 async function loadStore() {
-    const list = (await api.store.list()) || [];
+    // On croise la liste du store avec les packs DÉJÀ installés (état local persistant),
+    // pour que le bouton reflète la réalité au retour sur la vue (bug : il repassait à
+    // « Installer » alors que le pack était installé).
+    const [list, installed] = await Promise.all([api.store.list(), api.store.installed()]);
+    const items = list || [];
+    const installedBy = new Map((installed || []).map((b) => [b.slug, b]));
     const el = $('store-list');
     el.innerHTML = '';
-    if (!list.length) { el.innerHTML = '<p class="muted">Le store est vide pour l\'instant.</p>'; return; }
-    list.forEach((b) => {
+    if (!items.length) { el.innerHTML = '<p class="muted">Le store est vide pour l\'instant.</p>'; return; }
+    items.forEach((b) => {
+        const inst = installedBy.get(b.slug);
         const card = document.createElement('div');
         card.className = 'bundle-card';
         const banner = b.bannerUrl ? ` style="background-image:url('${esc(b.bannerUrl)}')"` : '';
+        const installBtn = inst
+            ? `<button class="btn btn--ghost install" disabled>Installé ✓${inst.version ? ' · v' + esc(inst.version) : ''}</button>`
+            : `<button class="btn btn--primary install">Installer</button>`;
         card.innerHTML = `
             <div class="bundle-card__banner"${banner}></div>
             <div class="bundle-card__body">
                 <h3>${esc(b.title || b.slug)}</h3>
                 <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
                 <div class="row gap">
-                    <button class="btn btn--primary install">Installer</button>
+                    ${installBtn}
                     <button class="btn btn--ghost more">Voir plus</button>
                 </div>
             </div>`;
-        card.querySelector('.install').onclick = (e) => installBundle(b.slug, e.target);
-        card.querySelector('.more').onclick = () => openModal(b);
+        if (!inst) card.querySelector('.install').onclick = (e) => installBundle(b.slug, e.target);
+        card.querySelector('.more').onclick = () => openModal(b, !!inst);
         el.appendChild(card);
     });
 }
 
 // ── Modal détail ──
-function openModal(b) {
+function openModal(b, isInstalled) {
     $('modal-banner').style.backgroundImage = b.bannerUrl ? `url('${b.bannerUrl}')` : '';
     $('modal-title').textContent = b.title || b.slug;
     $('modal-publisher').innerHTML = publisherHtml(b.publisher, b.installCount);
@@ -372,8 +404,16 @@ function openModal(b) {
             $('modal-caps').innerHTML = caps.map((c) => `<span class="chip">${esc(c)}</span>`).join('');
         })
         .catch(() => {});
-    $('modal-install').onclick = () => installBundle(b.slug, $('modal-install'));
-    $('modal-install').textContent = 'Installer';
+    const btn = $('modal-install');
+    if (isInstalled) {
+        btn.textContent = 'Installé ✓';
+        btn.disabled = true;
+        btn.onclick = null;
+    } else {
+        btn.textContent = 'Installer';
+        btn.disabled = false;
+        btn.onclick = () => installBundle(b.slug, btn);
+    }
     $('modal').classList.remove('hidden');
 }
 $('modal-close').onclick = () => $('modal').classList.add('hidden');
