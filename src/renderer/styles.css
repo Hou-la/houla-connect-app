@@ -149,6 +149,13 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
 .rule__drag:active { cursor: grabbing; }
 .r-price { color: var(--muted); font-size: 12px; align-self: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .rule--dropthere { outline: 2px dashed var(--accent); outline-offset: 2px; border-radius: 8px; }
+
+/* Personnaliser (calque local) : une ligne par interaction. */
+.cx-rule { display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-bottom: 1px solid var(--border); }
+.cx-rule:last-child { border-bottom: 0; }
+.cx-rule__info { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-cd { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+.cx-cd-in { width: 84px; padding: 6px 8px; margin: 0; }
 .log .ok { color: var(--ok); }
 .log .no { color: var(--danger); }
 

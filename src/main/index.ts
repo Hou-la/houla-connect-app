@@ -41,6 +41,23 @@ function send(channel: string, payload: unknown): void {
     win?.webContents.send(channel, payload);
 }
 
+/** Applique le calque de perso locale à un manifeste (copie, ne mute rien) :
+ *  retire les interactions désactivées, override les cooldowns. Le manifeste SIGNÉ
+ *  reste intact ; c'est un réglage runtime propre au streamer, qui survit aux MAJ. */
+function applyPackOverlay(
+    manifest: BundleManifest,
+    overlay: { disabled: string[]; cooldownMs: Record<string, number> },
+): BundleManifest {
+    const disabled = new Set(overlay.disabled);
+    const rules = (manifest.rules || [])
+        .filter((r) => !disabled.has(r.id))
+        .map((r) => {
+            const cd = overlay.cooldownMs[r.id];
+            return cd != null ? { ...r, effect: { ...r.effect, cooldownMs: cd } } : r;
+        });
+    return { ...manifest, rules };
+}
+
 // Auto-update depuis GitHub Releases (dépôt public). On câble les événements ;
 // le renderer déclenche le check (pour qu'il écoute déjà) et propose Installer.
 function setupAutoUpdate(): void {
@@ -279,6 +296,28 @@ function registerIpc(): void {
         return { ok: true };
     });
 
+    // ── Personnalisation LOCALE d'un pack installé (calque, pas de publication) ──
+    ipcMain.handle('customize:get', async (_e, slug: string) => {
+        const d = await api.fetchVerifiedManifest(slug); // manifeste signé (lecture seule)
+        const overlay = store.getPackOverlay(slug);
+        const disabled = new Set(overlay.disabled);
+        const rules = ((d.manifest?.rules || []) as any[]).map((r) => ({
+            id: r.id,
+            label: r.label || '',
+            trigger: r.on?.type || 'gift',
+            giftSlug: r.on?.giftSlug || r.on?.slot || '',
+            effectType: r.effect?.type || '',
+            defaultCooldownMs: r.effect?.cooldownMs ?? 0,
+            cooldownMs: overlay.cooldownMs[r.id], // override local, ou undefined
+            enabled: !disabled.has(r.id),
+        }));
+        return { slug, version: d.version, rules };
+    });
+    ipcMain.handle('customize:save', (_e, slug: string, overlay: any) => {
+        store.setPackOverlay(slug, overlay || {});
+        return { ok: true };
+    });
+
     // Capacités / secrets / focus
     ipcMain.handle('caps:get', () => ({
         capabilities: [...store.getCapabilities()],
@@ -324,7 +363,9 @@ function registerIpc(): void {
     ipcMain.handle('engine:start', async (_e, slug: string) => {
         const d = await api.fetchVerifiedManifest(slug); // re-vérifie signature avant exécution
         store.setActiveBundleSlug(slug); // seulement APRÈS un fetch réussi (pas de pack fantôme)
-        activeManifest = d.manifest as BundleManifest;
+        // Applique le CALQUE local (perso streamer) : désactive des interactions,
+        // override des cooldowns. N'altère jamais le manifeste signé sur le disque.
+        activeManifest = applyPackOverlay(d.manifest as BundleManifest, store.getPackOverlay(slug));
         router.setManifest(activeManifest);
         const reactSlugs = activeManifest.rules.filter((r) => r.on.type === 'gift').map((r) => r.on.giftSlug ?? r.on.slot!);
         const events = ['gift', 'follow', 'comment', 'viewer', 'hearts'];

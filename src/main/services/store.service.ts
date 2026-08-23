@@ -33,6 +33,9 @@ interface Schema {
     activeByEnv?: Record<string, string>; // pack actif PAR environnement
     connectors?: StoredConnector[]; // connecteurs nommés (multiple par type)
     bundleBindings?: Record<string, Record<string, string>>; // slug -> role -> connectorId
+    // Calque de PERSONNALISATION locale par pack (streamer) : n'édite JAMAIS le
+    // manifeste signé, juste des réglages appliqués au runtime. Survit aux MAJ.
+    packOverlays?: Record<string, { disabled?: string[]; cooldownMs?: Record<string, number> }>;
     environment?: string; // 'prod' | 'staging' | 'dev' (sélecteur admin)
 }
 
@@ -276,6 +279,18 @@ export class StoreService {
             out[k] = SECRET_FIELDS.has(k) ? this.dec(val) ?? '' : val;
         }
         return { type: c.type, config: out };
+    }
+
+    // ── Personnalisation locale d'un pack (calque, jamais dans le manifeste signé) ──
+    getPackOverlay(slug: string): { disabled: string[]; cooldownMs: Record<string, number> } {
+        const all = this.store.get('packOverlays', {} as Record<string, { disabled?: string[]; cooldownMs?: Record<string, number> }>);
+        const o = all[slug] || {};
+        return { disabled: o.disabled || [], cooldownMs: o.cooldownMs || {} };
+    }
+    setPackOverlay(slug: string, overlay: { disabled?: string[]; cooldownMs?: Record<string, number> }): void {
+        const all = this.store.get('packOverlays', {} as Record<string, { disabled?: string[]; cooldownMs?: Record<string, number> }>);
+        all[slug] = { disabled: overlay.disabled || [], cooldownMs: overlay.cooldownMs || {} };
+        this.store.set('packOverlays', all);
     }
 
     // ── Liaisons bundle -> rôle -> connecteur ──

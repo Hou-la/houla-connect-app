@@ -374,17 +374,20 @@ async function loadStore() {
         const installBtn = inst
             ? `<button class="btn btn--ghost install" disabled>Installé ✓${inst.version ? ' · v' + esc(inst.version) : ''}</button>`
             : `<button class="btn btn--primary install">Installer</button>`;
+        const customizeBtn = inst ? `<button class="btn btn--ghost customize">Personnaliser</button>` : '';
         card.innerHTML = `
             <div class="bundle-card__banner"${banner}></div>
             <div class="bundle-card__body">
                 <h3>${esc(b.title || b.slug)}</h3>
                 <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
-                <div class="row gap">
+                <div class="row gap wrap">
                     ${installBtn}
+                    ${customizeBtn}
                     <button class="btn btn--ghost more">Voir plus</button>
                 </div>
             </div>`;
         if (!inst) card.querySelector('.install').onclick = (e) => installBundle(b.slug, e.target);
+        if (inst) { const cb = card.querySelector('.customize'); if (cb) cb.onclick = () => openCustomize(b.slug, b.title || b.slug); }
         card.querySelector('.more').onclick = () => openModal(b, !!inst);
         el.appendChild(card);
     });
@@ -418,6 +421,51 @@ function openModal(b, isInstalled) {
 }
 $('modal-close').onclick = () => $('modal').classList.add('hidden');
 $('modal').onclick = (e) => { if (e.target.id === 'modal') $('modal').classList.add('hidden'); };
+
+// ── Personnalisation LOCALE d'un pack installé (calque : activer/désactiver + cooldown) ──
+async function openCustomize(slug, title) {
+    $('cx-title').textContent = title || slug;
+    $('cx-msg').textContent = '';
+    $('cx-modal').dataset.slug = slug;
+    const box = $('cx-rules');
+    box.innerHTML = '<p class="muted">Chargement…</p>';
+    $('cx-modal').classList.remove('hidden');
+    let data;
+    try { data = await api.customize.get(slug); }
+    catch (e) { box.innerHTML = `<p class="no">${esc(friendlyError(e, 'Pack indisponible.'))}</p>`; return; }
+    const rules = (data && data.rules) || [];
+    if (!rules.length) { box.innerHTML = '<p class="muted">Ce pack n\'a pas d\'interaction personnalisable.</p>'; return; }
+    box.innerHTML = '';
+    rules.forEach((r) => {
+        const row = document.createElement('div');
+        row.className = 'cx-rule';
+        row.dataset.id = r.id;
+        const what = r.giftSlug ? esc(r.giftSlug) : esc(r.trigger || 'événement');
+        const name = r.label ? esc(r.label) : what;
+        row.innerHTML =
+            `<label class="switch" title="Activer / désactiver cette interaction"><input type="checkbox" class="cx-en"${r.enabled ? ' checked' : ''}/><span class="switch__track"><span class="switch__thumb"></span></span></label>`
+            + `<div class="cx-rule__info"><b>${name}</b> <span class="muted">${esc(r.effectType || '')}${r.giftSlug ? ' · ' + what : ''}</span></div>`
+            + `<label class="cx-cd muted" title="Temps minimum entre deux déclenchements">cooldown ms <input type="number" min="0" class="cx-cd-in" placeholder="${Number(r.defaultCooldownMs) || 0}" value="${r.cooldownMs != null ? r.cooldownMs : ''}"/></label>`;
+        box.appendChild(row);
+    });
+}
+$('cx-close').onclick = () => $('cx-modal').classList.add('hidden');
+$('cx-modal').onclick = (e) => { if (e.target.id === 'cx-modal') $('cx-modal').classList.add('hidden'); };
+$('cx-save').onclick = async () => {
+    const slug = $('cx-modal').dataset.slug;
+    const disabled = [];
+    const cooldownMs = {};
+    $('cx-rules').querySelectorAll('.cx-rule').forEach((row) => {
+        const id = row.dataset.id;
+        if (!row.querySelector('.cx-en').checked) disabled.push(id);
+        const v = row.querySelector('.cx-cd-in').value;
+        if (v !== '' && Number.isFinite(Number(v))) cooldownMs[id] = Math.max(0, Math.round(Number(v)));
+    });
+    try {
+        await api.customize.save(slug, { disabled, cooldownMs });
+        $('cx-msg').textContent = 'Enregistré ✓ — appliqué au prochain Démarrer.';
+    } catch (e) { $('cx-msg').textContent = friendlyError(e, "L'enregistrement a échoué."); }
+};
 
 // ── Lab : éditeur visuel (QUAND … ALORS …) ──
 const EVENTS = [['gift', 'Cadeau'], ['gift-custom', 'Cadeau personnalisé'], ['follow', 'Nouvel abonné'], ['comment', 'Message chat'], ['hearts', 'Palier de likes'], ['share', 'Partage']];

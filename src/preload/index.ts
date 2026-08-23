@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         installed: () => invoke('store:installed'),
         uninstall: (slug: string) => invoke('store:uninstall', slug),
     },
+    customize: {
+        get: (slug: string) => invoke('customize:get', slug),
+        save: (slug: string, overlay: unknown) => invoke('customize:save', slug, overlay),
+    },
     lab: {
         create: (dto: unknown) => invoke('lab:create', dto),
         update: (slug: string, dto: unknown) => invoke('lab:update', slug, dto),

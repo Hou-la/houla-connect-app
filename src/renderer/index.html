@@ -244,6 +244,22 @@
         </div>
     </div>
 
+    <!-- Modale : personnaliser un pack INSTALLÉ (calque local, sans publier) -->
+    <div id="cx-modal" class="modal hidden">
+        <div class="modal__box cgu__box">
+            <button id="cx-close" class="modal__close">&#10005;</button>
+            <div class="modal__body">
+                <h2>Personnaliser <span id="cx-title"></span></h2>
+                <p class="muted">Tes réglages restent <b>locaux</b> et survivent aux mises à jour du créateur. Les commandes du pack ne sont pas modifiables (pack signé).</p>
+                <div id="cx-rules"></div>
+                <div class="row gap" style="margin-top:16px">
+                    <button id="cx-save" class="btn btn--primary">Enregistrer</button>
+                    <span id="cx-msg" class="muted"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Modale info : c'est quoi un connecteur -->
     <div id="cx-info-modal" class="modal hidden">
         <div class="modal__box">
