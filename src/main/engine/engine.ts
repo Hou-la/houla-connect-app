@@ -108,7 +108,9 @@ export class Engine {
                 ruleId: rule.id,
                 trigger: rule.on.type,
                 sender: ctx.senderName,
-                giftName: ctx.giftName || undefined,
+                // Le nom de la règle (ex. « Diamant ») prime sur le nom générique du
+                // slot de base (« Interactive 09 ») pour un journal lisible.
+                giftName: rule.label || ctx.giftName || undefined,
                 quantity: ctx.quantity || 1,
                 fired,
                 executor: effect.type,
@@ -154,7 +156,13 @@ export class Engine {
             }
             ctx.connector = this.deps.resolveConnector(effect as BundleEffect);
             this.applyConnectorVars(ctx);
-            const reps = Math.max(1, Math.min(Number(ctx.quantity) || 1, Engine.MAX_REPS));
+            // repeat:'once' -> l'effet ne joue qu'une fois quelle que soit la quantité
+            //   (idéal pour une annonce chat « [pseudo] a offert X », qui utilise
+            //   {quantity} pour afficher le nombre sans se répéter). Défaut = par quantité.
+            const reps =
+                (effect as any).repeat === 'once'
+                    ? 1
+                    : Math.max(1, Math.min(Number(ctx.quantity) || 1, Engine.MAX_REPS));
             let fired = 0;
             for (let i = 0; i < reps; i++) {
                 if (!this.tokenOk()) break; // anti-flood global atteint
