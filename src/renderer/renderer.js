@@ -1095,6 +1095,15 @@ async function enterEditMode(slug) {
 $('lab-new-btn').onclick = () => enterCreateMode();
 
 async function loadLab() {
+    // Édition demandée : on VIDE tout de suite l'éditeur (sinon, pendant le chargement
+    // async ci-dessous, l'utilisateur voit encore le pack précédemment édité — d'où
+    // « je tombe sur chaos au lieu de ferme »).
+    if (pendingEditSlug) {
+        $('lab-mode-title').textContent = 'Chargement…';
+        $('lab-slug').value = ''; $('lab-title').value = ''; $('lab-desc').value = '';
+        $('lab-versions').innerHTML = ''; labRules = [];
+        if (!labJsonMode) renderRules();
+    }
     await Promise.all([loadGiftCatalog(), loadDictionaries(), loadConnectors()]);
     if (pendingEditSlug) { const s = pendingEditSlug; pendingEditSlug = null; await enterEditMode(s); }
     else if (!(labMode === 'edit' && labCurrentSlug)) enterCreateMode();
