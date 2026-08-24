@@ -10,7 +10,7 @@
     "build:main": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json",
     "build:renderer": "node scripts/copy-renderer.js",
     "build": "npm run build:main && npm run build:renderer",
-    "start": "npm run build:main && electron .",
+    "start": "npm run build:main && npm run build:renderer && electron .",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
