@@ -28,7 +28,11 @@ export class PythonSidecar {
 
     private ensure(): ChildProcess {
         if (this.running) return this.proc!;
-        this.proc = spawn(this.sidecarPath, [], { shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
+        // .py (dev) -> lancé via python ; sinon l'exe figé directement.
+        const isPy = this.sidecarPath.toLowerCase().endsWith('.py');
+        this.proc = isPy
+            ? spawn(process.platform === 'win32' ? 'python' : 'python3', [this.sidecarPath], { shell: false, stdio: ['pipe', 'pipe', 'pipe'] })
+            : spawn(this.sidecarPath, [], { shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
         this.proc.on('exit', () => {
             this.proc = null;
             this.rl = null;

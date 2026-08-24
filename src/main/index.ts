@@ -28,9 +28,17 @@ let engineRunning = false;
 
 function sidecarPath(): string {
     const bin = process.platform === 'win32' ? 'houla-sidecar.exe' : 'houla-sidecar';
-    return app.isPackaged
-        ? path.join(process.resourcesPath, 'sidecar', bin)
-        : path.join(__dirname, '..', '..', 'resources', 'sidecar', bin);
+    const dir = app.isPackaged
+        ? path.join(process.resourcesPath, 'sidecar')
+        : path.join(__dirname, '..', '..', 'resources', 'sidecar');
+    const exe = path.join(dir, bin);
+    // DEV : si l'exe figé (PyInstaller) n'existe pas encore, on lance le script
+    // Python directement (nécessite python + interception-python/vgamepad + le driver).
+    if (!app.isPackaged && !fs.existsSync(exe)) {
+        const py = path.join(dir, 'houla_sidecar.py');
+        if (fs.existsSync(py)) return py;
+    }
+    return exe;
 }
 function sidecar(): PythonSidecar {
     if (!sidecarInstance) sidecarInstance = new PythonSidecar(sidecarPath());
