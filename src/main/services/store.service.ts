@@ -37,6 +37,10 @@ interface Schema {
     // manifeste signé, juste des réglages appliqués au runtime. Survit aux MAJ.
     packOverlays?: Record<string, { disabled?: string[]; cooldownMs?: Record<string, number> }>;
     environment?: string; // 'prod' | 'staging' | 'dev' (sélecteur admin)
+    // Cache OFFLINE des identités : dernière liste de workspaces connue (avatars en
+    // data: URL) pour que le sélecteur d'identité reste utilisable sans connexion.
+    workspacesCache?: any[];
+    avatarCache?: Record<string, string>; // avatarUrl distante -> data: URL
 }
 
 /** Un connecteur : endpoint + identifiants d'un protocole, OU une capacité locale. */
@@ -108,8 +112,21 @@ export class StoreService {
     getWorkspaceName() {
         return this.store.get('workspaceName');
     }
+    // ── Cache OFFLINE des identités (workspaces + avatars) ──
+    setWorkspacesCache(list: any[]) {
+        this.store.set('workspacesCache', Array.isArray(list) ? list : []);
+    }
+    getWorkspacesCache(): any[] {
+        return (this.store.get('workspacesCache') as any[]) || [];
+    }
+    getAvatarCache(): Record<string, string> {
+        return (this.store.get('avatarCache') as Record<string, string>) || {};
+    }
+    setAvatarCache(map: Record<string, string>) {
+        this.store.set('avatarCache', map || {});
+    }
     clearAuth() {
-        for (const k of ['accessToken', 'refreshToken', 'eventKey', 'eventKeyId', 'workspaceId', 'workspaceName'] as const)
+        for (const k of ['accessToken', 'refreshToken', 'eventKey', 'eventKeyId', 'workspaceId', 'workspaceName', 'workspacesCache', 'avatarCache'] as const)
             this.store.delete(k);
     }
     clearEventKey() {

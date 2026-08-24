@@ -42,7 +42,7 @@ function showToast(id, { kind = 'info', title = '', msg = '', action = null, per
         const b = document.createElement('button');
         b.className = 'toast__btn';
         b.textContent = action.label;
-        b.onclick = action.onClick;
+        b.onclick = () => action.onClick(b); // passe le bouton (état « occupé »)
         el.querySelector('.toast__actions').appendChild(b);
     }
     clearTimeout(el._t);
@@ -64,7 +64,7 @@ function markApiOffline() {
     showToast('api-offline', {
         kind: 'error',
         title: 'Problème de connexion',
-        msg: "Impossible de joindre le serveur Hou.la. Vérifie ta connexion (ou, en dev, que l'API est bien démarrée).",
+        msg: 'Impossible de joindre le serveur Hou.la. Vérifie ta connexion internet.',
         persist: true,
         action: { label: 'Réessayer', onClick: retryConnection },
     });
@@ -76,11 +76,25 @@ function markApiOnline() {
         showToast('api-online', { kind: 'ok', title: 'Connexion rétablie', msg: 'Le serveur répond à nouveau.' });
     }
 }
-async function retryConnection() {
-    dismissToast('api-offline');
-    apiOffline = false;
-    try { await refreshAuth(); }
-    catch (e) { console.error('[retry]', e); /* markApiOffline ré-affichera si toujours KO */ }
+// « Réessayer » : relance un VRAI appel à l'API (recharge workspaces + packs). Le
+// résultat (joignable ou non) est signalé par l'événement api:status -> markApiOnline
+// / markApiOffline mettent le toast à jour tout seuls. Ici on rend juste le clic VISIBLE
+// (bouton « Connexion… » + spinner) et on ré-affiche les données si ça passe.
+async function retryConnection(btn) {
+    if (btn) setBtnBusy(btn, true, 'Connexion…');
+    try {
+        $('view-auth').classList.add('hidden');
+        $('app-main').classList.remove('hidden');
+        await loadWorkspaces(); // déclenche le fetch réel -> api:status bascule le toast
+        await loadInstalled();
+        const active = document.querySelector('.nav.active');
+        switchView(active && active.dataset.view ? active.dataset.view : 'capture');
+    } catch (e) {
+        console.error('[retry] échec:', e);
+        if (!apiOffline) markApiOffline(); // filet si l'événement de statut n'est pas venu
+    } finally {
+        if (btn) setBtnBusy(btn, false);
+    }
 }
 if (api.onApiStatus) {
     api.onApiStatus((s) => {

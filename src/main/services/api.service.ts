@@ -89,8 +89,52 @@ export class ApiService {
     }
 
     async listWorkspaces(): Promise<any[]> {
-        const res = await this.authFetch('/api/workspaces');
-        return res.ok ? res.json() : [];
+        try {
+            const res = await this.authFetch('/api/workspaces');
+            const list = res.ok ? await res.json() : [];
+            if (Array.isArray(list) && list.length) {
+                const enriched = await this.cacheAvatars(list); // avatars -> data: URL
+                this.store.setWorkspacesCache(enriched);
+                return enriched;
+            }
+            return list;
+        } catch (e) {
+            // Hors ligne : sert la dernière liste connue (identités + avatars en cache)
+            // pour que le sélecteur d'identité reste utilisable. authFetch a déjà signalé
+            // l'état « injoignable » à l'UI (toast) avant de rejeter.
+            const cached = this.store.getWorkspacesCache();
+            if (cached && cached.length) return cached;
+            throw e;
+        }
+    }
+
+    /** Remplace chaque avatar distant par une data: URL cachée (rendu OFFLINE). Ne
+     *  refetch un avatar QUE si son URL n'est pas déjà en cache ; borne la taille. */
+    private async cacheAvatars(list: any[]): Promise<any[]> {
+        const old = this.store.getAvatarCache();
+        const next: Record<string, string> = {};
+        const toFetch: any[] = [];
+        // 1) réutilise le cache existant (zéro fetch), 2) ne télécharge que les nouveaux.
+        for (const ws of list) {
+            const url = ws?.avatarUrl;
+            if (!url || typeof url !== 'string' || url.startsWith('data:')) continue;
+            if (old[url]) { next[url] = old[url]; ws.avatarUrl = old[url]; } else toFetch.push(ws);
+        }
+        await Promise.all(toFetch.map(async (ws) => {
+            const url = ws.avatarUrl;
+            try {
+                const r = await fetch(url);
+                if (!r.ok) return;
+                const buf = Buffer.from(await r.arrayBuffer());
+                if (buf.length > 512 * 1024) return; // garde-fou : avatar raisonnable
+                const mime = r.headers.get('content-type') || 'image/png';
+                const dataUrl = `data:${mime};base64,${buf.toString('base64')}`;
+                next[url] = dataUrl;
+                ws.avatarUrl = dataUrl;
+            } catch { /* garde l'URL distante si le fetch échoue */ }
+        }));
+        this.store.setAvatarCache(next); // reconstruit -> purge les avatars obsolètes
+        return list;
     }
 
     /** Mint (ou réutilise) une clé d'événement pour le workspace courant. */
