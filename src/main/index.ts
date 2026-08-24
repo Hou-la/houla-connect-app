@@ -269,6 +269,7 @@ function registerIpc(): void {
     ipcMain.handle('lab:mybundles', () => api.myBundles());
     ipcMain.handle('lab:detail', (_e, slug: string) => api.myBundleDetail(slug));
     ipcMain.handle('lab:stats', (_e, slug: string) => api.getBundleStats(slug));
+    ipcMain.handle('lab:topbroadcasters', (_e, slug: string) => api.getTopBroadcasters(slug));
     ipcMain.handle('lab:version', (_e, slug: string, dto) => api.submitVersion(slug, dto));
     ipcMain.handle('lab:publish', (_e, slug: string) => api.publishBundle(slug));
     // Choisir la bannière SANS uploader : renvoie le chemin + un data-URL pour un

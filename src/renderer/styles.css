@@ -360,6 +360,16 @@ input[readonly] { opacity: .6; cursor: not-allowed; }
 .badge--fee { background: rgba(47,142,239,.16); color: var(--accent); border: 1px solid rgba(47,142,239,.35); }
 .mine-earn { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 6px; font-size: 13px; color: var(--text-2); }
 .mine-earn b { color: var(--text); font-variant-numeric: tabular-nums; }
+/* Top streamers d'un pack (modale stats). */
+.stats-top { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
+.stats-top__h { font-weight: 700; margin-bottom: 10px; }
+.stats-top__row { display: grid; grid-template-columns: 20px 24px 1fr 1.2fr auto; align-items: center; gap: 8px; padding: 5px 0; }
+.stats-top__rank { color: var(--muted); font-variant-numeric: tabular-nums; text-align: center; }
+.stats-top .av { width: 24px; height: 24px; border-radius: 50%; background: var(--bg-3) center/cover no-repeat; display: inline-grid; place-items: center; font-size: 13px; }
+.stats-top__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-top__bar { height: 6px; background: var(--bg-3); border-radius: 3px; overflow: hidden; }
+.stats-top__bar > span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.stats-top__val { font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* Curseur de commission créateur (0 à 15 %). */
 .lab-fee-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
 .lab-fee-row input[type="range"] { flex: 1 1 auto; accent-color: var(--accent); }

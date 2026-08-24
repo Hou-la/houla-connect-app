@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         myBundles: () => invoke('lab:mybundles'),
         detail: (slug: string) => invoke('lab:detail', slug),
         stats: (slug: string) => invoke('lab:stats', slug),
+        topBroadcasters: (slug: string) => invoke('lab:topbroadcasters', slug),
         submitVersion: (slug: string, dto: unknown) => invoke('lab:version', slug, dto),
         publish: (slug: string) => invoke('lab:publish', slug),
         pickBanner: () => invoke('lab:pickBanner'),

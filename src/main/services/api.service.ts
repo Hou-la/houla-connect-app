@@ -199,6 +199,11 @@ export class ApiService {
         const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}/stats`);
         return res.ok ? res.json() : null;
     }
+    /** Top streamers qui rapportent le plus au créateur via ce pack. */
+    async getTopBroadcasters(slug: string): Promise<any[]> {
+        const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}/top-broadcasters`);
+        return res.ok ? res.json() : [];
+    }
     async submitVersion(slug: string, dto: any): Promise<any> {
         const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}/versions`, {
             method: 'POST',

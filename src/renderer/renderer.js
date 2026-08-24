@@ -521,6 +521,7 @@ async function openStats(slug, title) {
     $('stats-title').textContent = title || slug;
     $('stats-totals').innerHTML = '<p class="muted">Chargement…</p>';
     $('stats-graph').innerHTML = '';
+    $('stats-top').innerHTML = '';
     $('stats-modal').classList.remove('hidden');
     let s;
     try { s = await api.lab.stats(slug); }
@@ -532,6 +533,30 @@ async function openStats(slug, title) {
         + `<div class="stat"><b>${Number(s.totalStars || 0)} ⭐</b><span>étoiles générées</span></div>`
         + `<div class="stat"><b>${Number(s.totalCreatorStars || 0)} ⭐</b><span>étoiles gagnées (ta commission)</span></div>`;
     $('stats-graph').innerHTML = statsGraphSvg(s.daily || []);
+    // Top streamers qui rapportent le plus à ce pack.
+    try { $('stats-top').innerHTML = topBroadcastersHtml(await api.lab.topBroadcasters(slug)); }
+    catch { $('stats-top').innerHTML = ''; }
+}
+// Liste « Top streamers » d'un pack (triée par étoiles gagnées = commission).
+function topBroadcastersHtml(list) {
+    if (!Array.isArray(list) || !list.length) {
+        return '<div class="stats-top"><div class="stats-top__h">Top streamers</div><p class="muted small">Personne n\'a encore utilisé ce pack en live.</p></div>';
+    }
+    const max = Math.max(1, ...list.map((b) => Number(b.creatorStars || 0)));
+    const rows = list.slice(0, 10).map((b, i) => {
+        const gained = Number(b.creatorStars || 0);
+        const gen = Number(b.stars || 0);
+        const w = Math.round((gained / max) * 100);
+        const name = b.slug
+            ? `<a href="#" class="creator-link" data-slug="${esc(b.slug)}">${esc(b.name || b.slug)}</a>`
+            : esc(b.name || 'Streamer');
+        const av = b.avatarUrl ? `<span class="av" style="background-image:url('${esc(b.avatarUrl)}')"></span>` : '<span class="av av--ph">🎥</span>';
+        return `<div class="stats-top__row"><span class="stats-top__rank">${i + 1}</span>${av}
+            <span class="stats-top__name">${name}</span>
+            <span class="stats-top__bar"><span style="width:${w}%"></span></span>
+            <span class="stats-top__val"><b>${gained}</b>&nbsp;⭐ gagnées <span class="muted">· ${gen} générées</span></span></div>`;
+    }).join('');
+    return `<div class="stats-top"><div class="stats-top__h">Top streamers — qui te rapporte le plus</div>${rows}</div>`;
 }
 $('stats-close').onclick = () => $('stats-modal').classList.add('hidden');
 $('stats-modal').onclick = (e) => { if (e.target.id === 'stats-modal') $('stats-modal').classList.add('hidden'); };
