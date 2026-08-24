@@ -1036,6 +1036,7 @@ function setLabMode(mode) {
 // Libellé vivant du curseur de commission (0 = gratuit, sinon N % des étoiles).
 function syncFeeLabel() {
     const v = Number($('lab-fee').value) || 0;
+    $('lab-fee').style.setProperty('--fill', (v / 15) * 100 + '%'); // remplissage 0 a 100
     $('lab-fee-val').innerHTML = v > 0 ? v + ' % des étoiles' : '0 % · gratuit';
 }
 function enterCreateMode() {

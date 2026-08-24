@@ -370,9 +370,21 @@ input[readonly] { opacity: .6; cursor: not-allowed; }
 .stats-top__bar { height: 6px; background: var(--bg-3); border-radius: 3px; overflow: hidden; }
 .stats-top__bar > span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
 .stats-top__val { font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-/* Curseur de commission créateur (0 à 15 %). */
+/* Curseur de commission créateur (0 à 15 %). Custom : remplissage piloté par
+   --fill (0% = vide + curseur tout à gauche, 100% = plein + tout à droite). */
 .lab-fee-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
-.lab-fee-row input[type="range"] { flex: 1 1 auto; accent-color: var(--accent); }
+.lab-fee-row input[type="range"] {
+    flex: 1 1 auto; -webkit-appearance: none; appearance: none;
+    height: 6px; border-radius: 3px; margin: 8px 0; cursor: pointer;
+    background: linear-gradient(to right,
+        var(--accent) 0%, var(--accent) var(--fill, 0%),
+        var(--bg-3) var(--fill, 0%), var(--bg-3) 100%);
+}
+.lab-fee-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 16px; height: 16px;
+    border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-2);
+    box-shadow: 0 0 0 1px var(--accent);
+}
 .lab-fee-val { flex: 0 0 auto; min-width: 104px; text-align: right;
     font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); }
 /* Combo manette (séquence/aléatoire) : lecture seule dans l'éditeur. */
