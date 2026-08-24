@@ -111,6 +111,9 @@
                         <textarea id="lab-desc" rows="4" placeholder="Description : à quoi sert le pack, prérequis (ex. Minecraft Java en multijoueur sur un serveur avec RCON activé), comment lancer un serveur…"></textarea>
                         <input id="lab-game" list="lab-game-list" placeholder="jeu (ex. minecraft) — optionnel" />
                         <datalist id="lab-game-list"></datalist>
+                        <span class="lab-sub">Commission créateur</span>
+                        <input id="lab-fee" type="number" min="0" max="15" placeholder="0 = gratuit (0 à 15 % des étoiles reversé au créateur)" />
+                        <p class="hint">Prélevé sur le broadcaster (le viewer paie pareil), affiché à l'installation. Plafonné à 15 %.</p>
                         <span class="lab-sub">Types (tags)</span>
                         <div id="lab-tags" class="tagbox"></div>
                         <input id="lab-tag-input" list="lab-tag-list" placeholder="ajouter un type puis Entrée (ex. gaming, domotique, asmr)…" />
@@ -242,6 +245,7 @@
                 <p id="modal-desc" class="muted"></p>
                 <div id="modal-caps" class="chips"></div>
                 <div id="modal-version" class="muted small"></div>
+                <div id="modal-fee" class="muted small"></div>
                 <div id="modal-changelog" class="changelog"></div>
                 <button id="modal-install" class="btn btn--primary">Installer</button>
             </div>
