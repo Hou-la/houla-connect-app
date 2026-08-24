@@ -901,6 +901,7 @@ function enterCreateMode() {
     labCurrentSlug = null; labLatestVersion = null; labTags = [];
     labRules = [newRule()];
     $('lab-slug').value = ''; $('lab-title').value = ''; $('lab-game').value = '';
+    $('lab-desc').value = '';
     $('lab-banner-preview').style.backgroundImage = '';
     $('lab-versions').innerHTML = '';
     $('lab-msg').textContent = ''; $('lab-msg2').textContent = '';
@@ -918,6 +919,7 @@ async function enterEditMode(slug) {
     labLatestVersion = versions.length ? versions[0].version : null;
     labTags = Array.isArray(b.tags) ? b.tags.slice() : [];
     $('lab-slug').value = b.slug; $('lab-title').value = b.title || ''; $('lab-game').value = b.game || '';
+    $('lab-desc').value = b.description || '';
     $('lab-banner-preview').style.backgroundImage = b.bannerUrl ? `url('${b.bannerUrl}')` : '';
     // Historique des versions (numéro + statut de modération + date + changelog).
     $('lab-versions').innerHTML = versions.length
@@ -976,7 +978,7 @@ $('lab-banner-btn').onclick = async () => {
 $('lab-save-meta').onclick = async () => {
     if (!labCurrentSlug) return;
     try {
-        await api.lab.update(labCurrentSlug, { title: $('lab-title').value.trim(), game: $('lab-game').value.trim() || '', tags: labTags });
+        await api.lab.update(labCurrentSlug, { title: $('lab-title').value.trim(), description: $('lab-desc').value.trim(), game: $('lab-game').value.trim() || '', tags: labTags });
         $('lab-msg').textContent = 'Infos enregistrées ✓';
     } catch (e) { $('lab-msg').textContent = friendlyError(e, "Les infos n'ont pas pu être enregistrées."); }
 };
@@ -1005,7 +1007,7 @@ $('lab-submit-btn').onclick = async () => {
         const slug = $('lab-slug').value.trim(), title = $('lab-title').value.trim();
         if (!slug || !title) return ($('lab-msg').textContent = 'Slug et titre sont obligatoires.');
         try {
-            await api.lab.create({ slug, title, game: $('lab-game').value.trim() || undefined, tags: labTags });
+            await api.lab.create({ slug, title, description: $('lab-desc').value.trim() || undefined, game: $('lab-game').value.trim() || undefined, tags: labTags });
             labCurrentSlug = slug; labLatestVersion = null;
             syncLabBindings(); // enregistre les liaisons rôle->connecteur (slug désormais connu)
             await uploadHeldIcons(); // pose les icônes gardées en mémoire
