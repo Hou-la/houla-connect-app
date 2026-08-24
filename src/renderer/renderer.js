@@ -610,15 +610,34 @@ function defaultGiftSlug() {
     return g ? g.slug : 'ix_slot_01';
 }
 function defaultSlot() { return 'ix_slot_01'; }
+// Couleur de rareté par défaut d'un slot (bordure/halo si le créateur ne choisit
+// pas de couleur). Paliers par prix croissant — variés en TEINTE *et* en clarté
+// (le propriétaire est daltonien : la rareté reste lisible par la luminosité + le
+// prix affiché à côté, jamais par la seule teinte).
+function slotRarityHex(slug) {
+    const n = parseInt(String(slug || '').replace('ix_slot_', ''), 10) || 1;
+    if (n <= 6) return '#9aa4b2';   //  commun    — gris clair
+    if (n <= 12) return '#46c37b';  //  peu commun — vert
+    if (n <= 18) return '#3d8bff';  //  rare       — bleu
+    if (n <= 24) return '#a855f7';  //  épique     — violet
+    return '#f5a623';               //  légendaire — or (le plus lumineux)
+}
 function eventFieldHtml(r) {
     if (r.event.type === 'gift') return `<select class="r-giftslug">${giftOptionsGeneric(r.event.giftSlug)}</select>`;
     if (r.event.type === 'gift-custom') {
         const src = r.event.iconUrl || r.event._iconPreview;
-        const ic = src ? `background-image:url('${esc(src)}')` : '';
+        const accent = r.event.accentColor || slotRarityHex(r.event.giftSlug);
+        const hasAccent = !!r.event.accentColor;
+        // Aperçu : la vignette porte déjà le halo (auto par rareté, ou choisi).
+        const ic = (src ? `background-image:url('${esc(src)}');` : '')
+            + `box-shadow:0 0 0 2px ${esc(accent)}, 0 0 8px ${esc(accent)};`;
         return `<select class="r-giftslug">${slotOptions(r.event.giftSlug)}</select>`
             + `<span class="r-icon" title="icône du cadeau" style="${ic}"></span>`
             + `<button type="button" class="r-iconbtn">Icône…</button>`
-            + `<button type="button" class="r-iconguide" title="Comment réaliser l'icône ?">i</button>`;
+            + `<button type="button" class="r-iconguide" title="Comment réaliser l'icône ?">i</button>`
+            + `<label class="r-accent-wrap" title="Bordure colorée du cadeau (halo). Décochée = auto selon la rareté (le prix).">`
+            + `<input type="checkbox" class="r-accent-on"${hasAccent ? ' checked' : ''}> bordure`
+            + `<input type="color" class="r-accent" value="${esc(accent)}"></label>`;
     }
     if (r.event.type === 'comment') return `<input type="text" class="r-contains" placeholder="contient ce mot…" />`;
     if (r.event.type === 'hearts') return `<input type="number" class="r-milestone" placeholder="palier (ex. 100)" min="1" />`;
@@ -650,6 +669,11 @@ function newRule() { return { event: { type: 'gift', giftSlug: defaultGiftSlug()
 function readRule(el, r) {
     const q = (s) => el.querySelector(s);
     if (r.event.type === 'gift' || r.event.type === 'gift-custom') r.event.giftSlug = q('.r-giftslug') ? q('.r-giftslug').value : r.event.giftSlug;
+    if (r.event.type === 'gift-custom') {
+        // Bordure : cochée = couleur explicite (override), décochée = auto (rareté) => undefined.
+        const on = q('.r-accent-on');
+        r.event.accentColor = (on && on.checked && q('.r-accent')) ? q('.r-accent').value : undefined;
+    }
     if (r.event.type === 'comment') r.event.contains = q('.r-contains') ? q('.r-contains').value : '';
     if (r.event.type === 'hearts') r.event.milestone = q('.r-milestone') ? Number(q('.r-milestone').value) || undefined : undefined;
     if (r.effect.type === 'keyboard') { r.effect.keys = q('.r-keys') ? q('.r-keys').value : ''; r.effect.backend = q('.r-backend') ? q('.r-backend').value : 'auto'; }
@@ -797,6 +821,16 @@ function renderRules() {
         if (r.event.type === 'gift-custom' && q('.r-giftslug')) {
             q('.r-giftslug').addEventListener('change', () => { readRule(el, r); renderRules(); });
         }
+        // Bordure colorée : aperçu du halo en direct (case à cocher + sélecteur).
+        if (r.event.type === 'gift-custom') {
+            const ico = q('.r-icon'), onbox = q('.r-accent-on'), col = q('.r-accent');
+            const applyAccent = () => {
+                const c = (onbox && onbox.checked && col) ? col.value : slotRarityHex(r.event.giftSlug);
+                if (ico) ico.style.boxShadow = `0 0 0 2px ${c}, 0 0 8px ${c}`;
+            };
+            if (onbox) onbox.addEventListener('change', () => { readRule(el, r); applyAccent(); });
+            if (col) col.addEventListener('input', () => { if (onbox) onbox.checked = true; readRule(el, r); applyAccent(); });
+        }
         // Poignée à DROITE : glisser pour DÉPLACER l'interaction (réordonner la liste).
         // On lit d'abord la saisie DOM courante pour ne rien perdre au re-render.
         const grip = q('.rule__grip');
@@ -846,6 +880,7 @@ function buildRule(r, i) {
     const on = { type: onType };
     if (onType === 'gift') on.giftSlug = r.event.giftSlug || r.event.slot;
     if (r.event.type === 'gift-custom' && r.event.iconUrl) on.iconUrl = r.event.iconUrl;
+    if (r.event.type === 'gift-custom' && r.event.accentColor) on.accentColor = r.event.accentColor;
     if (r.event.type === 'comment') on.contains = r.event.contains;
     if (r.event.type === 'hearts') on.milestone = r.event.milestone;
     const effect = { type: r.effect.type };

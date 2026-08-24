@@ -77,11 +77,17 @@ Ligne = QUAND / ALORS / SI. **Poignée de glisser (⠿) tout à DROITE** → dé
 de slot montre « Slot N · X coins » (**pas d'euros**). Boutons Tester/Supprimer taille normale (grille pied
 5 colonnes). Éditer un pack **préserve `on.iconUrl`** (les icônes ne sont pas perdues).
 
-## 9. Bordures colorées des cadeaux (décision, à implémenter)
+## 9. Bordures colorées des cadeaux (app FAIT 2026-08-24, rendu client à faire)
 **Ne PAS cuire la bordure dans l'icône** (le badge ⚡ se superpose, icônes à refaire). **Couleur en
-métadonnée** (`accentColor?` sur le slot visuel), **halo/dégradé rendu par le client**. Défaut **automatique
-par rareté** (palier de prix : commun→légendaire) + **override optionnel** par cadeau (color-picker Lab).
-Part app : schéma + picker Lab. Part client : rendu du halo (Flutter/Angular).
+métadonnée**, **halo/dégradé rendu par le client**. Défaut **automatique par rareté** (palier de prix :
+commun→légendaire) + **override optionnel** par cadeau.
+- **Schéma** : `on.accentColor` (#RGB/#RRGGBB) sur le trigger `gift` du manifeste (validateur : hex strict,
+  refus `INVALID_TRIGGER` sinon) → recopié par `bundle-visual-sync` dans `gift_bundle.slots[].accentColor`.
+- **Lab** : sur un « Cadeau personnalisé », case **« bordure »** + sélecteur de couleur. Décochée = **auto
+  par rareté** (`slotRarityHex`, paliers gris→vert→bleu→violet→or, variés en clarté ET teinte car PO
+  daltonien, doublés par le prix affiché). Cochée = couleur choisie. Aperçu du halo en direct sur la vignette.
+- **RESTE (client)** : Flutter/Angular dessinent le halo depuis `slot.accentColor` (sinon dérivent de la
+  rareté). Tant que non fait, la couleur est stockée mais **invisible côté viewer**.
 
 ## 10. Setup de test DEV (état 2026-08-24)
 - API dev sur `localhost:53001`, DB `houla_dev` (`config/env/development.env`), workspace app = **Mika G.**
@@ -114,8 +120,13 @@ Part app : schéma + picker Lab. Part client : rendu du halo (Flutter/Angular).
    - **Test (créateur ≠ broadcaster)** : en dev, Mika possède le pack ET diffuse → self, PAS de commission.
      Pour tester le split : un pack **possédé par un autre workspace**, utilisé par Mika en live, un viewer
      envoie un cadeau interactif → l'autre workspace reçoit X % des étoiles, Mika le reste.
-3. **Bordures colorées** (§9) : schéma `accentColor` + picker Lab + rendu client.
-4. **Signature de code** Windows (Azure Trusted Signing) — voir `docs/CODE_SIGNING_AZURE.md`.
+3. **Bordures colorées** (§9) — app FAIT (schéma `accentColor` + validateur + visual-sync + picker Lab).
+   RESTE : rendu du halo côté client (Flutter/Angular).
+4. **Nombre de slots** : décision 2026-08-24 — on **garde 30 par pack actif** (le viewer ne parcourt pas
+   50 cadeaux ; la richesse d'un jeu passe par des **packs thématisés** — ex. Minecraft Survie / Chaos /
+   Build — que le streamer choisit, pas par plus de slots). Pas de gap réel à 50. Réévaluable si la
+   demande créateur le montre (les slots réservés sont partagés, monter à ~40 = plus de lignes + paliers).
+5. **Signature de code** Windows (Azure Trusted Signing) — voir `docs/CODE_SIGNING_AZURE.md`.
 
 ## 12. État du dépôt (2026-08-24)
 Commits **locaux non poussés** (dev d'abord, prod après validation) :
