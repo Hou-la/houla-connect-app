@@ -100,6 +100,9 @@ Part app : schéma + picker Lab. Part client : rendu du halo (Flutter/Angular).
 1. **Analytics par pack** : coins + étoiles générés par pack et par créateur. `gift.sent` porte le montant
    + le pack actif → attribuer + agréger via **queue Bull** (règle haute-fréquence), agrégat `bundle_earnings`.
    Sert : motivation créateur, classement store, base de la commission.
+   - **UI (validé 2026-08-24)** : sur la carte « Mes bundles », afficher les **coins gagnés** ; + un bouton
+     **« Voir les stats »** ouvrant un écran avec **graphes** (installations dans le temps, revenus en
+     **étoiles**). Endpoint créateur `GET /api/manager/bundles/:slug/stats` (existe déjà, à enrichir).
 2. **Commission créateur** : une part des **étoiles** du cadeau va au créateur, **prélevée sur ce que gagne
    le broadcaster** (viewer paie pareil). Taux **plafonné** (0 à ~10 %) fixé par le créateur, **transparent
    à l'installation**, broadcaster consent. En étoiles (cashables). Garde-fous : plafond + affichage + modération.
