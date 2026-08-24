@@ -419,8 +419,8 @@ async function loadStore() {
             <div class="bundle-card__body">
                 <h3>${esc(b.title || b.slug)}</h3>
                 <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
-                ${b.version ? `<div class="muted small">v${esc(b.version)}${b.versionDate ? ' · ' + esc(fmtDate(b.versionDate)) : ''}</div>` : ''}
-                <div class="row gap wrap">
+                <div class="muted small">${b.version ? `v${esc(b.version)}${b.versionDate ? ' · ' + esc(fmtDate(b.versionDate)) : ''}` : '&nbsp;'}</div>
+                <div class="row gap wrap card-actions">
                     ${installBtn}
                     ${customizeBtn}
                     <button class="btn btn--ghost more">Voir plus</button>

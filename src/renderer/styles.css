@@ -159,6 +159,10 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
 .creator-link { color: var(--accent-2, #6ea8ff); text-decoration: none; cursor: pointer; }
 .creator-link:hover { text-decoration: underline; }
 .changelog { white-space: pre-wrap; font-size: 13px; color: var(--text); background: var(--bg); border-radius: 6px; padding: 8px 10px; margin: 8px 0; max-height: 140px; overflow-y: auto; }
+/* Sans changelog, ne pas afficher une barre sombre vide (modale détail du store). */
+.changelog:empty { display: none; }
+/* Rangée d'actions de la carte store : espace constant sous la version, installé ou non. */
+.bundle-card__body .card-actions { margin-top: 12px; }
 .lab-versions { margin-top: 14px; }
 .mine-foot { margin-top: 12px; }
 .mine-earn { margin-top: 6px; font-size: 12px; color: var(--text); }
@@ -201,7 +205,8 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
 .ws-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Cartes store + éditeur */
-.bundle-card__banner { height: 110px; background: linear-gradient(135deg, #1e2740, #33244a); background-size: cover; background-position: center; }
+/* Bannière au format 16:9 (1600×900) : cover sur un conteneur 16:9 = image ENTIÈRE, sans rognage. */
+.bundle-card__banner { aspect-ratio: 16 / 9; background: linear-gradient(135deg, #1e2740, #33244a); background-size: cover; background-position: center; }
 .publisher { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin: 4px 0 8px; }
 .publisher .av { width: 18px; height: 18px; }
 .publisher .verified { color: var(--accent-2); font-weight: 700; }
@@ -214,7 +219,7 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
     border: 1px solid var(--border); border-radius: 14px; position: relative; }
 .modal__close { position: absolute; top: 10px; right: 10px; z-index: 2; width: 30px; height: 30px; border: 0;
     border-radius: 8px; background: rgba(0,0,0,.45); color: #fff; cursor: pointer; }
-.modal__banner { height: 200px; background: linear-gradient(135deg, #1e2740, #33244a); background-size: cover;
+.modal__banner { aspect-ratio: 16 / 9; background: linear-gradient(135deg, #1e2740, #33244a); background-size: cover;
     background-position: center; border-radius: 14px 14px 0 0; }
 .modal__body { padding: 22px; }
 .modal__body h2 { margin-bottom: 6px; }
