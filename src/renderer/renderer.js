@@ -17,6 +17,78 @@ function friendlyError(e, fallback) {
     }
     return m;
 }
+// ── Toasts (notifications non bloquantes) ──────────────────────────
+// Le sens ne repose JAMAIS sur la seule couleur (propriétaire daltonien) : chaque
+// toast porte une ICÔNE distincte + un TITRE en gras explicite ; la couleur (barre
+// de gauche) n'est qu'un renfort. Un id réutilisé met à jour le MÊME toast (pas de doublon).
+const TOAST_ICON = { error: '⚠', warn: '⚠', info: 'ℹ', ok: '✓' };
+function showToast(id, { kind = 'info', title = '', msg = '', action = null, persist = false } = {}) {
+    const host = $('toaster');
+    if (!host) return null;
+    let el = host.querySelector(`[data-toast="${id}"]`);
+    if (!el) {
+        el = document.createElement('div');
+        el.dataset.toast = id;
+        host.appendChild(el);
+    }
+    el.className = `toast toast--${kind}`;
+    el.innerHTML =
+        `<span class="toast__ic" aria-hidden="true">${TOAST_ICON[kind] || 'ℹ'}</span>` +
+        `<div class="toast__body">${title ? `<div class="toast__title">${esc(title)}</div>` : ''}<div class="toast__msg">${esc(msg)}</div></div>` +
+        `<div class="toast__actions"></div>` +
+        `<button class="toast__close" title="Fermer" aria-label="Fermer">&#10005;</button>`;
+    el.querySelector('.toast__close').onclick = () => dismissToast(id);
+    if (action) {
+        const b = document.createElement('button');
+        b.className = 'toast__btn';
+        b.textContent = action.label;
+        b.onclick = action.onClick;
+        el.querySelector('.toast__actions').appendChild(b);
+    }
+    clearTimeout(el._t);
+    if (!persist) el._t = setTimeout(() => dismissToast(id), 6000);
+    return el;
+}
+function dismissToast(id) {
+    const host = $('toaster');
+    const el = host && host.querySelector(`[data-toast="${id}"]`);
+    if (el) { clearTimeout(el._t); el.remove(); }
+}
+
+// ── Joignabilité de l'API ──────────────────────────────────────────
+// Un back injoignable (dev : API non démarrée) ouvrait l'app « vide » en silence :
+// aucun workspace sélectionnable, aucun pack, aucune explication. On l'affiche.
+let apiOffline = false;
+function markApiOffline() {
+    apiOffline = true;
+    showToast('api-offline', {
+        kind: 'error',
+        title: 'Problème de connexion',
+        msg: "Impossible de joindre le serveur Hou.la. Vérifie ta connexion (ou, en dev, que l'API est bien démarrée).",
+        persist: true,
+        action: { label: 'Réessayer', onClick: retryConnection },
+    });
+}
+function markApiOnline() {
+    dismissToast('api-offline');
+    if (apiOffline) {
+        apiOffline = false;
+        showToast('api-online', { kind: 'ok', title: 'Connexion rétablie', msg: 'Le serveur répond à nouveau.' });
+    }
+}
+async function retryConnection() {
+    dismissToast('api-offline');
+    apiOffline = false;
+    try { await refreshAuth(); }
+    catch (e) { console.error('[retry]', e); /* markApiOffline ré-affichera si toujours KO */ }
+}
+if (api.onApiStatus) {
+    api.onApiStatus((s) => {
+        if (s && s.online === false) markApiOffline();
+        else if (s && s.online === true) markApiOnline();
+    });
+}
+
 // Codes de rejet de modération -> message lisible (au lieu de « TOO_MANY_RULES : … »).
 const REJECTION_FR = {
     INVALID_MANIFEST: 'Le manifeste est invalide.',
@@ -142,9 +214,18 @@ document.addEventListener('click', (e) => {
 async function showApp() {
     $('view-auth').classList.add('hidden');
     $('app-main').classList.remove('hidden');
-    await loadWorkspaces();
-    await loadInstalled();
-    switchView('capture');
+    try {
+        await loadWorkspaces();
+        await loadInstalled();
+        switchView('capture');
+    } catch (e) {
+        // API injoignable au démarrage : on garde l'app ouverte mais on NE laisse PAS
+        // croire que tout va bien. Le toast onApiStatus s'affiche déjà en général ; ce
+        // filet le garantit même si l'événement de statut n'est pas encore arrivé.
+        console.error('[showApp] chargement initial échoué:', e);
+        switchView('capture');
+        markApiOffline();
+    }
 }
 
 // ── Nav ──

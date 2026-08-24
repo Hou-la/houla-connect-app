@@ -6,8 +6,14 @@ import { StoreService } from './store.service';
 // Vérifie la SIGNATURE Ed25519 des manifestes avant de les rendre exécutables.
 export class ApiService {
     private cachedPublicKey: string | null = null;
+    private statusListener?: (online: boolean) => void;
 
     constructor(private readonly store: StoreService) {}
+
+    /** Rapporte la joignabilité de l'API à l'UI (toast « problème de connexion »). */
+    setStatusListener(fn: (online: boolean) => void): void {
+        this.statusListener = fn;
+    }
 
     /** URL d'API courante : environnement choisi (admin) sinon défaut. */
     base(): string {
@@ -33,7 +39,16 @@ export class ApiService {
         };
         const wsId = this.store.getWorkspaceId();
         if (wsId) headers['X-Workspace-Id'] = wsId;
-        const res = await fetch(`${this.base()}${path}`, { ...init, headers });
+        let res: Response;
+        try {
+            res = await fetch(`${this.base()}${path}`, { ...init, headers });
+        } catch (e) {
+            // fetch NE REJETTE que sur échec réseau (API éteinte, DNS KO, refus de
+            // connexion) — jamais sur un statut HTTP. C'est LE signal « API injoignable ».
+            this.statusListener?.(false);
+            throw e;
+        }
+        this.statusListener?.(true); // la réponse est arrivée (même un 4xx/5xx) → API joignable
         if (res.status === 401 && retry) {
             await this.refresh();
             return this.authFetch(path, init, false);

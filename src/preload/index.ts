@@ -106,4 +106,5 @@ contextBridge.exposeInMainWorld('houlaConnect', {
     onLog: (cb: (l: any) => void) => on('onLog', cb),
     onAuth: (cb: (a: any) => void) => on('onAuth', cb),
     onUpdate: (cb: (u: any) => void) => on('onUpdate', cb),
+    onApiStatus: (cb: (s: any) => void) => on('api:status', cb),
 });

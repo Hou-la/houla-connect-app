@@ -49,6 +49,10 @@ function send(channel: string, payload: unknown): void {
     win?.webContents.send(channel, payload);
 }
 
+// Joignabilité de l'API → toast côté renderer. Sans ça, un back injoignable ouvre
+// l'app « vide » en silence (aucun workspace, aucun pack), sans jamais l'expliquer.
+api.setStatusListener((online) => send('api:status', { online }));
+
 /** Applique le calque de perso locale à un manifeste (copie, ne mute rien) :
  *  retire les interactions désactivées, override les cooldowns. Le manifeste SIGNÉ
  *  reste intact ; c'est un réglage runtime propre au streamer, qui survit aux MAJ. */
