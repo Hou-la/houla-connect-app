@@ -211,12 +211,22 @@ export class ApiService {
         if (!res.ok) throw new Error(`publish ${res.status}`);
         return res.json();
     }
+    /** Type MIME depuis l'extension — INDISPENSABLE : un Blob sans type est rejeté par
+     *  le FileTypeValidator du serveur (image/png|jpeg|webp|gif). C'était le bug bannière. */
+    private mimeOf(filePath: string): string {
+        const p = filePath.toLowerCase();
+        if (p.endsWith('.png')) return 'image/png';
+        if (p.endsWith('.webp')) return 'image/webp';
+        if (p.endsWith('.gif')) return 'image/gif';
+        return 'image/jpeg';
+    }
+
     async uploadBanner(slug: string, filePath: string): Promise<any> {
         const fs = await import('fs/promises');
         const path = await import('path');
         const buf = await fs.readFile(filePath);
         const fd = new FormData();
-        fd.append('file', new Blob([buf]), path.basename(filePath));
+        fd.append('file', new Blob([buf], { type: this.mimeOf(filePath) }), path.basename(filePath));
         // NB: ne PAS poser Content-Type, fetch pose le boundary multipart lui-même.
         const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}/banner`, {
             method: 'POST',
@@ -231,7 +241,7 @@ export class ApiService {
         const path = await import('path');
         const buf = await fs.readFile(filePath);
         const fd = new FormData();
-        fd.append('file', new Blob([buf]), path.basename(filePath));
+        fd.append('file', new Blob([buf], { type: this.mimeOf(filePath) }), path.basename(filePath));
         fd.append('slot', slot);
         const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}/slot-icon`, {
             method: 'POST',

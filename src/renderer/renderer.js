@@ -17,6 +17,27 @@ function friendlyError(e, fallback) {
     }
     return m;
 }
+// Codes de rejet de modération -> message lisible (au lieu de « TOO_MANY_RULES : … »).
+const REJECTION_FR = {
+    INVALID_MANIFEST: 'Le manifeste est invalide.',
+    INVALID_TRIGGER: 'Un déclencheur est invalide.',
+    INVALID_EFFECT: 'Un effet est invalide.',
+    FORBIDDEN_EXECUTOR: "Un type d'effet interdit est utilisé.",
+    TOO_MANY_RULES: "Trop d'interactions dans ce pack.",
+    MALICIOUS_COMMAND: 'Une commande a été jugée dangereuse.',
+    SSRF_HOST: 'Une URL vise une adresse interdite.',
+    UNSAFE_URL_SCHEME: "Un schéma d'URL non autorisé est utilisé.",
+    RCE_SUSPECTED: "Commande suspecte (exécution de code).",
+    EXFILTRATION_SUSPECTED: 'Fuite de données suspectée.',
+    ABUSE_SUSPECTED: 'Contenu jugé abusif.',
+};
+function friendlyRejection(e) {
+    const raw = e && e.message != null ? String(e.message) : String(e || '');
+    const found = Object.keys(REJECTION_FR).filter((c) => raw.includes(c));
+    if (found.length) return found.map((c) => REJECTION_FR[c]).join(' ');
+    return friendlyError(e, 'Version refusée.');
+}
+
 // Seule l'injection LOCALE invasive exige un consentement explicite. Les protocoles
 // réseau (RCON/OBS/MQTT/WS/HTTP/OSC) sont gardés par la présence d'un CONNECTEUR.
 const CAPS = [
@@ -1011,7 +1032,7 @@ $('lab-submit-btn').onclick = async () => {
         await api.lab.submitVersion(labCurrentSlug, { version, manifest, visibility });
         labLatestVersion = version;
         $('lab-msg2').textContent = `Version ${version} enregistrée (${visibility === 'public' ? 'publique, en modération' : 'privée'}) ✓`;
-    } catch (e) { $('lab-msg2').textContent = friendlyError(e, 'Version refusée.'); }
+    } catch (e) { $('lab-msg2').textContent = friendlyRejection(e); }
 };
 
 // ── Mes bundles (cliquables -> édition dans le Lab) ──
@@ -1030,9 +1051,10 @@ async function loadMyBundles() {
             <div class="bundle-card__body">
                 <div class="row between"><h3>${esc(b.title || b.slug)}</h3><span class="badge badge--off">${esc(b.visibility)}</span></div>
                 <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
-                <div class="muted small">${ver}${b.official ? ' · officiel' : ''}</div>
-                ${b.changelog ? `<div class="changelog">${esc(b.changelog)}</div>` : ''}
-                <div class="row gap wrap"><button class="btn btn--primary edit">Éditer</button></div>
+                <div class="row between mine-foot">
+                    <span class="muted small">${ver}${b.official ? ' · officiel' : ''}</span>
+                    <button class="btn btn--primary edit">Éditer</button>
+                </div>
             </div>`;
         card.querySelector('.edit').onclick = () => { pendingEditSlug = b.slug; switchView('lab'); };
         box.appendChild(card);
