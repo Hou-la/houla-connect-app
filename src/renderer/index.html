@@ -92,7 +92,7 @@
 
                 <!-- STORE -->
                 <section id="view-store" class="view hidden">
-                    <h2>Store</h2>
+                    <div class="view-head"><h2>Store</h2><button id="store-refresh" class="btn btn--ghost btn--refresh" title="Rafraîchir le store">⟳ Rafraîchir</button></div>
                     <div id="store-list" class="grid"></div>
                 </section>
 
@@ -151,6 +151,10 @@
                             <p class="hint">Format : { "schema": 2, "rules": [ … ] }. Événements : gift(giftSlug — n'importe quel cadeau, ex. "licorne", ou un slot ix_slot_01..30), follow, comment(contains), hearts(milestone), share. Effets : keyboard(keys, backend), gamepad(button), rcon(command), obs(request), http(method,url), mqtt(topic,payload), osc(address,args), ws(url,message).</p>
                         </div>
 
+                        <div id="lab-changelog-field" class="hidden" style="margin-top: 14px">
+                            <span class="lab-sub">Nouveautés de cette version</span>
+                            <textarea id="lab-changelog" rows="3" placeholder="Décris ce qui change dans cette version (nouveaux cadeaux, corrections…). Affiché dans le store et l'historique."></textarea>
+                        </div>
                         <div class="row gap lab-version-row" style="margin-top: 14px">
                             <select id="lab-bump" class="hidden" title="Type de changement pour la nouvelle version">
                                 <option value="patch">Correction</option>
@@ -170,7 +174,7 @@
 
                 <!-- MES BUNDLES -->
                 <section id="view-mine" class="view hidden">
-                    <h2>Mes bundles</h2>
+                    <div class="view-head"><h2>Mes bundles</h2><button id="mine-refresh" class="btn btn--ghost btn--refresh" title="Rafraîchir mes bundles">⟳ Rafraîchir</button></div>
                     <div id="mine-list" class="grid"></div>
                 </section>
 
@@ -245,11 +249,16 @@
             <div class="modal__body">
                 <h2 id="modal-title"></h2>
                 <div id="modal-publisher" class="publisher"></div>
-                <p id="modal-desc" class="muted"></p>
+                <p id="modal-desc" class="modal-desc muted"></p>
                 <div id="modal-caps" class="chips"></div>
                 <div id="modal-version" class="muted small"></div>
                 <div id="modal-fee" class="muted small"></div>
-                <div id="modal-changelog" class="changelog"></div>
+                <div id="modal-changelog-wrap" class="hidden">
+                    <div class="modal__seclabel">Nouveautés de cette version</div>
+                    <div id="modal-changelog" class="changelog"></div>
+                </div>
+            </div>
+            <div class="modal__footer">
                 <button id="modal-install" class="btn btn--primary">Installer</button>
             </div>
         </div>

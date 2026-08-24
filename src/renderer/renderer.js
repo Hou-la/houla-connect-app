@@ -165,6 +165,9 @@ async function loadSettings() {
     } catch { /* noop */ }
 }
 document.querySelectorAll('.nav').forEach((n) => (n.onclick = () => switchView(n.dataset.view)));
+// Boutons Rafraîchir (Store / Mes bundles) : re-fetch à la demande.
+{ const b = $('store-refresh'); if (b) b.onclick = () => loadStore(); }
+{ const b = $('mine-refresh'); if (b) b.onclick = () => loadMyBundles(); }
 
 // ── Capture ──
 // Machine à états du bouton toggle : un SEUL bouton, l'état est lisible par le TEXTE
@@ -444,6 +447,7 @@ function openModal(b, isInstalled) {
         ? `Ce pack reverse ${b.creatorFeePercent}% des étoiles au créateur (prélevé sur tes gains, le viewer paie pareil).`
         : '';
     $('modal-changelog').textContent = b.changelog || '';
+    $('modal-changelog-wrap').classList.toggle('hidden', !(b.changelog && b.changelog.trim()));
     $('modal-caps').innerHTML = '';
     api.store
         .preview(b.slug)
@@ -994,9 +998,11 @@ function setLabMode(mode) {
     $('lab-mode-title').textContent = create ? 'Créer un pack' : 'Éditer : ' + (labCurrentSlug || '');
     $('lab-slug').readOnly = !create;
     $('lab-bump').classList.toggle('hidden', create);
+    $('lab-changelog-field').classList.toggle('hidden', create); // changelog = nouvelle version (édition)
     $('lab-save-meta').classList.toggle('hidden', create);
     $('lab-new-btn').classList.toggle('hidden', create);
     $('lab-submit-btn').textContent = create ? 'Créer le pack' : 'Enregistrer la version';
+    $('lab-changelog').value = ''; // une nouvelle version démarre avec un changelog vierge
 }
 // Libellé vivant du curseur de commission (0 = gratuit, sinon N % des étoiles).
 function syncFeeLabel() {
@@ -1138,12 +1144,22 @@ $('lab-submit-btn').onclick = async () => {
     if (labJsonMode) { try { manifest = JSON.parse($('lab-manifest').value); } catch { return ($('lab-msg2').textContent = 'JSON invalide.'); } }
     else manifest = buildManifest();
     const version = labLatestVersion ? bumpVersion(labLatestVersion, $('lab-bump').value) : '1.0.0';
+    const changelog = ($('lab-changelog').value || '').trim() || undefined;
     try {
-        await api.lab.submitVersion(labCurrentSlug, { version, manifest, visibility });
+        await api.lab.submitVersion(labCurrentSlug, { version, manifest, visibility, changelog });
         labLatestVersion = version;
         $('lab-msg2').textContent = `Version ${version} enregistrée (${visibility === 'public' ? 'publique, en modération' : 'privée'}) ✓`;
     } catch (e) { $('lab-msg2').textContent = friendlyRejection(e); }
 };
+
+// Indicateur de croissance (étoiles 7j vs 7j précédents). Flèche = FORME (pas la
+// seule couleur, daltonien) + le pourcentage signé. null = activité toute neuve.
+function growthChip(g) {
+    if (g === null || g === undefined) return '<span class="growth growth--new" title="Activité récente, pas encore de comparaison">🆕 nouveau</span>';
+    if (g > 0) return `<span class="growth growth--up" title="Croissance sur 7 jours">↗ +${g}%</span>`;
+    if (g < 0) return `<span class="growth growth--down" title="Baisse sur 7 jours">↘ ${g}%</span>`;
+    return '<span class="growth growth--flat" title="Stable sur 7 jours">→ stable</span>';
+}
 
 // ── Mes bundles (cliquables -> édition dans le Lab) ──
 async function loadMyBundles() {
@@ -1162,7 +1178,7 @@ async function loadMyBundles() {
                 <div class="row between"><h3>${esc(b.title || b.slug)}</h3><span class="chips">${Number(b.creatorFeePercent) > 0 ? `<span class="badge badge--fee">${Number(b.creatorFeePercent)}% commission</span>` : ''}<span class="badge badge--off">${esc(b.visibility)}</span></span></div>
                 <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
                 <div class="muted small">${ver}${b.official ? ' · officiel' : ''}</div>
-                <div class="mine-earn"><span>Généré&nbsp;: <b>${Number(b.earnedStars || 0)}</b>&nbsp;⭐</span><span>Gagné&nbsp;: <b>${Number(b.earnedCreatorStars || 0)}</b>&nbsp;⭐</span></div>
+                <div class="mine-earn"><span>Généré&nbsp;: <b>${Number(b.earnedStars || 0)}</b>&nbsp;⭐</span><span>Gagné&nbsp;: <b>${Number(b.earnedCreatorStars || 0)}</b>&nbsp;⭐</span>${growthChip(b.growthPct)}</div>
                 <div class="row gap wrap mine-foot">
                     <button class="btn btn--ghost stats">Voir les stats</button>
                     <button class="btn btn--primary edit">Éditer</button>
