@@ -205,8 +205,11 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
 .ws-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Cartes store + éditeur */
-/* Bannière au format 16:9 (1600×900) : cover sur un conteneur 16:9 = image ENTIÈRE, sans rognage. */
-.bundle-card__banner { aspect-ratio: 16 / 9; background: linear-gradient(135deg, #1e2740, #33244a); background-size: cover; background-position: center; }
+/* Bannière : conteneur 16:9 (1600×900) + `contain` = l'image ENTIÈRE s'affiche
+   toujours (titre/logo du haut inclus), quelle que soit sa taille réelle. Une
+   1600×900 remplit pile ; une image d'autre ratio est vue en entier (fines
+   bandes), jamais rognée en haut. */
+.bundle-card__banner { aspect-ratio: 16 / 9; background: #14141f linear-gradient(135deg, #1e2740, #33244a); background-size: contain; background-repeat: no-repeat; background-position: center; }
 .publisher { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin: 4px 0 8px; }
 .publisher .av { width: 18px; height: 18px; }
 .publisher .verified { color: var(--accent-2); font-weight: 700; }
@@ -219,8 +222,8 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
     border: 1px solid var(--border); border-radius: 14px; position: relative; }
 .modal__close { position: absolute; top: 10px; right: 10px; z-index: 2; width: 30px; height: 30px; border: 0;
     border-radius: 8px; background: rgba(0,0,0,.45); color: #fff; cursor: pointer; }
-.modal__banner { aspect-ratio: 16 / 9; background: linear-gradient(135deg, #1e2740, #33244a); background-size: cover;
-    background-position: center; border-radius: 14px 14px 0 0; }
+.modal__banner { aspect-ratio: 16 / 9; background: #14141f linear-gradient(135deg, #1e2740, #33244a); background-size: contain;
+    background-repeat: no-repeat; background-position: center; border-radius: 14px 14px 0 0; }
 .modal__body { padding: 22px; }
 .modal__body h2 { margin-bottom: 6px; }
 
