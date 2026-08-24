@@ -262,14 +262,26 @@ function registerIpc(): void {
     ipcMain.handle('lab:detail', (_e, slug: string) => api.myBundleDetail(slug));
     ipcMain.handle('lab:version', (_e, slug: string, dto) => api.submitVersion(slug, dto));
     ipcMain.handle('lab:publish', (_e, slug: string) => api.publishBundle(slug));
-    ipcMain.handle('lab:banner', async (_e, slug: string) => {
+    // Choisir la bannière SANS uploader : renvoie le chemin + un data-URL pour un
+    // aperçu IMMÉDIAT (l'upload — qui peut prendre un instant — est déclenché après,
+    // avec un état de chargement visible). Évite l'échec silencieux d'avant.
+    ipcMain.handle('lab:pickBanner', async () => {
         const r = await dialog.showOpenDialog({
             properties: ['openFile'],
-            filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+            filters: [{ name: 'Bannière (PNG/JPG/WebP)', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
         });
         if (r.canceled || !r.filePaths[0]) return null;
-        return api.uploadBanner(slug, r.filePaths[0]);
+        const filePath = r.filePaths[0];
+        try {
+            const buf = fs.readFileSync(filePath);
+            const low = filePath.toLowerCase();
+            const mime = low.endsWith('.webp') ? 'image/webp' : low.endsWith('.png') ? 'image/png' : 'image/jpeg';
+            return { filePath, dataUrl: `data:${mime};base64,${buf.toString('base64')}` };
+        } catch {
+            return { filePath, dataUrl: null };
+        }
     });
+    ipcMain.handle('lab:uploadBannerFile', (_e, slug: string, filePath: string) => api.uploadBanner(slug, filePath));
     // Choisir une icône SANS uploader : on renvoie le chemin (pour l'upload différé)
     // + un data-URL pour l'aperçu immédiat. L'upload se fait à la création du pack.
     ipcMain.handle('lab:pickIcon', async () => {

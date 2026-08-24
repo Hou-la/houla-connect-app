@@ -480,6 +480,7 @@ let labJsonMode = false;
 let labMode = 'create'; // 'create' | 'edit'
 let labTags = []; // types d'intégration (slugs)
 let pendingEditSlug = null; // pack à ouvrir en édition quand on arrive sur le Lab
+let pendingBannerFile = null; // bannière choisie avant la création du pack (upload différé)
 let giftCatalog = []; // [{slug,name,thumbnailUrl,coinCost,isInteractiveSlot}] depuis GET /api/gifts
 
 // Échelle FIXE des 30 slots interactifs (coins) — miroir de la config plateforme
@@ -911,11 +912,29 @@ async function loadLab() {
 }
 
 $('lab-banner-btn').onclick = async () => {
-    if (!labCurrentSlug) return ($('lab-msg2').textContent = 'Crée d’abord le pack (bouton « Créer le pack »).');
+    // 1) Choisir -> aperçu IMMÉDIAT (data-URL), avant tout upload.
+    const picked = await api.lab.pickBanner();
+    if (!picked || !picked.filePath) return; // annulé
+    if (picked.dataUrl) $('lab-banner-preview').style.backgroundImage = `url('${picked.dataUrl}')`;
+    // 2) Pack pas encore créé : on garde le fichier, upload différé à la création.
+    if (!labCurrentSlug) {
+        pendingBannerFile = picked.filePath;
+        $('lab-msg2').textContent = 'Aperçu prêt ✓ — la bannière sera envoyée à la création du pack.';
+        return;
+    }
+    // 3) Upload avec état de chargement visible.
+    $('lab-banner-btn').disabled = true;
+    $('lab-msg2').textContent = 'Envoi de la bannière…';
     try {
-        const r = await api.lab.uploadBanner(labCurrentSlug);
-        if (r && r.bannerUrl) { $('lab-banner-preview').style.backgroundImage = `url('${r.bannerUrl}')`; $('lab-msg2').textContent = 'Bannière mise à jour ✓'; }
-    } catch (e) { $('lab-msg2').textContent = friendlyError(e, "La bannière n'a pas pu être enregistrée."); }
+        const r = await api.lab.uploadBannerFile(labCurrentSlug, picked.filePath);
+        const url = r && (r.bannerUrl || r.url);
+        if (url) $('lab-banner-preview').style.backgroundImage = `url('${url}')`;
+        $('lab-msg2').textContent = 'Bannière mise à jour ✓';
+    } catch (e) {
+        $('lab-msg2').textContent = friendlyError(e, "La bannière n'a pas pu être envoyée.");
+    } finally {
+        $('lab-banner-btn').disabled = false;
+    }
 };
 $('lab-save-meta').onclick = async () => {
     if (!labCurrentSlug) return;
@@ -953,6 +972,10 @@ $('lab-submit-btn').onclick = async () => {
             labCurrentSlug = slug; labLatestVersion = null;
             syncLabBindings(); // enregistre les liaisons rôle->connecteur (slug désormais connu)
             await uploadHeldIcons(); // pose les icônes gardées en mémoire
+            if (pendingBannerFile) { // bannière choisie avant création -> upload maintenant
+                try { await api.lab.uploadBannerFile(slug, pendingBannerFile); } catch { /* non bloquant */ }
+                pendingBannerFile = null;
+            }
             const manifest = labJsonMode ? JSON.parse($('lab-manifest').value) : buildManifest();
             await api.lab.submitVersion(slug, { version: '1.0.0', manifest, visibility });
             await enterEditMode(slug);
