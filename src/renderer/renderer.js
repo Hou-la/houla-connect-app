@@ -370,7 +370,8 @@ async function installBundle(slug, btn) {
         const res = await api.store.install(slug);
         await bindRequiredConnectors(slug, (res && res.requiredConnectors) || []);
         if (btn) btn.textContent = 'Installé ✓';
-        await loadInstalled();
+        await loadInstalled(); // rafraîchit le menu Capture
+        await loadStore(); // rafraîchit l'état installé/mise à jour des cartes
     } catch { if (btn) btn.textContent = 'Échec'; }
 }
 /** À l'install : lie chaque connecteur requis (auto sur le 1er du type, sinon création). */
@@ -403,12 +404,15 @@ async function loadStore() {
     if (!items.length) { el.innerHTML = '<p class="muted">Le store est vide pour l\'instant.</p>'; return; }
     items.forEach((b) => {
         const inst = installedBy.get(b.slug);
+        const updateAvail = !!inst && !!b.version && !!inst.version && inst.version !== b.version;
         const card = document.createElement('div');
         card.className = 'bundle-card';
         const banner = b.bannerUrl ? ` style="background-image:url('${esc(b.bannerUrl)}')"` : '';
-        const installBtn = inst
-            ? `<button class="btn btn--ghost install" disabled>Installé ✓${inst.version ? ' · v' + esc(inst.version) : ''}</button>`
-            : `<button class="btn btn--primary install">Installer</button>`;
+        const installBtn = !inst
+            ? `<button class="btn btn--primary install">Installer</button>`
+            : updateAvail
+                ? `<button class="btn btn--primary install" title="Une nouvelle version est disponible">Mettre à jour → v${esc(b.version)}</button>`
+                : `<button class="btn btn--ghost install" disabled>Installé ✓${inst.version ? ' · v' + esc(inst.version) : ''}</button>`;
         const customizeBtn = inst ? `<button class="btn btn--ghost customize">Personnaliser</button>` : '';
         card.innerHTML = `
             <div class="bundle-card__banner"${banner}></div>
@@ -422,7 +426,7 @@ async function loadStore() {
                     <button class="btn btn--ghost more">Voir plus</button>
                 </div>
             </div>`;
-        if (!inst) card.querySelector('.install').onclick = (e) => installBundle(b.slug, e.target);
+        if (!inst || updateAvail) card.querySelector('.install').onclick = (e) => installBundle(b.slug, e.target);
         if (inst) { const cb = card.querySelector('.customize'); if (cb) cb.onclick = () => openCustomize(b.slug, b.title || b.slug); }
         card.querySelector('.more').onclick = () => openModal(b, !!inst);
         el.appendChild(card);

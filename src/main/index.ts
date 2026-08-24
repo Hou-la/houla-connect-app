@@ -395,6 +395,15 @@ function registerIpc(): void {
     ipcMain.handle('engine:start', async (_e, slug: string) => {
         const d = await api.fetchVerifiedManifest(slug); // re-vérifie signature avant exécution
         store.setActiveBundleSlug(slug); // seulement APRÈS un fetch réussi (pas de pack fantôme)
+        // Le moteur tourne sur la DERNIÈRE version : on synchronise l'enregistrement
+        // local (numéro + hash) pour que le menu Capture reflète ce qui tourne vraiment.
+        const installed = store.getInstalled();
+        const entry = installed.find((b) => b.slug === slug);
+        if (entry && (entry.version !== d.version || entry.contentHash !== d.contentHash)) {
+            entry.version = d.version;
+            entry.contentHash = d.contentHash;
+            store.setInstalled(installed);
+        }
         // Applique le CALQUE local (perso streamer) : désactive des interactions,
         // override des cooldowns. N'altère jamais le manifeste signé sur le disque.
         activeManifest = applyPackOverlay(d.manifest as BundleManifest, store.getPackOverlay(slug));
