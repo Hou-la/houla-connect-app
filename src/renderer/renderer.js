@@ -548,9 +548,7 @@ function eventFieldHtml(r) {
     if (r.event.type === 'gift-custom') {
         const src = r.event.iconUrl || r.event._iconPreview;
         const ic = src ? `background-image:url('${esc(src)}')` : '';
-        return `<span class="rule__drag" draggable="true" title="Glisser sur un autre cadeau pour échanger les slots (donc les prix)">⠿</span>`
-            + `<select class="r-giftslug">${slotOptions(r.event.giftSlug)}</select>`
-            + `<span class="r-price" title="Ce que le viewer paie pour ce cadeau">${esc(slotPriceLabel(r.event.giftSlug))}</span>`
+        return `<select class="r-giftslug">${slotOptions(r.event.giftSlug)}</select>`
             + `<span class="r-icon" title="icône du cadeau" style="${ic}"></span>`
             + `<button type="button" class="r-iconbtn">Icône…</button>`
             + `<button type="button" class="r-iconguide" title="Comment réaliser l'icône ?">i</button>`;
@@ -683,9 +681,9 @@ function renderRules() {
             <div class="rule__part rule__part--foot"><span class="rule__lbl">SI</span>
                 <div class="rule__fields">
                     <select class="r-role" title="Qui peut déclencher cette règle ?">${ROLES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
-                ${r.event.type === 'gift-custom' ? '<button class="r-up" title="Échanger le slot (prix) avec le cadeau au-dessus">&#8593;</button><button class="r-down" title="Échanger le slot (prix) avec le cadeau en dessous">&#8595;</button>' : ''}
                 <button class="r-test" title="Déclencher cette interaction pour la tester">&#9654; Tester</button>
-                <button class="r-del" title="Supprimer cette interaction">&#10005;</button></div>
+                <button class="r-del" title="Supprimer cette interaction">&#10005;</button>
+                <span class="rule__grip" draggable="true" title="Glisser pour déplacer cette interaction">&#8942;&#8942;</span></div>
             <div class="rule__result"></div>`;
         const q = (s) => el.querySelector(s);
         if (r.event.type === 'comment' && q('.r-contains')) q('.r-contains').value = r.event.contains || '';
@@ -732,41 +730,35 @@ function renderRules() {
         if (r.event.type === 'gift-custom' && q('.r-giftslug')) {
             q('.r-giftslug').addEventListener('change', () => { readRule(el, r); renderRules(); });
         }
-        // Drag & drop : glisser un cadeau interactif sur un autre ÉCHANGE leurs slots
-        // (donc leurs prix). Réservé aux cadeaux interactifs (les seuls à avoir un slot).
-        const handle = q('.rule__drag');
-        if (handle) {
-            handle.ondragstart = (e) => {
+        // Poignée à DROITE : glisser pour DÉPLACER l'interaction (réordonner la liste).
+        // On lit d'abord la saisie DOM courante pour ne rien perdre au re-render.
+        const grip = q('.rule__grip');
+        if (grip) {
+            grip.ondragstart = (e) => {
+                readRule(el, r);
                 labDragIndex = i;
                 try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); } catch { /* noop */ }
+                el.classList.add('rule--dragging');
             };
+            grip.ondragend = () => { el.classList.remove('rule--dragging'); labDragIndex = -1; };
         }
-        if (r.event.type === 'gift-custom') {
-            el.addEventListener('dragover', (e) => {
-                const src = labRules[labDragIndex];
-                if (labDragIndex >= 0 && labDragIndex !== i && src && src.event.type === 'gift-custom') {
-                    e.preventDefault();
-                    el.classList.add('rule--dropthere');
-                }
-            });
-            el.addEventListener('dragleave', () => el.classList.remove('rule--dropthere'));
-            el.addEventListener('drop', (e) => {
-                e.preventDefault();
-                el.classList.remove('rule--dropthere');
-                const from = labDragIndex; labDragIndex = -1;
-                if (from < 0 || from === i) return;
-                const a = labRules[from], b = labRules[i];
-                if (!a || !b || a.event.type !== 'gift-custom' || b.event.type !== 'gift-custom') return;
-                const tmp = a.event.giftSlug; a.event.giftSlug = b.event.giftSlug; b.event.giftSlug = tmp;
-                renderRules();
-            });
-        }
+        el.addEventListener('dragover', (e) => {
+            if (labDragIndex >= 0 && labDragIndex !== i) { e.preventDefault(); el.classList.add('rule--dropthere'); }
+        });
+        el.addEventListener('dragleave', () => el.classList.remove('rule--dropthere'));
+        el.addEventListener('drop', (e) => {
+            e.preventDefault();
+            el.classList.remove('rule--dropthere');
+            const from = labDragIndex; labDragIndex = -1;
+            if (from < 0 || from === i) return;
+            const [moved] = labRules.splice(from, 1); // retire de sa position
+            labRules.splice(i, 0, moved); // ré-insère à la position de la cible
+            renderRules();
+        });
         el.querySelectorAll('input, select').forEach((inp) => {
             if (inp.classList.contains('r-event') || inp.classList.contains('r-exec') || inp.classList.contains('r-connector')) return;
             inp.addEventListener('input', () => readRule(el, r));
         });
-        if (q('.r-up')) q('.r-up').onclick = () => { const j = adjacentCustomIndex(i, -1); if (j >= 0) { swapSlots(i, j); renderRules(); } };
-        if (q('.r-down')) q('.r-down').onclick = () => { const j = adjacentCustomIndex(i, 1); if (j >= 0) { swapSlots(i, j); renderRules(); } };
         q('.r-del').onclick = () => { labRules.splice(i, 1); renderRules(); };
         q('.r-test').onclick = async () => {
             readRule(el, r); // synchronise la saisie DOM -> objet règle
