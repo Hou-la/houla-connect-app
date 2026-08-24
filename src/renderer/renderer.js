@@ -998,11 +998,17 @@ function setLabMode(mode) {
     $('lab-new-btn').classList.toggle('hidden', create);
     $('lab-submit-btn').textContent = create ? 'Créer le pack' : 'Enregistrer la version';
 }
+// Libellé vivant du curseur de commission (0 = gratuit, sinon N % des étoiles).
+function syncFeeLabel() {
+    const v = Number($('lab-fee').value) || 0;
+    $('lab-fee-val').innerHTML = v > 0 ? v + ' % des étoiles' : '0 % · gratuit';
+}
 function enterCreateMode() {
     labCurrentSlug = null; labLatestVersion = null; labTags = [];
     labRules = [newRule()];
     $('lab-slug').value = ''; $('lab-title').value = ''; $('lab-game').value = '';
-    $('lab-desc').value = ''; $('lab-fee').value = '';
+    $('lab-desc').value = ''; $('lab-fee').value = 0;
+    $('lab-fee').oninput = syncFeeLabel; syncFeeLabel();
     $('lab-banner-preview').style.backgroundImage = '';
     $('lab-versions').innerHTML = '';
     $('lab-msg').textContent = ''; $('lab-msg2').textContent = '';
@@ -1021,6 +1027,7 @@ async function enterEditMode(slug) {
     labTags = Array.isArray(b.tags) ? b.tags.slice() : [];
     $('lab-slug').value = b.slug; $('lab-title').value = b.title || ''; $('lab-game').value = b.game || '';
     $('lab-desc').value = b.description || ''; $('lab-fee').value = b.creatorFeePercent || 0;
+    $('lab-fee').oninput = syncFeeLabel; syncFeeLabel();
     $('lab-banner-preview').style.backgroundImage = b.bannerUrl ? `url('${b.bannerUrl}')` : '';
     // Historique des versions (numéro + statut de modération + date + changelog).
     $('lab-versions').innerHTML = versions.length
@@ -1152,10 +1159,10 @@ async function loadMyBundles() {
         card.innerHTML = `
             <div class="bundle-card__banner"${banner}></div>
             <div class="bundle-card__body">
-                <div class="row between"><h3>${esc(b.title || b.slug)}</h3><span class="badge badge--off">${esc(b.visibility)}</span></div>
+                <div class="row between"><h3>${esc(b.title || b.slug)}</h3><span class="chips">${Number(b.creatorFeePercent) > 0 ? `<span class="badge badge--fee">${Number(b.creatorFeePercent)}% commission</span>` : ''}<span class="badge badge--off">${esc(b.visibility)}</span></span></div>
                 <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
                 <div class="muted small">${ver}${b.official ? ' · officiel' : ''}</div>
-                <div class="mine-earn">💰 ${Number(b.earnedCoins || 0)} coins · ⭐ ${Number(b.earnedStars || 0)} étoiles générées</div>
+                <div class="mine-earn"><span>Généré&nbsp;: <b>${Number(b.earnedStars || 0)}</b>&nbsp;⭐</span><span>Gagné&nbsp;: <b>${Number(b.earnedCreatorStars || 0)}</b>&nbsp;⭐</span></div>
                 <div class="row gap wrap mine-foot">
                     <button class="btn btn--ghost stats">Voir les stats</button>
                     <button class="btn btn--primary edit">Éditer</button>

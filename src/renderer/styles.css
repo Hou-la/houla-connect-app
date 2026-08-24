@@ -325,6 +325,16 @@ input[readonly] { opacity: .6; cursor: not-allowed; }
     border-radius: 8px; background: none; cursor: pointer; }
 .r-accent::-webkit-color-swatch-wrapper { padding: 2px; }
 .r-accent::-webkit-color-swatch { border: none; border-radius: 6px; }
+/* « Mes bundles » : rangée de chips (commission + visibilité), gains généré/gagné. */
+.chips { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.badge--fee { background: rgba(47,142,239,.16); color: var(--accent); border: 1px solid rgba(47,142,239,.35); }
+.mine-earn { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 6px; font-size: 13px; color: var(--text-2); }
+.mine-earn b { color: var(--text); font-variant-numeric: tabular-nums; }
+/* Curseur de commission créateur (0 à 15 %). */
+.lab-fee-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.lab-fee-row input[type="range"] { flex: 1 1 auto; accent-color: var(--accent); }
+.lab-fee-val { flex: 0 0 auto; min-width: 104px; text-align: right;
+    font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); }
 /* Combo manette (séquence/aléatoire) : lecture seule dans l'éditeur. */
 .r-combo { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center;
     padding: 7px 10px; border: 1px dashed var(--border); border-radius: 8px;

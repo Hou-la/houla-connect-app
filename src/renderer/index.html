@@ -112,8 +112,11 @@
                         <input id="lab-game" list="lab-game-list" placeholder="jeu (ex. minecraft) — optionnel" />
                         <datalist id="lab-game-list"></datalist>
                         <span class="lab-sub">Commission créateur</span>
-                        <input id="lab-fee" type="number" min="0" max="15" placeholder="0 = gratuit (0 à 15 % des étoiles reversé au créateur)" />
-                        <p class="hint">Prélevé sur le broadcaster (le viewer paie pareil), affiché à l'installation. Plafonné à 15 %.</p>
+                        <div class="lab-fee-row">
+                            <input id="lab-fee" type="range" min="0" max="15" step="1" value="0" />
+                            <output id="lab-fee-val" class="lab-fee-val">0&nbsp;% · gratuit</output>
+                        </div>
+                        <p class="hint">Part des étoiles reversée au créateur du pack. Glisse de 0&nbsp;% (gratuit) à 15&nbsp;% max. Prélevé sur le broadcaster (le viewer paie pareil), affiché à l'installation.</p>
                         <span class="lab-sub">Types (tags)</span>
                         <div id="lab-tags" class="tagbox"></div>
                         <input id="lab-tag-input" list="lab-tag-list" placeholder="ajouter un type puis Entrée (ex. gaming, domotique, asmr)…" />
