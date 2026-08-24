@@ -646,7 +646,20 @@ function eventFieldHtml(r) {
 function execFieldHtml(r) {
     switch (r.effect.type) {
         case 'keyboard': return `<input type="text" class="r-keys" placeholder="touches (ex. space, shift+c)" /><select class="r-backend"><option value="auto">clavier normal</option><option value="interception">bas niveau (pilote)</option></select>`;
-        case 'gamepad': return `<select class="r-button">${GP_BUTTONS.map((b) => `<option>${b}</option>`).join('')}</select>`;
+        case 'gamepad': {
+            // Un effet combo (séquence / tirage aléatoire) est édité en avancé
+            // (seed) : on l'affiche en lecture seule pour ne pas l'écraser ici.
+            const seq = Array.isArray(r.effect.sequence) ? r.effect.sequence : [];
+            const rnd = Array.isArray(r.effect.randomFrom) ? r.effect.randomFrom : [];
+            if (seq.length || rnd.length) {
+                const parts = [];
+                if (r.effect.button) parts.push(r.effect.button);
+                parts.push(...seq);
+                if (rnd.length) parts.push('aléatoire(' + rnd.join('/') + ')');
+                return `<span class="r-combo" title="Combo manette (édition avancée, préservé)">🎮 ${esc(parts.join(' → '))}</span>`;
+            }
+            return `<select class="r-button">${GP_BUTTONS.map((b) => `<option>${b}</option>`).join('')}</select>`;
+        }
         case 'rcon': return `<input type="text" class="r-command" placeholder="commande (ex. give {player} minecraft:diamond 1)" />`;
         case 'obs': return `<input type="text" class="r-request" placeholder="requête OBS (ex. SetCurrentProgramScene)" />`;
         case 'http': return `<select class="r-method"><option>GET</option><option>POST</option><option>PUT</option></select><input type="text" class="r-path" placeholder="chemin (ex. /api/toggle) — optionnel" />`;
@@ -677,7 +690,9 @@ function readRule(el, r) {
     if (r.event.type === 'comment') r.event.contains = q('.r-contains') ? q('.r-contains').value : '';
     if (r.event.type === 'hearts') r.event.milestone = q('.r-milestone') ? Number(q('.r-milestone').value) || undefined : undefined;
     if (r.effect.type === 'keyboard') { r.effect.keys = q('.r-keys') ? q('.r-keys').value : ''; r.effect.backend = q('.r-backend') ? q('.r-backend').value : 'auto'; }
-    if (r.effect.type === 'gamepad') r.effect.button = q('.r-button') ? q('.r-button').value : 'A';
+    // Ne touche button QUE si le sélecteur simple est présent (un combo n'en a pas
+    // -> on préserve sequence/randomFrom/gapMs déjà sur r.effect).
+    if (r.effect.type === 'gamepad' && q('.r-button')) r.effect.button = q('.r-button').value;
     if (r.effect.type === 'rcon') r.effect.command = q('.r-command') ? q('.r-command').value : '';
     if (r.effect.type === 'obs') r.effect.request = q('.r-request') ? q('.r-request').value : '';
     if (r.effect.type === 'http') { r.effect.method = q('.r-method') ? q('.r-method').value : 'POST'; r.effect.path = q('.r-path') ? q('.r-path').value : ''; }
@@ -885,7 +900,12 @@ function buildRule(r, i) {
     if (r.event.type === 'hearts') on.milestone = r.event.milestone;
     const effect = { type: r.effect.type };
     if (r.effect.type === 'keyboard') { effect.keys = r.effect.keys; if (r.effect.backend && r.effect.backend !== 'auto') effect.backend = r.effect.backend; }
-    if (r.effect.type === 'gamepad') effect.button = r.effect.button;
+    if (r.effect.type === 'gamepad') {
+        if (r.effect.button) effect.button = r.effect.button;
+        if (Array.isArray(r.effect.sequence) && r.effect.sequence.length) effect.sequence = r.effect.sequence;
+        if (Array.isArray(r.effect.randomFrom) && r.effect.randomFrom.length) effect.randomFrom = r.effect.randomFrom;
+        if (typeof r.effect.gapMs === 'number') effect.gapMs = r.effect.gapMs;
+    }
     if (r.effect.type === 'rcon') effect.command = r.effect.command;
     if (r.effect.type === 'obs') effect.request = r.effect.request;
     if (r.effect.type === 'http') { effect.method = r.effect.method; if (r.effect.path) effect.path = r.effect.path; }

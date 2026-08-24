@@ -11,7 +11,10 @@ export interface KeyboardEffect {
 }
 export interface GamepadEffect {
     type: 'gamepad';
-    button: string;
+    button?: string; // bouton unique
+    sequence?: string[]; // combo ordonné, joué avant le tirage aléatoire
+    randomFrom?: string[]; // un bouton au hasard, joué APRÈS button/sequence
+    gapMs?: number; // pause entre deux appuis d'une séquence (défaut ~150)
     holdMs?: number;
     cooldownMs?: number;
 }
