@@ -97,16 +97,23 @@ Part app : schéma + picker Lab. Part client : rendu du halo (Flutter/Angular).
   `repeat:'once'` sur un effet = joue une seule fois (annonce chat).
 
 ## 11. Roadmap (validée 2026-08-24, à faire dans l'ordre)
-1. **Analytics par pack** — FONDATION FAITE (2026-08-24) :
+1. **Analytics par pack** — FAIT (2026-08-24) :
    - `bundle_usage_by_day` a `coins` + `stars` (migration `1848400000000-BundleUsageEarnings`).
    - `gift.sent` émet `bundle.earnings` ; `bundle-store` `@OnEvent` résout le pack exécutable depuis le
      pack visuel et agrège via la **queue Bull** (jamais synchrone).
-   - `GET /api/manager/bundles/:slug/stats` renvoie `totalCoins/totalStars/totalEffects` + série journalière (60j).
-   - **RESTE** : UI carte « coins gagnés » + bouton « Voir les stats » → écran **graphes** (installs + revenus étoiles).
-2. **Commission créateur** : une part des **étoiles** du cadeau va au créateur, **prélevée sur ce que gagne
-   le broadcaster** (viewer paie pareil). Taux **plafonné** (0 à ~10 %) fixé par le créateur, **transparent
-   à l'installation**, broadcaster consent. En étoiles (cashables). Garde-fous : plafond + affichage + modération.
-   Chantier : schéma taux par pack + registre de reversement, split dans `gift.sent`, intégration cashout.
+   - `GET /api/manager/bundles/:slug/stats` → `totalCoins/totalStars/totalEffects` + série journalière (60j).
+   - **UI** : carte « Mes bundles » montre `earnedCoins/earnedStars` ; bouton « Voir les stats » → modale
+     totaux + **graphe en barres** (hauteur = valeur, lisible daltonien). `listMine` porte les revenus (privé créateur).
+   - **Test** : envoyer des cadeaux interactifs pendant un live → les coins/étoiles s'agrègent sur le pack.
+2. **Commission créateur** — FAIT (2026-08-24) :
+   - `store_bundle.creator_fee_percent` (0-15, migration `1848400000001-BundleCreatorFee`) + DTO create/update
+     + champ au **Lab** + transparence au **store détail** (« reverse X % des étoiles au créateur »).
+   - `setActiveBundle` met créateur + fee dans l'état interactif caché (1 lecture à l'attache).
+   - `sendGift` **split DANS la transaction atomique** : broadcaster reçoit `étoiles - commission`, créateur
+     reçoit la commission (si > 0 **et créateur ≠ broadcaster** — on ne se paie pas soi-même). Viewer paie pareil.
+   - **Test (créateur ≠ broadcaster)** : en dev, Mika possède le pack ET diffuse → self, PAS de commission.
+     Pour tester le split : un pack **possédé par un autre workspace**, utilisé par Mika en live, un viewer
+     envoie un cadeau interactif → l'autre workspace reçoit X % des étoiles, Mika le reste.
 3. **Bordures colorées** (§9) : schéma `accentColor` + picker Lab + rendu client.
 4. **Signature de code** Windows (Azure Trusted Signing) — voir `docs/CODE_SIGNING_AZURE.md`.
 
