@@ -344,6 +344,8 @@ input[readonly] { opacity: .6; cursor: not-allowed; }
 .r-iconguide:hover { border-color: var(--accent); background: var(--accent); color: #fff; }
 .r-icon { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border);
     background: var(--bg-3) center/contain no-repeat; }
+/* Champ NOM du cadeau (gift-custom) : affiché au viewer. */
+.rule__fields > .r-name { flex: 1 1 150px; min-width: 110px; }
 .r-iconbtn { flex: 0 0 auto; background: var(--bg-3); border: 1px solid var(--border); border-radius: 8px;
     color: var(--text); cursor: pointer; font-size: 12px; padding: 8px 10px; white-space: nowrap; }
 .r-iconbtn:hover { border-color: var(--accent); }

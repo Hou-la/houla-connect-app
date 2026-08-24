@@ -664,7 +664,8 @@ function eventFieldHtml(r) {
         // Aperçu : la vignette porte déjà le halo (auto par rareté, ou choisi).
         const ic = (src ? `background-image:url('${esc(src)}');` : '')
             + `box-shadow:0 0 0 2px ${esc(accent)}, 0 0 8px ${esc(accent)};`;
-        return `<select class="r-giftslug">${slotOptions(r.event.giftSlug)}</select>`
+        return `<input type="text" class="r-name" placeholder="Nom du cadeau (ex. Torches)" value="${esc(r.label || '')}" title="Nom affiché au viewer" />`
+            + `<select class="r-giftslug">${slotOptions(r.event.giftSlug)}</select>`
             + `<span class="r-icon" title="icône du cadeau" style="${ic}"></span>`
             + `<button type="button" class="r-iconbtn">Icône…</button>`
             + `<button type="button" class="r-iconguide" title="Comment réaliser l'icône ?">i</button>`
@@ -716,6 +717,8 @@ function readRule(el, r) {
     const q = (s) => el.querySelector(s);
     if (r.event.type === 'gift' || r.event.type === 'gift-custom') r.event.giftSlug = q('.r-giftslug') ? q('.r-giftslug').value : r.event.giftSlug;
     if (r.event.type === 'gift-custom') {
+        // Nom affiché au viewer (le label de la règle). Sans ça -> « Interactif N ».
+        if (q('.r-name')) r.label = q('.r-name').value;
         // Bordure : cochée = couleur explicite (override), décochée = auto (rareté) => undefined.
         const on = q('.r-accent-on');
         r.event.accentColor = (on && on.checked && q('.r-accent')) ? q('.r-accent').value : undefined;
@@ -948,6 +951,9 @@ function buildRule(r, i) {
     // Rôle de connecteur (protocoles réseau) : l'endpoint est lié à l'installation.
     if (CONNECTOR_PROTOCOLS.includes(r.effect.type) && r.effect.connector) effect.connector = r.effect.connector;
     const rule = { id: 'r' + (i + 1), on, effect };
+    // Nom du cadeau affiché au viewer (sinon le nom générique du slot « Interactif N »).
+    const lbl = (r.label || '').trim();
+    if (lbl) rule.label = lbl;
     if (r.followersOnly) rule.followersOnly = true;
     if (r.moderatorsOnly) rule.moderatorsOnly = true;
     return rule;
@@ -962,7 +968,7 @@ function manifestToRules(m) {
         if (event.type === 'gift' && !event.giftSlug && event.slot) { event.giftSlug = event.slot; delete event.slot; }
         // Un slug de slot réservé -> vue « Cadeau personnalisé » ; sinon « Cadeau ».
         if (event.type === 'gift' && /^ix_slot_\d{2}$/.test(event.giftSlug || '')) event.type = 'gift-custom';
-        return { event, effect: { ...rule.effect }, followersOnly: !!rule.followersOnly, moderatorsOnly: !!rule.moderatorsOnly };
+        return { event, effect: { ...rule.effect }, label: rule.label || '', followersOnly: !!rule.followersOnly, moderatorsOnly: !!rule.moderatorsOnly };
     });
 }
 function bumpVersion(v, type) {
