@@ -322,13 +322,27 @@ function logLine(l) {
 }
 
 // ── Store ──
+function fmtDate(d) { try { return d ? new Date(d).toLocaleDateString() : ''; } catch { return ''; } }
 function publisherHtml(pub, installs) {
     pub = pub || {};
+    // Nom du créateur CLIQUABLE -> ouvre son profil public hou.la/@slug (abonnement, DM).
+    const name = esc(pub.name || 'Hou.la');
+    const creator = pub.slug
+        ? `<a href="#" class="creator-link" data-slug="${esc(pub.slug)}" title="Voir le profil de ${name}">${name}</a>`
+        : `<span>${name}</span>`;
     return `<img class="av" src="${esc(pub.avatarUrl || TRANSPARENT)}" alt=""/>
-        <span>${esc(pub.name || 'Hou.la')}</span>
+        ${creator}
         ${pub.isVerified ? '<span class="verified" title="Vérifié">✓</span>' : ''}
         <span>· ${installs || 0} installs</span>`;
 }
+// Clic sur un nom de créateur (partout) -> profil public dans le navigateur.
+document.addEventListener('click', (e) => {
+    const link = e.target.closest ? e.target.closest('.creator-link') : null;
+    if (!link) return;
+    e.preventDefault();
+    const slug = link.dataset.slug;
+    if (slug) api.openExternal(`https://hou.la/@${encodeURIComponent(slug)}`);
+});
 async function installBundle(slug, btn) {
     if (btn) btn.textContent = '…';
     try {
@@ -380,6 +394,7 @@ async function loadStore() {
             <div class="bundle-card__body">
                 <h3>${esc(b.title || b.slug)}</h3>
                 <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
+                ${b.version ? `<div class="muted small">v${esc(b.version)}${b.versionDate ? ' · ' + esc(fmtDate(b.versionDate)) : ''}</div>` : ''}
                 <div class="row gap wrap">
                     ${installBtn}
                     ${customizeBtn}
@@ -399,6 +414,8 @@ function openModal(b, isInstalled) {
     $('modal-title').textContent = b.title || b.slug;
     $('modal-publisher').innerHTML = publisherHtml(b.publisher, b.installCount);
     $('modal-desc').textContent = b.description || 'Aucune description.';
+    $('modal-version').textContent = b.version ? `Version ${b.version}${b.versionDate ? ' · ' + fmtDate(b.versionDate) : ''}` : '';
+    $('modal-changelog').textContent = b.changelog || '';
     $('modal-caps').innerHTML = '';
     api.store
         .preview(b.slug)
@@ -872,6 +889,7 @@ function enterCreateMode() {
     labRules = [newRule()];
     $('lab-slug').value = ''; $('lab-title').value = ''; $('lab-game').value = '';
     $('lab-banner-preview').style.backgroundImage = '';
+    $('lab-versions').innerHTML = '';
     $('lab-msg').textContent = ''; $('lab-msg2').textContent = '';
     $('lab-vis').checked = false; $('lab-vis-label').textContent = 'Privé';
     renderTags();
@@ -888,6 +906,12 @@ async function enterEditMode(slug) {
     labTags = Array.isArray(b.tags) ? b.tags.slice() : [];
     $('lab-slug').value = b.slug; $('lab-title').value = b.title || ''; $('lab-game').value = b.game || '';
     $('lab-banner-preview').style.backgroundImage = b.bannerUrl ? `url('${b.bannerUrl}')` : '';
+    // Historique des versions (numéro + statut de modération + date + changelog).
+    $('lab-versions').innerHTML = versions.length
+        ? '<span class="lab-sub">Versions</span>' + versions.map((v) =>
+            `<div class="lab-ver"><b>v${esc(v.version)}</b> <span class="badge badge--off">${esc(v.moderationStatus || v.visibility || '')}</span> <span class="muted small">${esc(fmtDate(v.createdAt))}</span>${v.changelog ? `<div class="changelog">${esc(v.changelog)}</div>` : ''}</div>`
+        ).join('')
+        : '<span class="lab-sub">Versions</span><p class="muted small">Aucune version encore.</p>';
     $('lab-msg').textContent = ''; $('lab-msg2').textContent = '';
     const lastVis = versions.length ? versions[0].visibility : b.visibility;
     $('lab-vis').checked = lastVis === 'public'; $('lab-vis-label').textContent = lastVis === 'public' ? 'Public' : 'Privé';
@@ -1002,11 +1026,25 @@ $('lab-submit-btn').onclick = async () => {
 async function loadMyBundles() {
     const mine = (await api.lab.myBundles()) || [];
     const box = $('mine-list');
+    box.innerHTML = '';
     if (!mine.length) { box.innerHTML = '<p class="muted">Aucun bundle créé. Va dans le Lab pour en créer un.</p>'; return; }
-    box.innerHTML = mine.map((b) =>
-        `<div class="card card--click" data-slug="${esc(b.slug)}"><div class="row between"><b>${esc(b.title || b.slug)}</b><span class="badge badge--off">${esc(b.visibility)}</span></div><p class="muted">${esc(b.slug)}${b.official ? ' · officiel' : ''} · installs ${b.installCount || 0} · <span class="link">éditer ✎</span></p></div>`
-    ).join('');
-    box.querySelectorAll('.card--click').forEach((c) => (c.onclick = () => { pendingEditSlug = c.dataset.slug; switchView('lab'); }));
+    mine.forEach((b) => {
+        const card = document.createElement('div');
+        card.className = 'bundle-card';
+        const banner = b.bannerUrl ? ` style="background-image:url('${esc(b.bannerUrl)}')"` : '';
+        const ver = b.version ? `v${esc(b.version)}${b.versionDate ? ' · ' + esc(fmtDate(b.versionDate)) : ''}` : 'aucune version publiée';
+        card.innerHTML = `
+            <div class="bundle-card__banner"${banner}></div>
+            <div class="bundle-card__body">
+                <div class="row between"><h3>${esc(b.title || b.slug)}</h3><span class="badge badge--off">${esc(b.visibility)}</span></div>
+                <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
+                <div class="muted small">${ver}${b.official ? ' · officiel' : ''}</div>
+                ${b.changelog ? `<div class="changelog">${esc(b.changelog)}</div>` : ''}
+                <div class="row gap wrap"><button class="btn btn--primary edit">Éditer</button></div>
+            </div>`;
+        card.querySelector('.edit').onclick = () => { pendingEditSlug = b.slug; switchView('lab'); };
+        box.appendChild(card);
+    });
 }
 
 // ── Settings ──

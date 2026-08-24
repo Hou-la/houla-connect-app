@@ -156,6 +156,15 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
 .cx-rule__info { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cx-cd { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
 .cx-cd-in { width: 84px; padding: 6px 8px; margin: 0; }
+
+/* Affichages enrichis : version, changelog, lien créateur, historique Lab. */
+.small { font-size: 12px; }
+.creator-link { color: var(--accent-2, #6ea8ff); text-decoration: none; cursor: pointer; }
+.creator-link:hover { text-decoration: underline; }
+.changelog { white-space: pre-wrap; font-size: 13px; color: var(--text); background: var(--bg); border-radius: 6px; padding: 8px 10px; margin: 8px 0; max-height: 140px; overflow-y: auto; }
+.lab-versions { margin-top: 14px; }
+.lab-ver { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.lab-ver:last-child { border-bottom: 0; }
 .log .ok { color: var(--ok); }
 .log .no { color: var(--danger); }
 

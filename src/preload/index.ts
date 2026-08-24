@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('houlaConnect', {
     currentWorkspace: () => invoke('workspaces:current'),
     selectWorkspace: (ws: { id: string; name: string }) => invoke('workspaces:select', ws),
     appVersion: () => invoke('app:version'),
+    openExternal: (url: string) => invoke('shell:openExternal', url),
 
     gifts: {
         catalog: (force?: boolean) => invoke('gifts:catalog', force),

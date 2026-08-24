@@ -330,6 +330,18 @@ function registerIpc(): void {
         return { ok: true };
     });
 
+    // Ouvrir une URL EXTERNE (profil créateur) — bornée à https://…hou.la (anti-abus).
+    ipcMain.handle('shell:openExternal', (_e, url: string) => {
+        try {
+            const u = new URL(String(url));
+            if (u.protocol === 'https:' && /(^|\.)hou\.la$/i.test(u.hostname)) {
+                void shell.openExternal(u.toString());
+                return { ok: true };
+            }
+        } catch { /* url invalide */ }
+        return { ok: false };
+    });
+
     // Capacités / secrets / focus
     ipcMain.handle('caps:get', () => ({
         capabilities: [...store.getCapabilities()],
