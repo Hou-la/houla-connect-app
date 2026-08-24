@@ -97,12 +97,12 @@ Part app : schéma + picker Lab. Part client : rendu du halo (Flutter/Angular).
   `repeat:'once'` sur un effet = joue une seule fois (annonce chat).
 
 ## 11. Roadmap (validée 2026-08-24, à faire dans l'ordre)
-1. **Analytics par pack** : coins + étoiles générés par pack et par créateur. `gift.sent` porte le montant
-   + le pack actif → attribuer + agréger via **queue Bull** (règle haute-fréquence), agrégat `bundle_earnings`.
-   Sert : motivation créateur, classement store, base de la commission.
-   - **UI (validé 2026-08-24)** : sur la carte « Mes bundles », afficher les **coins gagnés** ; + un bouton
-     **« Voir les stats »** ouvrant un écran avec **graphes** (installations dans le temps, revenus en
-     **étoiles**). Endpoint créateur `GET /api/manager/bundles/:slug/stats` (existe déjà, à enrichir).
+1. **Analytics par pack** — FONDATION FAITE (2026-08-24) :
+   - `bundle_usage_by_day` a `coins` + `stars` (migration `1848400000000-BundleUsageEarnings`).
+   - `gift.sent` émet `bundle.earnings` ; `bundle-store` `@OnEvent` résout le pack exécutable depuis le
+     pack visuel et agrège via la **queue Bull** (jamais synchrone).
+   - `GET /api/manager/bundles/:slug/stats` renvoie `totalCoins/totalStars/totalEffects` + série journalière (60j).
+   - **RESTE** : UI carte « coins gagnés » + bouton « Voir les stats » → écran **graphes** (installs + revenus étoiles).
 2. **Commission créateur** : une part des **étoiles** du cadeau va au créateur, **prélevée sur ce que gagne
    le broadcaster** (viewer paie pareil). Taux **plafonné** (0 à ~10 %) fixé par le créateur, **transparent
    à l'installation**, broadcaster consent. En étoiles (cashables). Garde-fous : plafond + affichage + modération.
