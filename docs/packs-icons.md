@@ -77,35 +77,35 @@
 
 | # | Slot · prix | Cadeau | Effet |
 |---|---|---|---|
-| 1 | slot 01 · 5 coins | **Poule** | `execute at {player} run summon minecraft:chicken` |
-| 2 | slot 02 · 10 coins | **Cochon** | `execute at {player} run summon minecraft:pig` |
-| 3 | slot 03 · 15 coins | **Mouton** | `execute at {player} run summon minecraft:sheep` |
-| 4 | slot 04 · 20 coins | **Vache** | `execute at {player} run summon minecraft:cow` |
-| 5 | slot 05 · 30 coins | **Lapin** | `execute at {player} run summon minecraft:rabbit` |
-| 6 | slot 06 · 45 coins | **Blé ×16** | `give {player} minecraft:wheat 16` |
-| 7 | slot 07 · 60 coins | **Carottes ×16** | `give {player} minecraft:carrot 16` |
-| 8 | slot 08 · 80 coins | **Pommes de terre ×16** | `give {player} minecraft:potato 16` |
-| 9 | slot 09 · 100 coins | **Ocelot** | `execute at {player} run summon minecraft:ocelot` |
-| 10 | slot 10 · 125 coins | **Chat** | `execute at {player} run summon minecraft:cat` |
-| 11 | slot 11 · 155 coins | **Loup** | `execute at {player} run summon minecraft:wolf` |
-| 12 | slot 12 · 190 coins | **Abeille** | `execute at {player} run summon minecraft:bee` |
-| 13 | slot 13 · 230 coins | **Perroquet** | `execute at {player} run summon minecraft:parrot` |
-| 14 | slot 14 · 280 coins | **Renard** | `execute at {player} run summon minecraft:fox` |
-| 15 | slot 15 · 340 coins | **Chèvre** | `execute at {player} run summon minecraft:goat` |
-| 16 | slot 16 · 410 coins | **Cheval** | `execute at {player} run summon minecraft:horse` |
-| 17 | slot 17 · 490 coins | **Âne** | `execute at {player} run summon minecraft:donkey` |
-| 18 | slot 18 · 580 coins | **Lama** | `execute at {player} run summon minecraft:llama` |
-| 19 | slot 19 · 680 coins | **Panda** | `execute at {player} run summon minecraft:panda` |
-| 20 | slot 20 · 790 coins | **Tortue** | `execute at {player} run summon minecraft:turtle` |
-| 21 | slot 21 · 900 coins | **Dauphin** | `execute at {player} run summon minecraft:dolphin` |
-| 22 | slot 22 · 1010 coins | **Grenouille** | `execute at {player} run summon minecraft:frog` |
-| 23 | slot 23 · 1120 coins | **Axolotl** | `execute at {player} run summon minecraft:axolotl` |
-| 24 | slot 24 · 1230 coins | **Allay** | `execute at {player} run summon minecraft:allay` |
-| 25 | slot 25 · 1340 coins | **Ours polaire** | `execute at {player} run summon minecraft:polar_bear` |
+| 1 | slot 01 · 5 coins | **Graines de blé ×16** | `give {player} minecraft:wheat_seeds 16` |
+| 2 | slot 02 · 10 coins | **Graines de betterave ×8** | `give {player} minecraft:beetroot_seeds 8` |
+| 3 | slot 03 · 15 coins | **Graines de citrouille ×8** | `give {player} minecraft:pumpkin_seeds 8` |
+| 4 | slot 04 · 20 coins | **Graines de melon ×8** | `give {player} minecraft:melon_seeds 8` |
+| 5 | slot 05 · 30 coins | **Plants de carotte ×16** | `give {player} minecraft:carrot 16` |
+| 6 | slot 06 · 45 coins | **Plants de pomme de terre ×16** | `give {player} minecraft:potato 16` |
+| 7 | slot 07 · 60 coins | **Canne à sucre ×8** | `give {player} minecraft:sugar_cane 8` |
+| 8 | slot 08 · 80 coins | **Fèves de cacao ×16** | `give {player} minecraft:cocoa_beans 16` |
+| 9 | slot 09 · 100 coins | **Poule** | `execute at {player} run summon minecraft:chicken` |
+| 10 | slot 10 · 125 coins | **Cochon** | `execute at {player} run summon minecraft:pig` |
+| 11 | slot 11 · 155 coins | **Mouton** | `execute at {player} run summon minecraft:sheep` |
+| 12 | slot 12 · 190 coins | **Vache** | `execute at {player} run summon minecraft:cow` |
+| 13 | slot 13 · 230 coins | **Lapin** | `execute at {player} run summon minecraft:rabbit` |
+| 14 | slot 14 · 280 coins | **Blé ×16** | `give {player} minecraft:wheat 16` |
+| 15 | slot 15 · 340 coins | **Betteraves ×16** | `give {player} minecraft:beetroot 16` |
+| 16 | slot 16 · 410 coins | **Citrouille ×4** | `give {player} minecraft:pumpkin 4` |
+| 17 | slot 17 · 490 coins | **Melon ×4** | `give {player} minecraft:melon 4` |
+| 18 | slot 18 · 580 coins | **Cisailles** | `give {player} minecraft:shears 1` |
+| 19 | slot 19 · 680 coins | **Houe en fer** | `give {player} minecraft:iron_hoe 1` |
+| 20 | slot 20 · 790 coins | **Seau d'eau** | `give {player} minecraft:water_bucket 1` |
+| 21 | slot 21 · 900 coins | **Poudre d'os ×16** | `give {player} minecraft:bone_meal 16` |
+| 22 | slot 22 · 1010 coins | **Composteur** | `give {player} minecraft:composter 1` |
+| 23 | slot 23 · 1120 coins | **Botte de foin ×4** | `give {player} minecraft:hay_block 4` |
+| 24 | slot 24 · 1230 coins | **Abeille** | `execute at {player} run summon minecraft:bee` |
+| 25 | slot 25 · 1340 coins | **Ruche** | `give {player} minecraft:beehive 1` |
 | 26 | slot 26 · 1440 coins | **Champimeuh** | `execute at {player} run summon minecraft:mooshroom` |
-| 27 | slot 27 · 1530 coins | **Sniffer** | `execute at {player} run summon minecraft:sniffer` |
-| 28 | slot 28 · 1600 coins | **Chameau** | `execute at {player} run summon minecraft:camel` |
-| 29 | slot 29 · 1660 coins | **Mouton arc-en-ciel** | `execute at {player} run summon minecraft:sheep ~ ~ ~ {CustomName:'"jeb_"'}` |
+| 27 | slot 27 · 1530 coins | **Villageois paysan** | `execute at {player} run summon minecraft:villager ~ ~ ~ {VillagerData:{profession:"minecraft:farmer",level:2}}` |
+| 28 | slot 28 · 1600 coins | **Houe en diamant** | `give {player} minecraft:diamond_hoe 1` |
+| 29 | slot 29 · 1660 coins | **Houe en diamant · Fortune III** | `give {player} minecraft:diamond_hoe{Enchantments:[{id:"minecraft:fortune",lvl:3},{id:"minecraft:unbreaking",lvl:3}]} 1` |
 | 30 | slot 30 · 1700 coins | **Golem de fer** | `execute at {player} run summon minecraft:iron_golem` |
 
 ## Meccha Chameleon  —  7 cadeaux  (commission 0%)
