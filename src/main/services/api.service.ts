@@ -98,13 +98,11 @@ export class ApiService {
                 return enriched;
             }
             return list;
-        } catch (e) {
-            // Hors ligne : sert la dernière liste connue (identités + avatars en cache)
-            // pour que le sélecteur d'identité reste utilisable. authFetch a déjà signalé
-            // l'état « injoignable » à l'UI (toast) avant de rejeter.
-            const cached = this.store.getWorkspacesCache();
-            if (cached && cached.length) return cached;
-            throw e;
+        } catch {
+            // Hors ligne : sert la dernière liste connue (identités + avatars en cache),
+            // vide si jamais chargée. On NE rejette PAS -> pas de spam « Error occurred in
+            // handler ». authFetch a déjà signalé « injoignable » à l'UI (toast) avant.
+            return this.store.getWorkspacesCache();
         }
     }
 
