@@ -194,6 +194,11 @@ export class ApiService {
         const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}`);
         return res.ok ? res.json() : null;
     }
+    /** Stats créateur d'un pack : totaux (coins/étoiles/effets) + série journalière. */
+    async getBundleStats(slug: string): Promise<any> {
+        const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}/stats`);
+        return res.ok ? res.json() : null;
+    }
     async submitVersion(slug: string, dto: any): Promise<any> {
         const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}/versions`, {
             method: 'POST',

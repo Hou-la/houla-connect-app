@@ -509,6 +509,45 @@ $('cx-save').onclick = async () => {
     } catch (e) { $('cx-msg').textContent = friendlyError(e, "L'enregistrement a échoué."); }
 };
 
+// ── Stats créateur d'un pack (revenus + graphe) ──
+async function openStats(slug, title) {
+    $('stats-title').textContent = title || slug;
+    $('stats-totals').innerHTML = '<p class="muted">Chargement…</p>';
+    $('stats-graph').innerHTML = '';
+    $('stats-modal').classList.remove('hidden');
+    let s;
+    try { s = await api.lab.stats(slug); }
+    catch (e) { $('stats-totals').innerHTML = `<p class="no">${esc(friendlyError(e, 'Stats indisponibles.'))}</p>`; return; }
+    if (!s) { $('stats-totals').innerHTML = '<p class="muted">Aucune donnée pour l\'instant.</p>'; return; }
+    $('stats-totals').innerHTML =
+        `<div class="stat"><b>${Number(s.installCount || 0)}</b><span>installs</span></div>`
+        + `<div class="stat"><b>${Number(s.totalEffects || 0)}</b><span>effets déclenchés</span></div>`
+        + `<div class="stat"><b>💰 ${Number(s.totalCoins || 0)}</b><span>coins générés</span></div>`
+        + `<div class="stat"><b>⭐ ${Number(s.totalStars || 0)}</b><span>étoiles</span></div>`;
+    $('stats-graph').innerHTML = statsGraphSvg(s.daily || []);
+}
+$('stats-close').onclick = () => $('stats-modal').classList.add('hidden');
+$('stats-modal').onclick = (e) => { if (e.target.id === 'stats-modal') $('stats-modal').classList.add('hidden'); };
+// Graphe en barres (hauteur = valeur, pas de code couleur -> lisible daltonien) + info-bulle.
+function statsGraphSvg(daily) {
+    if (!daily.length) return '<p class="muted small">Pas encore d\'activité. Envoie des cadeaux interactifs pendant un live pour remplir ce graphe.</p>';
+    const W = 560, H = 170, pad = 26;
+    const max = Math.max(1, ...daily.map((d) => Number(d.coins || 0)));
+    const bw = (W - pad * 2) / daily.length;
+    const bars = daily.map((d, i) => {
+        const v = Number(d.coins || 0);
+        const h = Math.round((v / max) * (H - pad * 2));
+        const x = pad + i * bw;
+        const y = H - pad - h;
+        return `<rect x="${(x + 1).toFixed(1)}" y="${y}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${h}" rx="2" fill="var(--accent)"><title>${esc(d.date)} : ${v} coins · ${Number(d.stars || 0)} étoiles</title></rect>`;
+    }).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" class="stats-svg" role="img" aria-label="coins générés par jour">
+        <line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="var(--border)"/>
+        <text x="${pad}" y="14" class="stats-axis">${max} coins/jour (max) — survole une barre pour le détail</text>
+        ${bars}
+    </svg>`;
+}
+
 // ── Lab : éditeur visuel (QUAND … ALORS …) ──
 const EVENTS = [['gift', 'Cadeau'], ['gift-custom', 'Cadeau personnalisé'], ['follow', 'Nouvel abonné'], ['comment', 'Message chat'], ['hearts', 'Palier de likes'], ['share', 'Partage']];
 const EXECS = [['keyboard', 'Clavier'], ['gamepad', 'Manette'], ['rcon', 'RCON'], ['obs', 'OBS'], ['http', 'HTTP'], ['mqtt', 'MQTT'], ['osc', 'OSC'], ['ws', 'WebSocket']];
@@ -1057,12 +1096,15 @@ async function loadMyBundles() {
             <div class="bundle-card__body">
                 <div class="row between"><h3>${esc(b.title || b.slug)}</h3><span class="badge badge--off">${esc(b.visibility)}</span></div>
                 <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
-                <div class="row between mine-foot">
-                    <span class="muted small">${ver}${b.official ? ' · officiel' : ''}</span>
+                <div class="muted small">${ver}${b.official ? ' · officiel' : ''}</div>
+                <div class="mine-earn">💰 ${Number(b.earnedCoins || 0)} coins · ⭐ ${Number(b.earnedStars || 0)} étoiles générées</div>
+                <div class="row gap wrap mine-foot">
+                    <button class="btn btn--ghost stats">Voir les stats</button>
                     <button class="btn btn--primary edit">Éditer</button>
                 </div>
             </div>`;
         card.querySelector('.edit').onclick = () => { pendingEditSlug = b.slug; switchView('lab'); };
+        card.querySelector('.stats').onclick = () => openStats(b.slug, b.title || b.slug);
         box.appendChild(card);
     });
 }
