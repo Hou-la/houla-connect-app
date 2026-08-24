@@ -126,6 +126,10 @@ async function loadWorkspaces() {
             loggedConnected = false;
             setBadge('off', 'Déconnecté');
             await loadInstalled();
+            // Rafraîchir la vue courante avec le NOUVEAU workspace (Mes bundles,
+            // Store, Lab… affichaient sinon les données de l'ancienne identité).
+            const active = document.querySelector('.nav.active');
+            if (active && active.dataset.view) switchView(active.dataset.view);
         };
         menu.appendChild(item);
     });
