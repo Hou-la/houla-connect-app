@@ -1217,10 +1217,14 @@ $('lab-banner-btn').onclick = async () => {
 };
 $('lab-save-meta').onclick = async () => {
     if (!labCurrentSlug) return;
+    const btn = $('lab-save-meta');
+    setBtnBusy(btn, true, 'Enregistrement…');
     try {
         await api.lab.update(labCurrentSlug, { title: $('lab-title').value.trim(), description: $('lab-desc').value.trim(), game: $('lab-game').value.trim() || '', tags: labTags, creatorFeePercent: Math.max(0, Math.min(Number($('lab-fee').value) || 0, 15)) });
-        $('lab-msg').textContent = 'Infos enregistrées ✓';
-    } catch (e) { $('lab-msg').textContent = friendlyError(e, "Les infos n'ont pas pu être enregistrées."); }
+        showToast('lab-save', { kind: 'ok', title: 'Infos enregistrées', msg: 'Titre, description et réglages du pack sont à jour.' });
+    } catch (e) {
+        showToast('lab-save', { kind: 'error', title: 'Échec de l’enregistrement', msg: friendlyError(e, "Les infos n'ont pas pu être enregistrées.") });
+    } finally { setBtnBusy(btn, false); }
 };
 /** true s'il reste un « cadeau personnalisé » sans icône (uploadée OU en mémoire). */
 function missingCustomIcon() {
@@ -1235,17 +1239,51 @@ async function uploadHeldIcons() {
         }
     }
 }
+/** État « occupé » d'un bouton : libellé « … » + spinner (FORME animée, pas la couleur) + désactivé. */
+function setBtnBusy(btn, busy, busyLabel) {
+    if (!btn) return;
+    if (busy) {
+        if (!btn.dataset.idleLabel) btn.dataset.idleLabel = btn.textContent;
+        btn.disabled = true;
+        btn.classList.add('is-busy');
+        btn.textContent = busyLabel || 'Enregistrement…';
+    } else {
+        btn.disabled = false;
+        btn.classList.remove('is-busy');
+        if (btn.dataset.idleLabel) { btn.textContent = btn.dataset.idleLabel; delete btn.dataset.idleLabel; }
+    }
+}
+/** Le manifeste porte-t-il ≥1 icône custom ? (déclenche la modération serveur, même en privé.) */
+function manifestHasCustomIcons(m) {
+    return ((m && m.rules) || []).some((r) => r && r.on && typeof r.on.iconUrl === 'string' && r.on.iconUrl);
+}
+/** Toast de confirmation, HONNÊTE sur la modération : public ou icônes -> validation avant diffusion. */
+function saveVersionToast(version, visibility, inReview) {
+    if (inReview) {
+        showToast('lab-save', {
+            kind: 'ok',
+            title: `Version ${version} enregistrée`,
+            msg: visibility === 'public'
+                ? "Elle passe en validation avant d'être publiée. Toi, tu peux déjà la tester."
+                : "Bien enregistrée. Tes icônes passent en validation avant d'être vues par les viewers — ton pack, lui, les utilise déjà.",
+        });
+    } else {
+        showToast('lab-save', { kind: 'ok', title: `Version ${version} enregistrée`, msg: 'Tes modifications sont enregistrées.' });
+    }
+}
 $('lab-submit-btn').onclick = async () => {
+    const btn = $('lab-submit-btn');
     const visibility = $('lab-vis').checked ? 'public' : 'private';
 
     if (!labJsonMode && missingConnector())
-        return ($('lab-msg2').textContent = 'Chaque interaction réseau doit avoir un connecteur — choisis-en un ou crée-en un (+ Nouveau…).');
+        return showToast('lab-save', { kind: 'warn', title: 'Connecteur manquant', msg: 'Chaque interaction réseau doit avoir un connecteur — choisis-en un ou crée-en un (+ Nouveau…).' });
     if (!labJsonMode && missingCustomIcon())
-        return ($('lab-msg2').textContent = 'Chaque « cadeau personnalisé » doit avoir une icône.');
+        return showToast('lab-save', { kind: 'warn', title: 'Icône manquante', msg: 'Chaque « cadeau personnalisé » doit avoir une icône avant l’enregistrement.' });
 
     if (labMode === 'create') {
         const slug = $('lab-slug').value.trim(), title = $('lab-title').value.trim();
-        if (!slug || !title) return ($('lab-msg').textContent = 'Slug et titre sont obligatoires.');
+        if (!slug || !title) return showToast('lab-save', { kind: 'warn', title: 'Champs requis', msg: 'Le slug et le titre sont obligatoires.' });
+        setBtnBusy(btn, true, 'Création…');
         try {
             await api.lab.create({ slug, title, description: $('lab-desc').value.trim() || undefined, game: $('lab-game').value.trim() || undefined, tags: labTags, creatorFeePercent: Math.max(0, Math.min(Number($('lab-fee').value) || 0, 15)) });
             labCurrentSlug = slug; labLatestVersion = null;
@@ -1258,24 +1296,31 @@ $('lab-submit-btn').onclick = async () => {
             const manifest = labJsonMode ? JSON.parse($('lab-manifest').value) : buildManifest();
             await api.lab.submitVersion(slug, { version: '1.0.0', manifest, visibility });
             await enterEditMode(slug);
-            $('lab-msg2').textContent = visibility === 'public' ? 'Pack créé + v1.0.0 en modération ✓' : 'Pack créé (privé) + v1.0.0 ✓';
-        } catch (e) { $('lab-msg2').textContent = friendlyError(e, 'La création du pack a échoué.'); }
+            saveVersionToast('1.0.0', visibility, visibility === 'public' || manifestHasCustomIcons(manifest));
+        } catch (e) {
+            showToast('lab-save', { kind: 'error', title: 'Création échouée', msg: friendlyRejection(e) });
+        } finally { setBtnBusy(btn, false); }
         return;
     }
 
     // Édition : nouvelle version
-    syncLabBindings();
-    await uploadHeldIcons();
-    let manifest;
-    if (labJsonMode) { try { manifest = JSON.parse($('lab-manifest').value); } catch { return ($('lab-msg2').textContent = 'JSON invalide.'); } }
-    else manifest = buildManifest();
-    const version = labLatestVersion ? bumpVersion(labLatestVersion, $('lab-bump').value) : '1.0.0';
-    const changelog = ($('lab-changelog').value || '').trim() || undefined;
+    setBtnBusy(btn, true, 'Enregistrement…');
     try {
+        syncLabBindings();
+        await uploadHeldIcons();
+        let manifest;
+        if (labJsonMode) { try { manifest = JSON.parse($('lab-manifest').value); } catch { setBtnBusy(btn, false); return showToast('lab-save', { kind: 'error', title: 'JSON invalide', msg: "Le manifeste JSON n'est pas valide." }); } }
+        else manifest = buildManifest();
+        const version = labLatestVersion ? bumpVersion(labLatestVersion, $('lab-bump').value) : '1.0.0';
+        const changelog = ($('lab-changelog').value || '').trim() || undefined;
         await api.lab.submitVersion(labCurrentSlug, { version, manifest, visibility, changelog });
-        labLatestVersion = version;
-        $('lab-msg2').textContent = `Version ${version} enregistrée (${visibility === 'public' ? 'publique, en modération' : 'privée'}) ✓`;
-    } catch (e) { $('lab-msg2').textContent = friendlyRejection(e); }
+        saveVersionToast(version, visibility, visibility === 'public' || manifestHasCustomIcons(manifest));
+        // Recharge depuis le serveur : la nouvelle version apparaît dans l'historique ET
+        // l'éditeur ré-affiche l'état RÉELLEMENT enregistré (icônes comprises) = preuve visible.
+        try { await enterEditMode(labCurrentSlug); } catch { labLatestVersion = version; }
+    } catch (e) {
+        showToast('lab-save', { kind: 'error', title: 'Enregistrement échoué', msg: friendlyRejection(e) });
+    } finally { setBtnBusy(btn, false); }
 };
 
 // Indicateur de croissance (étoiles 7j vs 7j précédents). Flèche = FORME (pas la

@@ -429,3 +429,15 @@ input[readonly] { opacity: .6; cursor: not-allowed; }
 .toast__close { grid-area: close; align-self: start; background: none; border: none;
     color: var(--muted); font-size: 13px; cursor: pointer; padding: 2px 4px; line-height: 1; }
 .toast__close:hover { color: var(--text); }
+
+/* Bouton en cours d'action : libellé « Enregistrement… » + spinner (FORME animée, pas
+   la seule couleur, daltonien) + curseur d'attente. currentColor => suit le bouton. */
+button.is-busy { position: relative; cursor: progress; opacity: .9; padding-left: 30px; }
+button.is-busy::before {
+    content: ''; position: absolute; left: 12px; top: 50%; width: 12px; height: 12px;
+    margin-top: -6px; border-radius: 50%;
+    border: 2px solid currentColor; border-right-color: transparent;
+    animation: btn-spin .6s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { button.is-busy::before { animation: none; border-right-color: currentColor; opacity: .5; } }
