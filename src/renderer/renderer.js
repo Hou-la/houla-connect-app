@@ -525,8 +525,8 @@ async function openStats(slug, title) {
     $('stats-totals').innerHTML =
         `<div class="stat"><b>${Number(s.installCount || 0)}</b><span>installs</span></div>`
         + `<div class="stat"><b>${Number(s.totalEffects || 0)}</b><span>effets déclenchés</span></div>`
-        + `<div class="stat"><b>💰 ${Number(s.totalCoins || 0)}</b><span>coins générés</span></div>`
-        + `<div class="stat"><b>⭐ ${Number(s.totalStars || 0)}</b><span>étoiles</span></div>`;
+        + `<div class="stat"><b>${Number(s.totalStars || 0)} ⭐</b><span>étoiles générées</span></div>`
+        + `<div class="stat"><b>${Number(s.totalCreatorStars || 0)} ⭐</b><span>étoiles gagnées (ta commission)</span></div>`;
     $('stats-graph').innerHTML = statsGraphSvg(s.daily || []);
 }
 $('stats-close').onclick = () => $('stats-modal').classList.add('hidden');
@@ -535,14 +535,14 @@ $('stats-modal').onclick = (e) => { if (e.target.id === 'stats-modal') $('stats-
 function statsGraphSvg(daily) {
     if (!daily.length) return '<p class="muted small">Pas encore d\'activité. Envoie des cadeaux interactifs pendant un live pour remplir ce graphe.</p>';
     const W = 560, H = 170, pad = 26;
-    const max = Math.max(1, ...daily.map((d) => Number(d.coins || 0)));
+    const max = Math.max(1, ...daily.map((d) => Number(d.stars || 0)));
     const bw = (W - pad * 2) / daily.length;
     const bars = daily.map((d, i) => {
-        const v = Number(d.coins || 0);
+        const v = Number(d.stars || 0);
         const h = Math.round((v / max) * (H - pad * 2));
         const x = pad + i * bw;
         const y = H - pad - h;
-        return `<rect x="${(x + 1).toFixed(1)}" y="${y}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${h}" rx="2" fill="var(--accent)"><title>${esc(d.date)} : ${v} coins · ${Number(d.stars || 0)} étoiles</title></rect>`;
+        return `<rect x="${(x + 1).toFixed(1)}" y="${y}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${h}" rx="2" fill="var(--accent)"><title>${esc(d.date)} : ${v} ⭐ générées · ${Number(d.creatorStars || 0)} ⭐ gagnées</title></rect>`;
     }).join('');
     return `<svg viewBox="0 0 ${W} ${H}" class="stats-svg" role="img" aria-label="coins générés par jour">
         <line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="var(--border)"/>
