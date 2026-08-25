@@ -22,7 +22,15 @@ Le câblage electron-builder est déjà en place : `build/entitlements.mac.plist
 ---
 
 ## 1. Windows — Azure Trusted Signing
-Prérequis : **entreprise ≥ 3 ans** (identité « Public Trust ») — c'est notre cas (SIREN inchangé).
+Prérequis :
+- **Entreprise ≥ 3 ans** (identité « Public Trust ») — c'est notre cas (SIREN inchangé).
+- **Abonnement Azure PAYANT (Pay-As-You-Go)** : le service **REFUSE** les abonnements
+  **gratuit / essai / sponsorisé** (« Artifact Signing is not available for free, trial or sponsored
+  subscriptions »). Convertir d'abord : ☰ → **Abonnements** → l'abonnement → **Mettre à niveau** →
+  Pay-As-You-Go (le crédit d'essai reste utilisable ; ça n'ajoute pas de débit immédiat).
+- **Région** : certaines régions n'acceptent pas de nouveaux clients (West Europe refusé le 2026-08-25,
+  « region not accepting new customers ») → prendre **North Europe** ou **East US**. La région n'a pas
+  d'impact fonctionnel mais détermine l'endpoint (§ secret `AZURE_SIGN_ENDPOINT`).
 
 Portail https://portal.azure.com :
 1. ⚠️ **Le service s'appelle « Trusted Signing Account » en anglais mais « Comptes de signature
