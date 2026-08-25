@@ -32,26 +32,31 @@ Prérequis :
   « region not accepting new customers ») → prendre **North Europe** ou **East US**. La région n'a pas
   d'impact fonctionnel mais détermine l'endpoint (§ secret `AZURE_SIGN_ENDPOINT`).
 
-Portail https://portal.azure.com :
-1. ⚠️ **Le service s'appelle « Trusted Signing Account » en anglais mais « Comptes de signature
-   d'artefacts » en FRANÇAIS** (portail localisé). Il n'apparaît PAS dans la barre de recherche du haut :
-   passe par **Créer une ressource → Marketplace**, cherche « signature d'artefacts » / « Trusted
-   Signing », prends **« Comptes de signature d'artefacts »** (Microsoft, description « Microsoft Trusted
-   Root / WebTrust ») — surtout PAS « IoT Hub Device Provisioning ». Puis **Créer** : souscription,
-   groupe de ressources (`houla-signing`), nom (`houla-trusted-signing`), région. Note la région,
-   l'**endpoint** en dépend : West Europe → `https://weu.codesigning.azure.net/`, North Europe →
-   `https://neu.codesigning.azure.net/`, East US → `https://eus.codesigning.azure.net/`.
-2. **Identity validations** → **New** → **Public** → infos légales (dénomination, SIREN, adresse).
-   Validation Microsoft : **quelques jours ouvrés**. (Le type « Test » signe tout de suite mais N'EST
-   PAS reconnu par SmartScreen — juste pour tester la mécanique.)
-3. Identité validée → **Certificate profiles** → **Create** → **Public Trust** → note le **nom du
-   profil** (ex. `houla-public`).
-4. **Microsoft Entra ID → App registrations → New** (`houla-ci`) : note **client ID** + **tenant ID** ;
-   **Certificates & secrets → New client secret** (note la valeur, elle ne se réaffiche plus). Puis sur
-   le compte Trusted Signing → **Access control (IAM) → Add role assignment** → rôle **« Trusted
-   Signing Certificate Profile Signer »** → membre = cette app registration.
-5. Secrets GitHub (repo → Settings → Secrets and variables → Actions) :
-   `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SIGN_ENDPOINT`,
+Portail https://portal.azure.com. Le service se nomme **« Artifact Signing » / FR « Comptes de signature
+d'artefacts »** (ex-« Trusted Signing »). Procédure exacte (doc MS 2026-08) :
+0. **Prérequis pièges** (voir la liste « Prérequis » ci-dessus) : abonnement **PAYANT** (pas free/trial), **région**
+   qui accepte de nouveaux clients, fournisseur **`Microsoft.CodeSigning`** enregistré (Abonnement →
+   Fournisseurs de ressources → Inscrire).
+1. **Créer une ressource → Marketplace** (PAS la barre de recherche du haut) → « Comptes de signature
+   d'artefacts » → **Créer** : abonnement, RG (`houla-signing`), nom (`houla-trusted-signing`), région,
+   SKU **Basic**. La région donne l'**endpoint** : West Europe `https://weu.codesigning.azure.net`,
+   North Europe `https://neu.codesigning.azure.net`, East US `https://eus.codesigning.azure.net`
+   (table complète dans la doc MS).
+2. **Se donner le rôle** (sinon « Nouvelle identité » grisé) : compte → **Contrôle d'accès (IAM)** →
+   Ajouter une attribution de rôle → **« Artifact Signing Identity Verifier »** → soi-même.
+3. **Validation d'identité** : compte → menu **Objets** → **Validations d'identité** → **Organisation** →
+   **Nouvelle identité** → **Public** → nom légal, site web, **email principal + secondaire sur le
+   domaine de la société** (pas gmail), **SIREN**, adresse, prénom/nom (comme la pièce d'identité) →
+   **Créer**. Statut → *In Progress* → éventuel *Action requise* (Verified ID perso) → **Completed**.
+   **Délai 1 à 20 jours ouvrés.** (Le type « Test » signe tout de suite mais N'EST PAS reconnu par
+   SmartScreen.)
+4. Identité *Completed* → Objets → **Profils de certificat** → **Créer** → **Public Trust** → nom +
+   l'identité validée (« Verified CN and O ») → note le **nom du profil**.
+5. **Entra ID → App registrations → New** (`houla-ci`) : **client ID** + **tenant ID** ; **Certificates
+   & secrets → New client secret** (note la valeur). Puis compte → **IAM → Add role assignment** → rôle
+   **« Artifact Signing Certificate Profile Signer »** → membre = cette app.
+6. Secrets GitHub (repo → Settings → Secrets and variables → Actions) :
+   `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SIGN_ENDPOINT` (endpoint région),
    `AZURE_SIGN_ACCOUNT` (nom du compte), `AZURE_SIGN_PROFILE` (nom du profil).
 
 Vérif : clic droit sur l'exe téléchargé → **Propriétés → Signatures numériques** = l'entreprise.
