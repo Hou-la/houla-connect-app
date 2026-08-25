@@ -304,11 +304,10 @@ export class ApiService {
     }
 
     async uploadSlotIcon(slug: string, slot: string, filePath: string): Promise<any> {
-        const fs = await import('fs/promises');
         const path = await import('path');
-        const buf = await fs.readFile(filePath);
+        const { buf, mime, name } = await this.prepareIconForUpload(filePath);
         const fd = new FormData();
-        fd.append('file', new Blob([buf], { type: this.mimeOf(filePath) }), path.basename(filePath));
+        fd.append('file', new Blob([new Uint8Array(buf)], { type: mime }), name || path.basename(filePath));
         fd.append('slot', slot);
         const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}/slot-icon`, {
             method: 'POST',
@@ -316,6 +315,39 @@ export class ApiService {
         });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || `icône ${res.status}`);
         return res.json(); // { slot, url }
+    }
+
+    /** Prépare l'icône pour l'upload. L'API réduit de toute façon à 512² : on downscale
+     *  DÉJÀ à 512² max en PNG (transparence préservée) pour tenir sous la limite serveur,
+     *  quelle que soit la taille de la source. Une image déjà petite ET légère part telle
+     *  quelle ; en cas d'échec de décodage, on retombe sur le fichier brut (le garde-fou
+     *  serveur tranchera). Ne rend JAMAIS opaque une source transparente. */
+    private async prepareIconForUpload(
+        filePath: string,
+    ): Promise<{ buf: Buffer; mime: string; name: string }> {
+        const fsp = await import('fs/promises');
+        const path = await import('path');
+        const raw = await fsp.readFile(filePath);
+        const fallback = { buf: raw, mime: this.mimeOf(filePath), name: path.basename(filePath) };
+        try {
+            const { nativeImage } = await import('electron');
+            const img = nativeImage.createFromBuffer(raw);
+            if (img.isEmpty()) return fallback;
+            const { width, height } = img.getSize();
+            const max = Math.max(width, height);
+            // Déjà ≤512² et léger : rien à faire (le serveur normalisera).
+            if (max <= 512 && raw.length <= 3 * 1024 * 1024) return fallback;
+            const scale = Math.min(1, 512 / max);
+            const resized =
+                scale < 1
+                    ? img.resize({ width: Math.round(width * scale), height: Math.round(height * scale), quality: 'best' })
+                    : img;
+            const png = resized.toPNG(); // conserve l'alpha
+            if (!png || !png.length) return fallback;
+            return { buf: Buffer.from(png), mime: 'image/png', name: path.parse(filePath).name + '.png' };
+        } catch {
+            return fallback;
+        }
     }
 
     async previewBundle(slug: string): Promise<any> {

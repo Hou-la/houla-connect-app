@@ -12,6 +12,12 @@ function friendlyError(e, fallback) {
     // Electron enveloppe les rejets IPC : « Error invoking remote method 'x': Error: <vrai msg> ».
     // On retire l'enveloppe (et un « Error: » résiduel) pour ne garder QUE le message métier.
     m = m.replace(/^Error invoking remote method '[^']*':\s*/i, '').replace(/^(Uncaught\s+)?Error:\s*/i, '').trim();
+    // Erreur de taille de fichier (upload icône/bannière) -> message clair avec la limite.
+    const fsz = /current file size is (\d+), expected size is less than (\d+)/i.exec(m);
+    if (fsz) {
+        const maxMo = Math.max(1, Math.round(Number(fsz[2]) / (1024 * 1024)));
+        return `Image trop lourde (max ${maxMo} Mo). Choisis une image plus légère.`;
+    }
     if (!m || m.length > 240 || /HttpError|node_modules|\bat\s|Failed to fetch|NetworkError|ENOTFOUND|ECONN|getaddrinfo|<!DOCTYPE|\bstack\b/i.test(m)) {
         return fallback || 'Une erreur est survenue. Réessaie.';
     }
