@@ -64,24 +64,32 @@ Vérif : clic droit sur l'exe téléchargé → **Propriétés → Signatures nu
 ---
 
 ## 2. macOS — Developer ID + notarisation
-**Compte Apple Developer déjà possédé** (via l'app mobile) → rien à racheter. Mais il faut un
-certificat **Developer ID Application** (distribution HORS Mac App Store), différent du cert iOS.
+**Compte Apple Developer déjà possédé** (via l'app mobile) → rien à racheter. Il faut un certificat
+**Developer ID Application** (distribution HORS Mac App Store), différent du cert iOS. Team `QD77PQAUU5`.
 
-1. **Créer le certificat Developer ID Application** (Account Holder/Admin requis) :
-   developer.apple.com → Certificates → **+** → **Developer ID Application** (via un CSR de Trousseau
-   d'accès, ou plus simple : Xcode → Settings → Accounts → Manage Certificates → **+ Developer ID
-   Application**). Limite ~2 par compte.
-2. **Exporter en .p12** : Trousseau d'accès → le certificat + sa clé privée → Exporter → `.p12` avec un
-   mot de passe. Puis `base64 -i cert.p12 | pbcopy` (macOS) pour la valeur du secret.
-3. **Notarisation** — le plus simple : **mot de passe app-specific** : appleid.apple.com → Connexion et
-   sécurité → **Mots de passe pour app** → générer. Récupère aussi le **Team ID** (developer.apple.com →
-   Membership) et ton **Apple ID** (email).
-4. Secrets GitHub :
-   `APPLE_CSC_LINK` (le .p12 en **base64**), `APPLE_CSC_KEY_PASSWORD` (mot de passe du .p12),
-   `APPLE_ID` (email Apple), `APPLE_APP_SPECIFIC_PASSWORD` (étape 3), `APPLE_TEAM_ID`.
+⚠️ **La création du cert Developer ID est réservée à l'Account Holder** : l'App Store Connect API la
+REFUSE (`403 FORBIDDEN "This operation can only be performed by the Account Holder"`). Donc une étape
+humaine au portail est incontournable. Méthode qui évite le trousseau (`security`) et marche sans GUI :
 
-Dès que `APPLE_CSC_LINK` est présent, le job mac **signe (Developer ID) + notarise** (`-c.mac.notarize=true`).
-Vérif : `spctl -a -vvv Houla-Connect.app` doit dire « accepted / Notarized Developer ID ».
+1. **Générer clé privée + CSR** (openssl, pas de trousseau) :
+   `openssl genrsa -out key.pem 2048 && openssl req -new -key key.pem -out csr.pem -subj "/CN=Hou.la/O=Hou.la"`.
+2. **Faire émettre le cert** (Account Holder, navigateur) : developer.apple.com → Certificates → **+** →
+   **Developer ID Application** → sous-CA **G2** → upload `csr.pem` → **Download** `developerID_application.cer`.
+3. **Assembler le `.p12` chaîne complète** (openssl, pas de trousseau) :
+   `openssl x509 -inform DER -in developerID_application.cer -out leaf.pem` ;
+   `curl -fsSL https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer -o i.der && openssl x509 -inform DER -in i.der -out interm.pem` ;
+   `cat leaf.pem interm.pem > chain.pem` ;
+   `openssl pkcs12 -export -legacy -inkey key.pem -in chain.pem -out devid.p12 -passout pass:<PW>`
+   (⚠️ `-legacy` = compat `security import` macOS ; inclure l'intermédiaire = chaîne autonome).
+4. **Notarisation par CLÉ API App Store Connect** (pas de mot de passe app-specific) : réutiliser la clé
+   `AuthKey_<KEYID>.p8` + son **Key ID** + **Issuer ID**.
+5. Secrets GitHub (6) :
+   `APPLE_CSC_LINK` (devid.p12 en **base64**), `APPLE_CSC_KEY_PASSWORD` (le PW du .p12),
+   `APPLE_API_KEY_B64` (le .p8 en base64), `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `APPLE_TEAM_ID`.
+
+Le job mac décode le .p8, exporte `APPLE_API_KEY`/`_ID`/`_ISSUER`, et **signe + notarise**
+(`-c.mac.notarize=true`). Vérif : `spctl -a -vvv Houla-Connect.app` doit dire « accepted / Notarized
+Developer ID », et `codesign -dv --verbose=4` la Developer ID.
 
 > Note auto-update mac (optionnel, hors périmètre signature) : pour que l'auto-updater fonctionne sur
 > mac, ajouter la cible `"zip"` à `build.mac.target` (à côté de `"dmg"`). Le `.dmg` seul ne sert PAS

@@ -94,12 +94,15 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          # macOS Developer ID + notarisation (le job mac ne les utilise que s'ils existent).
-          # Cert nommé APPLE_CSC_* pour NE PAS que le job Windows le prenne comme cert Windows.
+          # macOS : signature Developer ID (cert .p12) + notarisation par CLÉ API App Store
+          # Connect (pas de mot de passe app-specific). Le job mac ne s'en sert que s'ils
+          # existent. Cert nommé APPLE_CSC_* pour NE PAS que le job Windows le prenne comme
+          # cert Windows. APPLE_API_KEY_B64 = le .p8 (base64), décodé en fichier dans le run.
           APPLE_CSC_LINK: ${{ secrets.APPLE_CSC_LINK }}
           APPLE_CSC_KEY_PASSWORD: ${{ secrets.APPLE_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY_B64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           if [ "${{ matrix.os }}" = "windows-2022" ] && [ -n "$AZURE_CLIENT_ID" ]; then
@@ -109,9 +112,13 @@ jobs:
               -c.win.azureSignOptions.codeSigningAccountName="${{ secrets.AZURE_SIGN_ACCOUNT }}" \
               -c.win.azureSignOptions.certificateProfileName="${{ secrets.AZURE_SIGN_PROFILE }}"
           elif [ "${{ matrix.os }}" = "macos-latest" ] && [ -n "$APPLE_CSC_LINK" ]; then
-            echo "Signature Developer ID + notarisation macOS"
+            echo "Signature Developer ID + notarisation macOS (clé API App Store Connect)"
             export CSC_LINK="$APPLE_CSC_LINK"
             export CSC_KEY_PASSWORD="$APPLE_CSC_KEY_PASSWORD"
+            # Décode la clé API .p8 dans un fichier (electron-builder attend un CHEMIN).
+            echo "$APPLE_API_KEY_B64" | base64 -d > "$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8"
+            export APPLE_API_KEY="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8"
+            # APPLE_API_KEY_ID + APPLE_API_ISSUER sont déjà dans l'env (bloc env: ci-dessus).
             npx electron-builder --publish always -c.mac.notarize=true
           else
             # Windows/macOS sans secrets, ou Linux (AppImage : pas de signature de code
