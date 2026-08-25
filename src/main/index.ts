@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, globalShortcut, shell, dialog, Tray, Menu,
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import * as fs from 'fs';
-import { CONFIG } from './config';
+import { CONFIG, IS_DEV_BUILD } from './config';
 import { StoreService } from './services/store.service';
 import { ApiService } from './services/api.service';
 import { AuthService } from './services/auth.service';
@@ -215,8 +215,11 @@ function registerIpc(): void {
     });
     ipcMain.handle('auth:status', () => ({ authenticated: auth.isAuthenticated() }));
     ipcMain.handle('auth:isAdmin', () => api.isAdmin());
-    ipcMain.handle('env:get', () => store.getEnvironment() || 'prod');
+    ipcMain.handle('app:isDevBuild', () => IS_DEV_BUILD);
+    // Build distribué = verrouillé prod : on n'expose ni ne change l'environnement.
+    ipcMain.handle('env:get', () => (IS_DEV_BUILD ? store.getEnvironment() || 'prod' : 'prod'));
     ipcMain.handle('env:set', (_e, env: string) => {
+        if (!IS_DEV_BUILD) return { ok: false, locked: true }; // ignoré hors dev
         // Changer d'environnement invalide la session (tokens propres à l'API) :
         // on déconnecte pour forcer une reconnexion sur le bon environnement.
         store.setEnvironment(env);

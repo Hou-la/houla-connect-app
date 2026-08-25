@@ -1,5 +1,5 @@
 import { createHash, verify } from 'crypto';
-import { CONFIG, ENV_API_URLS } from '../config';
+import { CONFIG, ENV_API_URLS, IS_DEV_BUILD } from '../config';
 import { StoreService } from './store.service';
 
 // Client API : token exchange, workspaces, mint de clé event, store, manifeste.
@@ -15,8 +15,10 @@ export class ApiService {
         this.statusListener = fn;
     }
 
-    /** URL d'API courante : environnement choisi (admin) sinon défaut. */
+    /** URL d'API courante. Un build DISTRIBUÉ est verrouillé sur la production :
+     *  on IGNORE tout environnement persistant (le sélecteur est réservé au dev). */
     base(): string {
+        if (!IS_DEV_BUILD) return ENV_API_URLS.prod;
         const env = this.store.getEnvironment();
         return (env && ENV_API_URLS[env]) || CONFIG.apiUrl;
     }

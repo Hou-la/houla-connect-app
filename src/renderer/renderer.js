@@ -161,6 +161,9 @@ $('win-close').onclick = () => api.win.close();
 // ── Auth ──
 async function showLoginEnvHint() {
     try {
+        // Le repère d'environnement n'a de sens qu'en build DEV : un build distribué
+        // est verrouillé sur la prod, on ne montre rien.
+        if (!api.isDevBuild || !(await api.isDevBuild())) { $('auth-env').classList.add('hidden'); return; }
         const env = (await api.env.get()) || 'prod';
         if (env !== 'prod') {
             $('auth-env-name').textContent = env;
@@ -263,9 +266,14 @@ function switchView(name) {
 // Réglages : l'encart Environnement n'apparaît que pour un compte ADMIN.
 async function loadSettings() {
     try {
-        if (await api.isAdmin()) {
+        // Sélecteur d'environnement = outil de DEV uniquement. Un build distribué
+        // (téléchargé) est verrouillé sur la prod : on ne l'affiche jamais.
+        const devBuild = api.isDevBuild ? await api.isDevBuild() : false;
+        if (devBuild && await api.isAdmin()) {
             $('env-card').classList.remove('hidden');
             $('env-select').value = (await api.env.get()) || 'prod';
+        } else {
+            $('env-card').classList.add('hidden');
         }
     } catch { /* noop */ }
 }
