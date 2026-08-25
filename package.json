@@ -73,6 +73,9 @@
       "target": "dmg",
       "icon": "resources/icon.png",
       "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
       "category": "public.app-category.utilities"
     },
     "linux": {

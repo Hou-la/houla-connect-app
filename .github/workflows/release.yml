@@ -53,7 +53,8 @@ jobs:
     permissions:
       contents: write
     runs-on: ${{ matrix.os }}
-    # mac non signé aujourd'hui (pas de certif Apple) : ne bloque pas Windows.
+    # mac best-effort tant que les secrets Apple ne sont pas posés : ne bloque pas
+    # la publication Windows/Linux (une notarisation qui échoue ne casse pas la release).
     continue-on-error: ${{ matrix.os == 'macos-latest' }}
     strategy:
       fail-fast: false
@@ -79,9 +80,12 @@ jobs:
         run: npm ci
       - name: Build (main + preload + renderer)
         run: npm run build
-      # Signature de code Windows via Azure Trusted Signing — UNIQUEMENT si les
-      # secrets Azure sont configurés (sinon build non signé, toujours téléchargeable ;
-      # SmartScreen alertera). mac best-effort. Voir docs/CODE_SIGNING_AZURE.md.
+      # Signature de code, UNIQUEMENT si les secrets sont configurés (sinon build non
+      # signé, toujours téléchargeable ; SmartScreen/Gatekeeper alerteront) :
+      #   - Windows : Azure Trusted Signing (secrets AZURE_*)
+      #   - macOS   : Developer ID + notarisation (secrets APPLE_*)
+      #   - Linux   : AppImage, pas de signature de code (rien à faire)
+      # Procédure complète (réutilisable pour houla-print) : docs/CODE_SIGNING.md
       - name: Publish release
         shell: bash
         env:
@@ -90,6 +94,13 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          # macOS Developer ID + notarisation (le job mac ne les utilise que s'ils existent).
+          # Cert nommé APPLE_CSC_* pour NE PAS que le job Windows le prenne comme cert Windows.
+          APPLE_CSC_LINK: ${{ secrets.APPLE_CSC_LINK }}
+          APPLE_CSC_KEY_PASSWORD: ${{ secrets.APPLE_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           if [ "${{ matrix.os }}" = "windows-2022" ] && [ -n "$AZURE_CLIENT_ID" ]; then
             echo "Signature Windows via Azure Trusted Signing"
@@ -97,6 +108,13 @@ jobs:
               -c.win.azureSignOptions.endpoint="${{ secrets.AZURE_SIGN_ENDPOINT }}" \
               -c.win.azureSignOptions.codeSigningAccountName="${{ secrets.AZURE_SIGN_ACCOUNT }}" \
               -c.win.azureSignOptions.certificateProfileName="${{ secrets.AZURE_SIGN_PROFILE }}"
+          elif [ "${{ matrix.os }}" = "macos-latest" ] && [ -n "$APPLE_CSC_LINK" ]; then
+            echo "Signature Developer ID + notarisation macOS"
+            export CSC_LINK="$APPLE_CSC_LINK"
+            export CSC_KEY_PASSWORD="$APPLE_CSC_KEY_PASSWORD"
+            npx electron-builder --publish always -c.mac.notarize=true
           else
+            # Windows/macOS sans secrets, ou Linux (AppImage : pas de signature de code
+            # côté desktop Linux) : build non signé, toujours téléchargeable.
             npx electron-builder --publish always
           fi
