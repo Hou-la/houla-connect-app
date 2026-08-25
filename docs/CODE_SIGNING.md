@@ -25,7 +25,11 @@ Le câblage electron-builder est déjà en place : `build/entitlements.mac.plist
 Prérequis : **entreprise ≥ 3 ans** (identité « Public Trust ») — c'est notre cas (SIREN inchangé).
 
 Portail https://portal.azure.com :
-1. **Trusted Signing accounts** (⚠️ PAS « IoT Hub Device Provisioning ») → **Create** : souscription,
+1. ⚠️ **Le service s'appelle « Trusted Signing Account » en anglais mais « Comptes de signature
+   d'artefacts » en FRANÇAIS** (portail localisé). Il n'apparaît PAS dans la barre de recherche du haut :
+   passe par **Créer une ressource → Marketplace**, cherche « signature d'artefacts » / « Trusted
+   Signing », prends **« Comptes de signature d'artefacts »** (Microsoft, description « Microsoft Trusted
+   Root / WebTrust ») — surtout PAS « IoT Hub Device Provisioning ». Puis **Créer** : souscription,
    groupe de ressources (`houla-signing`), nom (`houla-trusted-signing`), région. Note la région,
    l'**endpoint** en dépend : West Europe → `https://weu.codesigning.azure.net/`, North Europe →
    `https://neu.codesigning.azure.net/`, East US → `https://eus.codesigning.azure.net/`.
