@@ -58,15 +58,22 @@ export class PythonSidecar {
         else p.resolve(msg.result);
     }
 
-    /** Appelle un helper vérifié du sidecar (méthode = nom du helper). */
-    call(helper: SidecarHelper, args: Record<string, unknown>): Promise<any> {
+    /**
+     * Appelle un helper vérifié du sidecar (méthode = nom du helper).
+     * Le sidecar ne répond qu'à la FIN de l'effet (maintiens + attentes inclus) :
+     * `timeoutMs` DOIT donc couvrir la durée réelle de l'effet (un maintien de 10 s
+     * ou une chronologie « attendre 5 s » ne doit pas « expirer » à tort). L'appelant
+     * calcule la durée ; on ajoute une marge plancher.
+     */
+    call(helper: SidecarHelper, args: Record<string, unknown>, timeoutMs = 8000): Promise<any> {
         const proc = this.ensure();
         const id = this.nextId++;
+        const budget = Math.max(8000, Math.min(timeoutMs + 4000, 15 * 60 * 1000));
         return new Promise((resolve, reject) => {
             this.pending.set(id, { resolve, reject });
             const timeout = setTimeout(() => {
                 if (this.pending.delete(id)) reject(new Error(`sidecar timeout (${helper})`));
-            }, 4000);
+            }, budget);
             const done = (fn: (v: any) => void) => (v: any) => {
                 clearTimeout(timeout);
                 fn(v);

@@ -372,21 +372,21 @@ input[readonly] { opacity: .6; cursor: not-allowed; }
 .stats-top__bar { height: 6px; background: var(--bg-3); border-radius: 3px; overflow: hidden; }
 .stats-top__bar > span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
 .stats-top__val { font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-/* Curseur de commission créateur (0 à 15 %). Custom : remplissage piloté par
-   --fill (0% = vide + curseur tout à gauche, 100% = plein + tout à droite). */
+/* Curseur de commission créateur (0 à 15 %). CUSTOM (div) : le pouce est piloté par
+   --pct avec translateX(-50%), donc son centre va de 0 % à 100 % et il ATTEINT les
+   deux bords (un input[type=range] natif garde toujours un retrait d'un demi-pouce). */
 .lab-fee-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
-.lab-fee-row input[type="range"] {
-    flex: 1 1 auto; -webkit-appearance: none; appearance: none;
-    height: 6px; border-radius: 3px; margin: 8px 0; cursor: pointer;
-    background: linear-gradient(to right,
-        var(--accent) 0%, var(--accent) var(--fill, 0%),
-        var(--bg-3) var(--fill, 0%), var(--bg-3) 100%);
-}
-.lab-fee-row input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none; appearance: none; width: 16px; height: 16px;
-    border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-2);
-    box-shadow: 0 0 0 1px var(--accent);
-}
+.fee-slider { position: relative; flex: 1 1 auto; height: 20px; cursor: pointer;
+    touch-action: none; --pct: 0%; }
+.fee-slider__track { position: absolute; top: 50%; left: 0; right: 0; height: 6px;
+    transform: translateY(-50%); background: var(--bg-3); border-radius: 3px; }
+.fee-slider__fill { position: absolute; top: 50%; left: 0; width: var(--pct); height: 6px;
+    transform: translateY(-50%); background: var(--accent); border-radius: 3px; }
+.fee-slider__thumb { position: absolute; top: 50%; left: var(--pct); width: 16px; height: 16px;
+    transform: translate(-50%, -50%); background: var(--accent); border: 2px solid var(--bg-2);
+    border-radius: 50%; box-shadow: 0 0 0 1px var(--accent); pointer-events: none; }
+.fee-slider:focus { outline: none; }
+.fee-slider:focus-visible .fee-slider__thumb { box-shadow: 0 0 0 3px rgba(61, 125, 255, .45); }
 .lab-fee-val { flex: 0 0 auto; min-width: 104px; text-align: right;
     font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); }
 /* Combo manette (séquence/aléatoire) : lecture seule dans l'éditeur. */
@@ -441,3 +441,140 @@ button.is-busy::before {
 }
 @keyframes btn-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { button.is-busy::before { animation: none; border-right-color: currentColor; opacity: .5; } }
+
+/* ── Petit bouton d'action inline (capturer / éditer / ajouter) ─────────── */
+.btn--mini { flex: 0 0 auto; padding: 6px 10px; font-size: 12px; border-radius: 8px;
+    width: auto; margin: 0; }
+/* Boutons d'action DANS une ligne d'interaction : même hauteur que les champs voisins
+   (les champs font padding 10px + font 14px ≈ 40px ; sans ça le bouton « flotte » plus petit). */
+.rule__fields > .btn--mini { flex: 0 0 auto; align-self: stretch; display: inline-flex;
+    align-items: center; padding-top: 0; padding-bottom: 0; font-size: 13px; }
+
+/* ── Compteur de caractères (description / instructions) ───────────────── */
+.char-counter { font-size: 11px; color: var(--muted); text-align: right;
+    font-variant-numeric: tabular-nums; margin: -6px 0 8px; }
+
+/* ── Éditeur Markdown (Lab : Instructions / prérequis) ─────────────────── */
+.md-editor { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
+.md-editor__tabs { display: flex; align-items: center; gap: 4px; padding: 6px 8px;
+    background: var(--bg-3); border-bottom: 1px solid var(--border); }
+.md-tab { padding: 5px 12px; border: 1px solid transparent; border-radius: 6px;
+    background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; width: auto; margin: 0; }
+.md-tab.is-active { background: var(--bg); color: var(--text); border-color: var(--border); font-weight: 600; }
+.md-editor__count { margin-left: auto; margin-bottom: 0; }
+.md-toolbar { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 8px;
+    background: var(--bg-2); border-bottom: 1px solid var(--border); }
+.md-tool { width: auto; margin: 0; min-width: 30px; padding: 4px 8px; font-size: 12.5px;
+    line-height: 1.1; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-3); color: var(--text); cursor: pointer; }
+.md-tool:hover { border-color: var(--accent); color: var(--accent-2); }
+.md-tool b, .md-tool i { font-size: 13px; }
+.md-editor textarea { border: 0; border-radius: 0; margin: 0; }
+.md-editor__preview { padding: 12px 14px; max-height: 340px; overflow-y: auto; }
+
+/* ── Rendu Markdown (instructions rendues : détail / installés / aperçu) ── */
+.md-instructions { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
+    background: var(--bg); margin: 10px 0; }
+.md-body { font-size: 13.5px; line-height: 1.55; color: var(--text); }
+.md-body h3 { font-size: 15px; margin: 12px 0 6px; }
+.md-body h4 { font-size: 13.5px; margin: 10px 0 5px; color: var(--accent-2); }
+.md-body h5, .md-body h6 { font-size: 12.5px; margin: 8px 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.md-body p { margin: 6px 0; }
+.md-body ul, .md-body ol { margin: 6px 0 6px 20px; }
+.md-body li { margin: 3px 0; }
+.md-body a { color: var(--accent-2); text-decoration: underline; }
+.md-body strong { font-weight: 700; }
+.md-body em { font-style: italic; }
+.md-body hr { border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
+.md-body blockquote { border-left: 3px solid var(--accent); margin: 8px 0; padding: 4px 12px;
+    color: var(--muted); background: var(--bg-2); border-radius: 0 6px 6px 0; }
+.md-body code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12.5px;
+    background: var(--bg-3); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+.md-code { margin: 10px 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.md-code__bar { display: flex; align-items: center; justify-content: space-between;
+    padding: 5px 10px; background: var(--bg-3); border-bottom: 1px solid var(--border); }
+.md-code__lang { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.md-copy { padding: 4px 10px; font-size: 11.5px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-2); color: var(--text); cursor: pointer; width: auto; margin: 0; }
+.md-copy:hover { border-color: var(--accent); color: var(--accent-2); }
+.md-code pre { margin: 0; padding: 10px 12px; overflow-x: auto; background: var(--bg); }
+.md-code pre code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12.5px;
+    background: none; border: 0; padding: 0; color: var(--text); white-space: pre; }
+/* Coloration de code (décorative, pas un signal à distinguer -> couleur ok) :
+   commentaire / chaîne / {placeholder} / namespace:id / nombre. */
+.md-code .c-com { color: var(--muted); font-style: italic; }
+.md-code .c-str { color: #7ee0a0; }
+.md-code .c-ph { color: #ffcf6a; font-weight: 600; }
+.md-code .c-id { color: var(--accent-2); }
+.md-code .c-num { color: #f0a3b3; }
+
+/* ── En-tête FIXE (Store / Mes bundles) : reste visible, seule la liste scrolle ──
+   Sticky dans le conteneur .content (padding 22/26) : marges négatives pour couvrir
+   le padding et rester pleine largeur, fond opaque pour masquer les cartes dessous. */
+.list-head { position: sticky; top: 0; z-index: 6; background: var(--bg);
+    margin: -22px -26px 14px; padding: 22px 26px 12px; }
+.list-head .view-head { margin-bottom: 12px; }
+/* Sentinelle bas de liste (scroll infini : « chargement… » / « fin »). */
+.list-more { min-height: 8px; text-align: center; padding: 10px 0 4px;
+    color: var(--muted); font-size: 12px; }
+
+/* ── État vide riche (Store / Mes bundles vides) ───────────────────────── */
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 52px 24px; color: var(--muted); }
+.empty-state__ic { font-size: 46px; line-height: 1; margin-bottom: 16px; opacity: .85; }
+.empty-state__title { font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+.empty-state__sub { font-size: 13.5px; line-height: 1.55; max-width: 400px; margin-bottom: 18px; }
+
+/* ── Barre du Store : recherche + filtre Tous/Installés ────────────────── */
+.store-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0; }
+.store-search { flex: 1 1 240px; min-width: 180px; margin: 0;
+    padding: 9px 12px; background: var(--bg-3); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 13px; }
+.store-search:focus { outline: none; border-color: var(--accent); }
+.store-filter { flex: 0 0 auto; margin: 0; }
+
+/* ── Segmented control (modes de l'éditeur manette) ────────────────────── */
+.seg { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0; }
+.seg__btn { padding: 7px 12px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-3); color: var(--muted); font-size: 12.5px; cursor: pointer; width: auto; margin: 0; }
+.seg__btn.is-active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+
+/* ── Corps de l'éditeur manette ────────────────────────────────────────── */
+.gp-body { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 8px 0; background: var(--bg); }
+.gp-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gp-row select, .gp-field input { width: auto; margin: 0; }
+.gp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.gp-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg-3);
+    font-size: 12px; cursor: pointer; }
+.gp-chip input { width: auto; margin: 0; accent-color: var(--accent); }
+.gp-chip:has(input:checked) { border-color: var(--accent); background: rgba(61,125,255,.14); }
+.gp-seq { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.gp-seq-item { display: flex; align-items: center; gap: 8px; }
+.gp-seq-item select { width: auto; margin: 0; flex: 1 1 auto; }
+.gp-seq-n { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 20px; }
+.gp-step { border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 8px; background: var(--bg-2); }
+.gp-step__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.gp-field { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.gp-field input { width: 86px; padding: 6px 8px; }
+.gp-field select { width: auto; margin: 0; }
+/* Indicateur d'enregistrement de suite clavier (point + texte, pas que la couleur). */
+.kb-rec-live { font-size: 12px; color: var(--danger); font-weight: 600; }
+.gp-seq-item .kb-seq-in { min-width: 0; }
+.gp-row { flex-wrap: wrap; }
+.gp-common { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px;
+    padding-top: 10px; border-top: 1px solid var(--border); }
+.gp-analog { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+.gp-slider { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.gp-slider input[type="range"] { width: auto; flex: 1 1 auto; margin: 0; accent-color: var(--accent); }
+.gp-an-out { min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+@media (max-width: 560px) { .gp-analog { grid-template-columns: 1fr; } }
+
+/* Test inline (personnaliser / éditeur manette) : ✓/✗ + texte (jamais couleur seule). */
+.cx-test { flex: 0 0 auto; padding: 6px 10px; font-size: 12px; width: auto; margin: 0; }
+/* Résultat du test : à gauche du bouton (fixé à droite), borné pour ne jamais
+   décaler le bouton même sur un message long (« ✗ Connection closed »). */
+.cx-test-res { flex: 0 1 auto; font-size: 12px; white-space: nowrap; text-align: right;
+    max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.cx-test-res.ok { color: var(--ok); }
+.cx-test-res.no { color: var(--danger); }

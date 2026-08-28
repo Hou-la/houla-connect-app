@@ -92,8 +92,18 @@
 
                 <!-- STORE -->
                 <section id="view-store" class="view hidden">
-                    <div class="view-head"><h2>Store</h2><button id="store-refresh" class="btn btn--ghost btn--refresh" title="Rafraîchir le store">⟳ Rafraîchir</button></div>
+                    <div class="list-head">
+                        <div class="view-head"><h2>Store</h2><button id="store-refresh" class="btn btn--ghost btn--refresh" title="Rafraîchir le store">⟳ Rafraîchir</button></div>
+                        <div class="store-toolbar">
+                            <input id="store-search" type="search" class="store-search" placeholder="Rechercher un pack (nom)…" autocomplete="off" />
+                            <div class="seg store-filter">
+                                <button type="button" class="seg__btn is-active" data-store-filter="all">Tous</button>
+                                <button type="button" class="seg__btn" data-store-filter="installed">Installés</button>
+                            </div>
+                        </div>
+                    </div>
                     <div id="store-list" class="grid"></div>
+                    <div id="store-more" class="list-more"></div>
                 </section>
 
                 <!-- LAB -->
@@ -108,12 +118,39 @@
                         <label>Infos du pack</label>
                         <input id="lab-slug" placeholder="slug (minuscules-tirets, ex. mon-pack)" />
                         <input id="lab-title" placeholder="Titre (anglais)" />
-                        <textarea id="lab-desc" rows="4" placeholder="Description : à quoi sert le pack, prérequis (ex. Minecraft Java en multijoueur sur un serveur avec RCON activé), comment lancer un serveur…"></textarea>
+                        <textarea id="lab-desc" rows="4" maxlength="2000" placeholder="Description courte : à quoi sert le pack, en une ou deux phrases. Les détails/prérequis vont dans « Instructions » ci-dessous."></textarea>
+                        <div class="char-counter"><span id="lab-desc-count">0</span> / 2000</div>
+
+                        <span class="lab-sub">Instructions / prérequis <span class="muted">(Markdown, optionnel)</span></span>
+                        <div class="md-editor">
+                            <div class="md-editor__tabs">
+                                <button type="button" id="lab-instr-edit-tab" class="md-tab is-active">Éditer</button>
+                                <button type="button" id="lab-instr-preview-tab" class="md-tab">Aperçu</button>
+                                <span class="char-counter md-editor__count"><span id="lab-instr-count">0</span> / 50000</span>
+                            </div>
+                            <div id="lab-instr-toolbar" class="md-toolbar" role="toolbar" aria-label="Mise en forme">
+                                <button type="button" class="md-tool" data-md="title" title="Titre">H</button>
+                                <button type="button" class="md-tool" data-md="bold" title="Gras (Ctrl+B)"><b>B</b></button>
+                                <button type="button" class="md-tool" data-md="italic" title="Italique (Ctrl+I)"><i>I</i></button>
+                                <button type="button" class="md-tool" data-md="code" title="Code en ligne">&lt;&gt;</button>
+                                <button type="button" class="md-tool" data-md="codeblock" title="Bloc de code">{ }</button>
+                                <button type="button" class="md-tool" data-md="list" title="Liste à puces">&#8226; Liste</button>
+                                <button type="button" class="md-tool" data-md="link" title="Lien">🔗</button>
+                            </div>
+                            <textarea id="lab-instructions" rows="8" maxlength="50000" spellcheck="false" placeholder="# Prérequis&#10;- Minecraft Java 1.20+, serveur multijoueur avec RCON activé&#10;&#10;## Codes de triche / commandes&#10;```&#10;/give {player} minecraft:diamond 1&#10;/effect give {player} minecraft:speed 30 2&#10;```&#10;&#10;Titres (#), listes (-), **gras**, `code`, et blocs de code ``` (copiables) sont supportés."></textarea>
+                            <div id="lab-instr-preview" class="md-instructions md-editor__preview hidden"></div>
+                        </div>
+                        <p class="hint">Pour un pack public, les instructions ne deviennent visibles par les autres qu'à la <b>prochaine version approuvée</b> (elles sont modérées avec la version). Ton brouillon reste éditable ici à tout moment.</p>
                         <input id="lab-game" list="lab-game-list" placeholder="jeu (ex. minecraft) — optionnel" />
                         <datalist id="lab-game-list"></datalist>
                         <span class="lab-sub">Commission créateur</span>
                         <div class="lab-fee-row">
-                            <input id="lab-fee" type="range" min="0" max="15" step="1" value="0" />
+                            <input id="lab-fee" type="hidden" value="0" />
+                            <div id="lab-fee-slider" class="fee-slider" tabindex="0" role="slider" aria-label="Commission créateur" aria-valuemin="0" aria-valuemax="15" aria-valuenow="0">
+                                <div class="fee-slider__track"></div>
+                                <div class="fee-slider__fill"></div>
+                                <div class="fee-slider__thumb"></div>
+                            </div>
                             <output id="lab-fee-val" class="lab-fee-val">0&nbsp;% · gratuit</output>
                         </div>
                         <p class="hint">Part des étoiles reversée au créateur du pack. Glisse de 0&nbsp;% (gratuit) à 15&nbsp;% max. Prélevé sur le broadcaster (le viewer paie pareil), affiché à l'installation.</p>
@@ -148,7 +185,7 @@
 
                         <div id="lab-json-mode" class="hidden">
                             <textarea id="lab-manifest" rows="12" spellcheck="false"></textarea>
-                            <p class="hint">Format : { "schema": 2, "rules": [ … ] }. Événements : gift(giftSlug — n'importe quel cadeau, ex. "licorne", ou un slot ix_slot_01..30), follow, comment(contains), hearts(milestone), share. Effets : keyboard(keys, backend), gamepad(button), rcon(command), obs(request), http(method,url), mqtt(topic,payload), osc(address,args), ws(url,message).</p>
+                            <p class="hint">Format : { "schema": 2, "rules": [ … ] }. Événements : gift(giftSlug — n'importe quel cadeau, ex. "licorne", ou un slot ix_slot_01..30), follow, comment(contains OU every), hearts(milestone OU every), share(every optionnel), viewer(every). « every » = tous les N (ex. tous les 100 likes/messages/partages/spectateurs). Effets : keyboard(keys, backend), gamepad(button/buttons/sequence/randomFrom/steps/analog), rcon(command), obs(request), http(method,url), mqtt(topic,payload), osc(address,args), ws(url,message).</p>
                         </div>
 
                         <div id="lab-changelog-field" class="hidden" style="margin-top: 14px">
@@ -174,8 +211,14 @@
 
                 <!-- MES BUNDLES -->
                 <section id="view-mine" class="view hidden">
-                    <div class="view-head"><h2>Mes bundles</h2><button id="mine-refresh" class="btn btn--ghost btn--refresh" title="Rafraîchir mes bundles">⟳ Rafraîchir</button></div>
+                    <div class="list-head">
+                        <div class="view-head"><h2>Mes bundles</h2><button id="mine-refresh" class="btn btn--ghost btn--refresh" title="Rafraîchir mes bundles">⟳ Rafraîchir</button></div>
+                        <div class="store-toolbar">
+                            <input id="mine-search" type="search" class="store-search" placeholder="Rechercher dans mes bundles (nom)…" autocomplete="off" />
+                        </div>
+                    </div>
                     <div id="mine-list" class="grid"></div>
+                    <div id="mine-more" class="list-more"></div>
                 </section>
 
                 <!-- CONNECTEURS -->
@@ -257,6 +300,7 @@
                     <div class="modal__seclabel">Nouveautés de cette version</div>
                     <div id="modal-changelog" class="changelog"></div>
                 </div>
+                <div id="modal-instructions" class="md-instructions hidden"></div>
             </div>
             <div class="modal__footer">
                 <button id="modal-install" class="btn btn--primary">Installer</button>
@@ -271,6 +315,7 @@
             <div class="modal__body">
                 <h2>Personnaliser <span id="cx-title"></span></h2>
                 <p class="muted">Tes réglages restent <b>locaux</b> et survivent aux mises à jour du créateur. Les commandes du pack ne sont pas modifiables (pack signé).</p>
+                <div id="cx-instructions" class="md-instructions hidden"></div>
                 <div id="cx-rules"></div>
                 <div class="row gap" style="margin-top:16px">
                     <button id="cx-save" class="btn btn--primary">Enregistrer</button>
@@ -327,6 +372,73 @@
                     <button id="connector-cancel" class="btn btn--ghost">Annuler</button>
                 </div>
                 <p id="connector-msg" class="hint"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Éditeur MANETTE avancé (chord / séquence / chronologie / analogique + auto-capture) -->
+    <div id="gp-modal" class="modal hidden">
+        <div class="modal__box cgu__box">
+            <button id="gp-close" class="modal__close">&#10005;</button>
+            <div class="modal__body">
+                <h2>Action manette</h2>
+                <p class="muted small">Configure ce que la manette virtuelle fait quand l'interaction se déclenche. « Capturer » lit la vraie manette (ou le clavier) branché sur ce PC.</p>
+                <div class="gp-modes seg">
+                    <button type="button" class="seg__btn is-active" data-mode="single">Bouton</button>
+                    <button type="button" class="seg__btn" data-mode="chord">Combo simultané</button>
+                    <button type="button" class="seg__btn" data-mode="sequence">Séquence</button>
+                    <button type="button" class="seg__btn" data-mode="random">Aléatoire</button>
+                    <button type="button" class="seg__btn" data-mode="timeline">Chronologie</button>
+                    <button type="button" class="seg__btn" data-mode="analog">Analogique</button>
+                </div>
+                <div id="gp-mode-help" class="hint"></div>
+                <div id="gp-body" class="gp-body"></div>
+                <div class="gp-common">
+                    <label class="gp-field" title="Durée d'appui de chaque bouton (ms)">Appui (ms)
+                        <input type="number" id="gp-hold" min="0" max="10000" step="10" value="120" />
+                    </label>
+                    <label class="gp-field" title="Répéter l'action X fois">Répéter ×
+                        <input type="number" id="gp-repeat" min="1" max="20" step="1" value="1" />
+                    </label>
+                    <label class="gp-field" title="Intervalle entre deux répétitions (ms)">Intervalle (ms)
+                        <input type="number" id="gp-repeatgap" min="0" max="30000" step="50" value="0" />
+                    </label>
+                </div>
+                <div class="row gap" style="margin-top:14px">
+                    <button id="gp-test" class="btn btn--ghost" title="Tester MAINTENANT, sans être en live">&#9654; Tester</button>
+                    <span id="gp-test-res" class="cx-test-res"></span>
+                    <span style="flex:1"></span>
+                    <button id="gp-save" class="btn btn--primary">Valider</button>
+                    <button id="gp-cancel" class="btn btn--ghost">Annuler</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Éditeur CLAVIER : une touche / combo (ensemble) / suite (enchaînement + rythme) -->
+    <div id="kb-modal" class="modal hidden">
+        <div class="modal__box cgu__box">
+            <button id="kb-close" class="modal__close">&#10005;</button>
+            <div class="modal__body">
+                <h2>Action clavier</h2>
+                <p class="muted small">Ce que le clavier fait quand l'interaction se déclenche. « Capturer » lit ton VRAI clavier : appuie, ça s'écrit tout seul.</p>
+                <div class="kb-modes seg">
+                    <button type="button" class="seg__btn is-active" data-kbmode="single">Une touche</button>
+                    <button type="button" class="seg__btn" data-kbmode="combo">Combo (ensemble)</button>
+                    <button type="button" class="seg__btn" data-kbmode="sequence">Suite (enchaînement)</button>
+                </div>
+                <div id="kb-mode-help" class="hint"></div>
+                <div id="kb-body" class="gp-body"></div>
+                <div class="gp-common">
+                    <label class="gp-field" title="Injection clavier : « normal » convient à la plupart des jeux ; « bas niveau » pour ceux qui ignorent l'input synthétique.">Envoi&nbsp;: <select id="kb-backend"><option value="auto">clavier normal</option><option value="interception">bas niveau (pilote)</option></select></label>
+                </div>
+                <div class="row gap" style="margin-top:14px">
+                    <button id="kb-test" class="btn btn--ghost" title="Tester MAINTENANT, sans être en live">&#9654; Tester</button>
+                    <span id="kb-test-res" class="cx-test-res"></span>
+                    <span style="flex:1"></span>
+                    <button id="kb-save" class="btn btn--primary">Valider</button>
+                    <button id="kb-cancel" class="btn btn--ghost">Annuler</button>
+                </div>
             </div>
         </div>
     </div>

@@ -139,6 +139,18 @@ function createWindow(): void {
         },
     });
     win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+    // Menu applicatif MINIMAL : on garde le presse-papiers (Ctrl+C/V/X, indispensable
+    // dans les champs) mais on RETIRE les accélérateurs par défaut Ctrl+W (fermer) /
+    // Ctrl+R (recharger) / Ctrl+Q (quitter) / Ctrl+Shift+I. Sinon, capturer un combo
+    // clavier qui tombe sur l'un d'eux ferme ou recharge l'app par accident.
+    const menuTemplate: Electron.MenuItemConstructorOptions[] = [{ role: 'editMenu' }];
+    if (!app.isPackaged) {
+        // DevTools seulement (F12). PAS de « reload » par accélérateur : capturer un
+        // combo qui tombe dessus rechargerait le renderer en pleine capture.
+        menuTemplate.push({ label: 'Dev', submenu: [{ role: 'toggleDevTools', accelerator: 'F12' }] });
+    }
+    Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate));
+    win.setMenuBarVisibility(false); // frameless : pas de barre de menu visible
     win.webContents.setWindowOpenHandler(({ url }) => {
         if (/^https?:\/\//.test(url)) shell.openExternal(url);
         return { action: 'deny' };
@@ -340,7 +352,23 @@ function registerIpc(): void {
             cooldownMs: overlay.cooldownMs[r.id], // override local, ou undefined
             enabled: !disabled.has(r.id),
         }));
-        return { slug, version: d.version, rules };
+        return { slug, version: d.version, rules, instructions: d.instructions ?? null };
+    });
+    // Test OFF-LIVE d'une interaction d'un pack INSTALLÉ (pack tiers ou le sien) :
+    // on rejoue l'effet du manifeste SIGNÉ via le pipeline sécurisé du moteur, sans
+    // aucune connexion live. Sans ruleId : la 1re interaction cadeau du pack.
+    ipcMain.handle('engine:testInstalled', async (_e, slug: string, ruleId?: string) => {
+        try {
+            const d = await api.fetchVerifiedManifest(slug); // signature vérifiée
+            const rules = (d.manifest?.rules || []) as any[];
+            const rule = ruleId
+                ? rules.find((r) => r.id === ruleId)
+                : rules.find((r) => r.on?.type === 'gift') || rules[0];
+            if (!rule) return { ok: false, reason: 'aucune interaction à tester dans ce pack' };
+            return engine.testFire({ id: rule.id, on: rule.on, effect: rule.effect }, slug);
+        } catch (e: any) {
+            return { ok: false, reason: e?.message || 'test impossible' };
+        }
     });
     ipcMain.handle('customize:save', (_e, slug: string, overlay: any) => {
         store.setPackOverlay(slug, overlay || {});
@@ -424,7 +452,8 @@ function registerIpc(): void {
         // socket, la passerelle lit ce bundleId et l'active côté viewer (le viewer voit
         // CE pack). setKeyBundle invalide le cache de validation -> lu frais au connect.
         await api.setActivePackBundle(d.visualBundleId ?? null).catch(() => {});
-        conn.connect(key);
+        // workspaceId : pour le poll de fallback du compte de viewers (endpoint public).
+        conn.connect(key, store.getWorkspaceId() || undefined);
         engineRunning = true;
         send('onState', { connected: false, events, reactSlugs });
         return { ok: true };

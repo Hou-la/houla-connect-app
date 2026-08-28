@@ -217,6 +217,19 @@ export class Engine {
         }
     }
 
+    /**
+     * Nouvelle SESSION (démarrage d'un pack) : vide le dedup et les cooldowns. Sans
+     * ça, les clés de dedup DÉTERMINISTES des triggers de comptage/palier
+     * (`comment:r1:slice:1`, `hearts:r1:1000`…) survivent d'une session à l'autre —
+     * au re-démarrage du MÊME pack, toutes les tranches/paliers déjà franchis
+     * seraient bloqués en silence. Les cadeaux ne sont pas concernés (transactionId
+     * serveur unique), mais on repart propre pour tout le monde.
+     */
+    resetDedup(): void {
+        this.seen.clear();
+        this.lastFired.clear();
+    }
+
     /** PANIC : relâche toute touche/bouton tenu sur tous les exécuteurs. */
     async panic(): Promise<void> {
         for (const ex of this.executors.values()) {

@@ -6,16 +6,33 @@ export type ExecutorType = 'keyboard' | 'gamepad' | 'rcon' | 'obs' | 'http' | 'p
 export interface KeyboardEffect {
     type: 'keyboard';
     backend?: 'auto' | 'nut' | 'interception';
-    keys: string; // 'space' | 'shift+c' | 'c,c,c' | 'space:400'
+    keys: string; // 'space' | 'shift+c' (ensemble) | 'up,up,down,down' (suite) | 'space:400'
+    gapMs?: number; // délai (ms) entre chaque touche d'une suite (rythme), défaut ~40
     cooldownMs?: number;
+}
+export interface GamepadStep {
+    buttons?: string[]; // chord (touches EN MÊME TEMPS) de cette étape
+    button?: string; // ou une seule touche
+    holdMs?: number; // durée d'appui de l'étape
+    waitMs?: number; // pause APRÈS l'étape (permet « combo -> attendre 5 s -> stop »)
+}
+export interface GamepadAnalog {
+    lx?: number; ly?: number; // stick gauche, -1..1
+    rx?: number; ry?: number; // stick droit, -1..1
+    lt?: number; rt?: number; // gâchettes, 0..1
 }
 export interface GamepadEffect {
     type: 'gamepad';
     button?: string; // bouton unique
+    buttons?: string[]; // CHORD : plusieurs touches enfoncées en même temps
     sequence?: string[]; // combo ordonné, joué avant le tirage aléatoire
     randomFrom?: string[]; // un bouton au hasard, joué APRÈS button/sequence
+    steps?: GamepadStep[]; // TIMELINE : étapes (chord + hold + attente) enchaînées
+    analog?: GamepadAnalog; // stick/gâchette poussé à une intensité, tenu holdMs
     gapMs?: number; // pause entre deux appuis d'une séquence (défaut ~150)
     holdMs?: number;
+    repeat?: number; // répéter l'effet X fois (1..20)
+    repeatGapMs?: number; // intervalle entre deux répétitions
     cooldownMs?: number;
 }
 export interface RconEffect {
@@ -83,13 +100,15 @@ export type BundleEffect =
     | WsEffect;
 
 export interface BundleTrigger {
-    type: 'gift' | 'follow' | 'comment' | 'share' | 'hearts';
+    type: 'gift' | 'follow' | 'comment' | 'share' | 'hearts' | 'viewer';
     /** Pour 'gift' : slug du cadeau déclencheur (générique ou slot réservé). Canonique. */
     giftSlug?: string;
     /** @deprecated alias de giftSlug restreint aux slots réservés (packs déjà signés). */
     slot?: string;
     contains?: string;
     milestone?: number;
+    /** « Tous les N » : tranche d'événements (comment/share/viewer) ou de likes cumulés (hearts). */
+    every?: number;
 }
 export interface BundleRule {
     id: string;

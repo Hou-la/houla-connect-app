@@ -1,6 +1,6 @@
 # Hou.la Connect — Packs interactifs (référence)
 
-> État au **2026-08-24**. Doc de référence de la fonctionnalité « Pack Bundle interactif » :
+> État au **2026-08-28** (manette v2 + Instructions + test hors live : voir §13). Doc de référence de la fonctionnalité « Pack Bundle interactif » :
 > un viewer envoie un cadeau pendant un live → l'app Hou.la Connect déclenche une action
 > réelle dans le jeu du streamer (RCON, clavier, manette, OBS, HTTP…).
 > Repos : `houla-connect-app` (app Electron) + `MikhaelGerbet/hou.la-api` (back, module `bundle-store` + `coin`).
@@ -127,6 +127,185 @@ commun→légendaire) + **override optionnel** par cadeau.
    Build — que le streamer choisit, pas par plus de slots). Pas de gap réel à 50. Réévaluable si la
    demande créateur le montre (les slots réservés sont partagés, monter à ~40 = plus de lignes + paliers).
 5. **Signature de code** Windows (Azure Trusted Signing) — voir `docs/CODE_SIGNING_AZURE.md`.
+
+## 13. Manette v2 + Instructions + test hors live (2026-08-28, retours gamer/dev)
+
+Quatre « vagues » livrées suite au retour d'un gamer/dev (pack Mario Kart 8) + besoin PO de **tester sans être en live**.
+
+### Vague 1 — bugs + confort
+- **BUG CORRIGÉ (gâchettes LT/RT)** : LT/RT sont des **AXES** XInput, pas des boutons. Le sidecar
+  (`resources/sidecar/houla_sidecar.py`) les jouait via `press_button` → `ValueError` au runtime alors que
+  le serveur les **validait** (crash invisible). Désormais `_TRIGGERS = {LT:left_trigger, RT:right_trigger}`
+  et `_set_tokens` route un token vers l'axe si c'est une gâchette. Un chord peut donc contenir LT/RT.
+- **Libellés humains** : `GP_LABEL` (renderer) affiche « LT · ZL (gâchette G) », « R3 (clic stick D) »…
+  Le token stocké reste l'énum manette (A/LT/RS…).
+- **`holdMs` / `repeat` / `repeatGapMs`** exposés (durée d'appui, répéter ×N tous les X ms).
+- **Compteur de caractères** temps réel sous la description (2000) et les instructions (50000).
+
+### Vague 2 — modèle manette v2 (éditeur dédié, modale `#gp-modal`)
+Cinq modes (`gamepad.executor.ts` compile tout en une **timeline d'étapes** jouée par le sidecar) :
+- **Bouton** simple · **Combo simultané** (`buttons[]`, chord) · **Séquence** (`sequence[]`) ·
+  **Chronologie** (`steps[]` = `{buttons|button, holdMs, waitMs}`, couvre « combo → attendre 5 s → touche stop ») ·
+  **Analogique** (`analog{lx,ly,rx,ry ∈ -1..1 ; lt,rt ∈ 0..1}`, sticks/gâchettes à une intensité, tenu `holdMs`).
+- **Auto-capture** (retour « on appuie, ça se sélectionne ») : lecture SEULE de l'entrée physique du PC —
+  **manette** via l'API Gamepad du renderer (`captureGamepadToken`, mapping standard), **clavier** via `keydown`
+  (`captureKeyboardSpec`). Aucun pilotage, aucun sidecar : c'est juste de la saisie assistée.
+- Validateur API (`bundle-manifest.validator.ts`, case `gamepad`) : bornes strictes sur buttons(1..8),
+  steps(1..16, hold 0..10000, wait 0..30000), analog (clés whitelistées + bornes), repeat(1..20), fail-closed
+  sur toute clé « smuggling ». Couvert par `bundle-manifest.validator.spec.ts` (describe « manette v2 »).
+
+### Vague 3 — Instructions / prérequis (Markdown)
+Champ **`store_bundle.instructions`** (`mediumtext`, migration `1849000000000-BundleInstructionsColumn`,
+DTO create/update `@MaxLength(50000)`), distinct de la description courte. Stocké **BRUT** ; rendu **XSS-safe**
+côté app (renderer : `mdToSafeHtml` — tout texte échappé AVANT enveloppe, whitelist h/ul/ol/li/p/code/pre/
+strong/em/a http(s)|mailto ; blocs de code ``` **copiables** + coloration décorative sur texte brut ré-échappé).
+- **Lab** : éditeur avec onglets **Éditer / Aperçu** + compteur (`#lab-instructions`).
+- **Rendu** dans : détail du pack (store `#modal-instructions`), pack installé (« Personnaliser »
+  `#cx-instructions`), et Lab/Mes bundles (aperçu). Servi par `getManifest`/`getPublic`/`customize:get`.
+
+### Vague 4 — analogique + limites matérielles assumées
+- **Intensité D-Pad vs joystick** = le mode **Analogique** (ci-dessus). FAIT.
+- **Vibration / Force-Feedback / audio de la manette** : **NON faisable** avec l'architecture actuelle
+  (manette virtuelle **ViGEm/vgamepad** = pad Xbox 360 virtuel, canal input SORTANT uniquement). Le rumble et
+  la FFB sont des flux que le **jeu** envoie vers un **vrai** périphérique ; un pad virtuel ne les reçoit ni
+  ne les relaie, et il n'a pas de sortie audio. Ce serait un tout autre chantier (périphérique HID custom +
+  driver). **Ne pas promettre** ces trois-là dans l'UI.
+
+### Durcissements (revue adversariale multi-agents, 2026-08-28)
+9 défauts confirmés puis corrigés :
+- **Sidecar** : validation de TOUS les tokens d'un chord AVANT toute mutation du pad + reset du pad
+  sur erreur → plus de touche « fantôme » coincée si un token est inconnu (`houla_sidecar.py`).
+- **Exécuteur manette** : `validate()` rejette désormais les tokens hors set connu (typos, 'L2'/'TRIANGLE')
+  au lieu de planter au runtime (`gamepad.executor.ts`).
+- **Éditeur (renderer)** : bascule « → Manette » sème un bouton A valide (plus d'effet vide refusé) ;
+  l'éditeur avancé **préserve** `randomFrom`/`gapMs` (plus de perte silencieuse) ; le chemin analogique
+  honore `repeat`.
+- **Validateur API (préexistant, corrigé)** : `hasDangerousKey` descend dans les **tableaux** (proto-pollution
+  nichée) ; `rconVerbBlocked` inspecte le 1er token de **chaque** segment (verbe smuggé après `\n`/`;`).
+  Régression couverte par la spec.
+- **CSS injection (préexistant, corrigé)** : `esc` échappe aussi l'apostrophe (fermait `url('${bannerUrl}')`).
+- **Instructions non modérées** : le texte passe à l'IA de modération de code (détection
+  phishing/hors-plateforme). ⚠️ **PÉRIMÉ depuis le lot §14 (2026-08-28)** : les instructions sont désormais
+  **VERSIONNÉES + gatées par version** (voir §14), le brouillon n'est plus servi au public. La re-revue sur
+  édition de contenu public reste active pour titre/description (servis en direct).
+
+### Tester HORS live (PO : « important pour les tests »)
+- **Lab** : le bouton ▶ Tester d'une interaction passe déjà par `engine:testRule` → `engine.testFire`
+  (pipeline sécurisé, **sans connexion live**). L'éditeur manette a son propre ▶ Tester (même voie).
+- **Capture** : le bouton « Tester la 1ʳᵉ interaction » est actif dès qu'un pack est actif — **hors live**
+  il rejoue l'effet localement (`engine:testInstalled` → `fetchVerifiedManifest` → `testFire`), **en live** il
+  simule un vrai cadeau de bout en bout (`engine:test` → `simulateGift`).
+- **Personnaliser** (pack tiers installé) : chaque interaction a un ▶ Tester hors live (`engine:testInstalled`).
+- Rappel : le test manette/clavier exige le **connecteur activé** + la **fenêtre cible au premier plan**
+  (focus-guard) — sinon le verdict le dit (« connecteur désactivé » / « fenêtre cible pas au premier plan »).
+
+## 14. Triggers « tous les N » + versionnage instructions + mode Aléatoire (2026-08-28)
+
+### Triggers PAR TRANCHE (`every`)
+Nouveau champ `on.every` (entier 1..1_000_000) : déclenche à CHAQUE tranche de N.
+- **comment** : `contains` (mot-clé) OU `every` (tous les N messages) — exclusif, sélecteur de mode au Lab.
+- **hearts** (Likes) : `milestone` (palier atteint 1×) OU `every` (tous les N likes cumulés).
+- **share** : `every` optionnel (vide = à chaque partage, comportement historique).
+- **viewer** (NOUVEAU type) : `every` REQUIS = tous les N spectateurs. **MAJ (§15)** : basé sur la
+  **PRÉSENCE réelle** du live (plus les join). `fireSlices` ne tire qu'à la HAUSSE (baisse puis remontée
+  ne re-tire pas, dedup par tranche) ; le 1er compte reçu SEED la base sans tir rétroactif.
+- **Moteur** (`trigger-router.ts`) : compteurs de session `commentCount/shareCount/viewerCount` + `lastHearts`
+  (cumul serveur), remis à 0 dans `setManifest`. `fireSlices(prev,next,every,fn)` tire une fois par tranche
+  franchie (le cumul hearts peut sauter → plusieurs tranches). Dedup via clé `type:ruleId:slice:k`.
+- 🚨 **Piège corrigé** : les clés de dedup sont DÉTERMINISTES ; `engine.resetDedup()` est appelé dans
+  `setManifest` (start/stop) sinon les tranches/paliers déjà franchis restent bloqués au re-démarrage.
+- **Garde-fou Lab** : `incompleteTrigger()` bloque l'enregistrement d'un trigger de comptage sans nombre
+  (sinon règle morte, silencieuse). Bascule de mode NON destructive (les deux saisies coexistent, le mode tranche).
+- **Test hors live** : le ▶ Tester d'une règle joue l'EFFET (pas le comptage). Il n'existe pas de simulateur
+  d'events comment/share/hearts/viewer (seuls `simulateGift`/`simulateFollow` existent) → le comptage/seuil
+  ne s'observe qu'en vrai live.
+
+### Instructions VERSIONNÉES (gating par version)
+- `store_bundle_version.instructions` (`mediumtext`, migration `1849100000000`) = SNAPSHOT figé à la
+  soumission (`submitVersion`), modéré AVEC la version.
+- Le **public** ne voit JAMAIS le brouillon : `getPublic` sert le snapshot de la version APPROUVÉE ;
+  `getManifest` (pack installé) idem ; `listPublic` **retire** `instructions` (fuite corrigée). Le brouillon
+  éditable reste sur `store_bundle.instructions` (Lab, propriétaire uniquement).
+- Signature Ed25519 inchangée (instructions = frère de `manifest`, `contentHash` sur `manifestJson` seul).
+
+### Éditeur manette : mode ALÉATOIRE
+- Onglet **Aléatoire** = `randomFrom` (un bouton au hasard, min 2) + lead optionnel (`randLead`, DÉCOUPLÉ de
+  gp.button pour éviter un appui fantôme). `randomFrom` n'est plus « préservé » sur single/chord/sequence
+  (permet la conversion random -> Bouton et évite le tirage dégénéré à 1).
+
+### Revue adversariale (2ᵉ lot) : 8 défauts confirmés puis corrigés
+dedup inter-session, trigger vide silencieux, fuite brouillon `listPublic`, lead fantôme, asymétrie
+share/viewer, conversion random impossible, perte de saisie au switch de mode, tirage dégénéré. Détail : commits.
+
+### tasks.json + lancement dev
+`.vscode/tasks.json` : « Hou.la Connect: Dev (build + lancer) » (npm start), Rebuild renderer, Build.
+⚠️ Dans CE sandbox, `ELECTRON_RUN_AS_NODE=1` force Electron en Node (`app` undefined) → lancer avec
+`env -u ELECTRON_RUN_AS_NODE npx electron .`. L'env VS Code de l'utilisateur n'a pas ce piège.
+
+## 15. Compte de VIEWERS réel (métadonnée + poll de fallback) + WYSIWYG + Store filtre (2026-08-28)
+
+### Trigger `viewer` sur la PRÉSENCE réelle (plus les join)
+Source du compte : **LiveKit** `getViewerCount` → miroir `live_room.viewer_count` → bus `live.viewer_count`.
+- **Serveur** : `LiveEventsGateway` met en cache `workspaceId → {count, at}` sur `@OnEvent('live.viewer_count')`
+  (in-memory, best-effort, par worker) et **injecte `viewers` dans CHAQUE enveloppe** d'event
+  (`emitEvent`, guard de fraîcheur 2 min, zéro lecture Redis/DB dans le hot path).
+- **Endpoint de fallback** : `GET /api/live/interactive/:workspaceId/viewers` → `{ live, viewers }` (lecture DB
+  `live_room.viewer_count`, indexée, hors hot path, public — le compte n'est pas secret). `LiveRoom` ajouté au
+  `forFeature` du module.
+- **App** : `connection.service` lit `env.viewers` (canal `event` brut du SDK, non modifié) → `router.updateViewers`.
+  Poller : amorce à +3 s (SEED), puis toutes les 60 s **si aucun event depuis 60 s** → poll l'endpoint. Le SEED
+  évite tout tir rétroactif (un live déjà à 250 ne déclenche pas les paliers passés).
+- ⚠️ Best-effort côté metadata (in-memory/worker) : le **poll est le garant** (fraîcheur pendant les creux et
+  entre workers).
+
+### Mini-WYSIWYG Markdown (Lab)
+Barre d'outils au-dessus de l'éditeur d'instructions (`applyMdTool`) : Titre (##), **Gras** (Ctrl+B),
+*Italique* (Ctrl+I), `code`, bloc de code, liste, lien. Insère au niveau de la sélection du textarea (aucune
+lib externe — la CSP bloquerait un CDN).
+
+### Store : recherche + filtre Tous/Installés
+Barre du Store : **recherche SERVEUR** (`api.store.list({q})`, sur tous les bundles publics, pas juste la page)
++ segmented **Tous / Installés**. La vue « Installés » part des packs installés (état local), enrichis par
+leur aperçu (best-effort). Résout le point bloquant « retrouver son pack à personnaliser parmi des milliers ».
+
+### Curseur de commission
+Remplissage NATIF via `accent-color` (pouce + barre toujours alignés ; le dégradé custom se calait sur la
+largeur totale et dérivait du pouce).
+
+### Instructions Markdown seedées sur les 7 bundles frogame (DEV)
+`minecraft-{equipement,ferme,survie,chaos}` (setup RCON), `meccha-chameleon` (ViGEm), `obs-scenes` (OBS
+WebSocket), `websocket-overlay` (WS overlay). Écrit sur le BROUILLON + le snapshot de version approuvée
+(visibles tout de suite en dev). Script : scratchpad de session — à rejouer avec creds PROD pour porter.
+
+## 16. Résilience RCON + refonte listes Store/Mes bundles + config survie (2026-08-28)
+
+### RCON : plus de « Connection closed » ni de fuite/double-exécution
+`rcon.executor.ts` : (1) évince le client caché sur `'end'` ET `'error'` (un serveur qui redémarre coupe via
+`error`) → le prochain fire reconnecte au lieu de réutiliser un socket mort ; (2) cache la **PROMESSE** de
+connexion (pas le client résolu) → deux fire concurrents partagent le même handshake au lieu de fuiter un
+socket ; (3) retry sur l'**établissement de connexion SEUL**, JAMAIS sur le `send` (Minecraft exécute à la
+réception : rejouer un `send` = double give/tp/spawn). Serveur MC local vérifié up (RCON 25575, `hoularcontest`).
+
+### Personnaliser : bouton Tester à droite + nom du cadeau
+Ligne réordonnée : switch · info · cooldown · résultat · **bouton Tester (tout à droite, fixe)** ; le résultat
+est borné (ellipse) pour ne jamais décaler le bouton. Le pack **minecraft-survie** (DEV) a été nettoyé
+(retrait des 2 règles kawaii inutiles) et relabellisé (« Charbon · annonce/cadeau »…) pour que le NOM du
+cadeau soit visible — hash recalculé, signature nulle en dev (clé de signature absente → app saute la vérif).
+
+### Store + Mes bundles : header fixe + scroll infini + recherche + états vides
+- **Header sticky** (`.list-head`) : recherche/filtre/refresh restent visibles, seule la liste scrolle.
+- **Scroll infini** : Store = pages SERVEUR (`limit/offset`, `STORE_PAGE=40`) ; Mes bundles = rendu par
+  CHUNKS client (`MINE_PAGE=24`) + recherche client. Les deux s'auto-remplissent si le 1er lot ne crée pas de
+  barre. Listener sur `.content`, `maybeLoadMore()`.
+- 🚨 **Jeton de génération `storeGen`** : toute continuation async d'un chargement périmé (filtre/recherche
+  changés) se voit et n'écrit ni le DOM ni l'offset (corrige 2 races confirmées : mélange de résultats, scroll
+  infini mort). Réinitialisé au switch de compte.
+- **États vides riches** (`emptyStateHtml`) : icône + titre + sous-texte + CTA (Ouvrir le Lab / Voir tous les
+  packs), au lieu du message pauvre précédent.
+
+### Revue adversariale (2 lots) : 7 défauts confirmés puis corrigés
+curseur non edge-to-edge (→ curseur custom), pas de refresh au switch de compte, RCON double-send, RCON fuite
+concurrente, 2 races du scroll Store, auto-remplissage manquant de Mes bundles.
 
 ## 12. État du dépôt (2026-08-24)
 Commits **locaux non poussés** (dev d'abord, prod après validation) :

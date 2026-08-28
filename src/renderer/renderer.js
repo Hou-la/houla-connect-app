@@ -2,7 +2,7 @@
 const api = window.houlaConnect;
 const $ = (id) => document.getElementById(id);
 const TRANSPARENT = 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=';
-const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 // Message d'erreur lisible : garde nos messages courts et propres (erreurs API),
 // remplace les dumps techniques (stack, HttpError, réseau) par un repli user-friendly.
 // Le détail complet part TOUJOURS en console pour le debug.
@@ -22,6 +22,61 @@ function friendlyError(e, fallback) {
         return fallback || 'Une erreur est survenue. Réessaie.';
     }
     return m;
+}
+// ── Test d'effet avec décompte ─────────────────────────────────────
+// Un test clavier/manette/driver ENVOIE de vraies touches à la fenêtre au premier
+// plan. Un décompte visible (« Test dans 3… ») laisse le temps de basculer sur le
+// jeu AVANT le tir. Les effets réseau (RCON/OBS/HTTP) partent sans délai.
+// NB honnête : le focus-guard côté moteur est encore un stub permissif (il ne
+// RESTREINT pas à la fenêtre cible) ; le décompte ne PRÉVIENT donc pas un tir mal
+// dirigé, il laisse juste le temps de viser. D'où l'importance d'annuler le décompte
+// dès que le contexte disparaît (modale fermée, liste re-rendue) : sinon un tir
+// clavier partirait « à l'aveugle » dans l'appli active, contre l'intention.
+const TEST_COUNTDOWN_S = 3;
+const effectNeedsFocus = (type) => type === 'keyboard' || type === 'gamepad' || type === 'python';
+let _testCountdown = null; // { timer, btn, resEl, cls } du décompte VISIBLE en cours (un seul)
+function cancelTestCountdown() {
+    if (!_testCountdown) return;
+    const { timer, btn, resEl, cls } = _testCountdown;
+    clearTimeout(timer);
+    if (btn) btn.disabled = false;
+    // Efface le « Test dans N… » s'il est encore à l'écran (ne touche pas un résultat déjà posé).
+    if (resEl && resEl.isConnected && /Test dans/.test(resEl.textContent || '')) {
+        resEl.textContent = ''; resEl.className = cls;
+    }
+    _testCountdown = null;
+}
+function runEffectTest({ resEl, cls, needsFocus, btn, fire }) {
+    cancelTestCountdown(); // jamais deux décomptes en vol (anti double-tir / anti-orphelin)
+    const state = { timer: null, btn, resEl, cls };
+    const setRes = (txt, extra) => {
+        if (resEl && resEl.isConnected) { resEl.textContent = txt; resEl.className = cls + (extra ? ' ' + extra : ''); }
+    };
+    // Ne détache l'état global QUE s'il est encore le nôtre (un test suivant a pu prendre la main).
+    const finish = () => { if (btn) btn.disabled = false; if (_testCountdown === state) _testCountdown = null; };
+    const doFire = async () => {
+        // resEl détaché = modale fermée / liste re-rendue : on N'INJECTE PAS à l'aveugle.
+        if (needsFocus && resEl && !resEl.isConnected) { finish(); return; }
+        setRes('Test…');
+        try {
+            const v = await fire();
+            if (v && v.ok) setRes('✓ Déclenché', 'ok');
+            else setRes('✗ ' + ((v && v.reason) || 'échec'), 'no');
+        } catch (e) { setRes('✗ ' + friendlyError(e, 'test impossible'), 'no'); }
+        finish();
+    };
+    if (btn) btn.disabled = true;
+    if (!needsFocus) { doFire(); return; }
+    let n = TEST_COUNTDOWN_S;
+    setRes('⏱ Test dans ' + n + '… bascule sur ton jeu');
+    const tick = () => {
+        if (_testCountdown !== state) return; // annulé ou remplacé entre-temps
+        n -= 1;
+        if (n > 0) { setRes('⏱ Test dans ' + n + '… bascule sur ton jeu'); state.timer = setTimeout(tick, 1000); }
+        else doFire(); // finish() détachera l'état s'il est encore le nôtre
+    };
+    state.timer = setTimeout(tick, 1000);
+    _testCountdown = state;
 }
 // ── Toasts (notifications non bloquantes) ──────────────────────────
 // Le sens ne repose JAMAIS sur la seule couleur (propriétaire daltonien) : chaque
@@ -59,6 +114,122 @@ function dismissToast(id) {
     const host = $('toaster');
     const el = host && host.querySelector(`[data-toast="${id}"]`);
     if (el) { clearTimeout(el._t); el.remove(); }
+}
+
+// ── Rendu Markdown SÛR (instructions/prérequis d'un pack) ───────────────
+// Principe anti-XSS : on n'injecte JAMAIS de HTML venu de l'utilisateur. Tout
+// segment de texte est ÉCHAPPÉ (esc) AVANT d'être enveloppé ; seules des balises
+// que NOUS produisons (h/ul/li/p/code/pre/strong/em/a) apparaissent. Les liens
+// sont bornés à http(s)/mailto. La coloration de code opère sur le texte BRUT
+// (chaque jeton est ré-échappé), donc aucune balise ne peut naître du contenu.
+function mdHighlight(raw) {
+    const re = /(#[^\n]*|\/\/[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\{[a-zA-Z0-9_]+\})|(\b[a-z][a-z0-9_]*:[a-z0-9_/.:-]+\b)|(\b\d+(?:\.\d+)?\b)/g;
+    let out = '', last = 0, m;
+    while ((m = re.exec(raw))) {
+        out += esc(raw.slice(last, m.index));
+        const cls = m[1] ? 'c-com' : m[2] ? 'c-str' : m[3] ? 'c-ph' : m[4] ? 'c-id' : 'c-num';
+        out += `<span class="${cls}">${esc(m[0])}</span>`;
+        last = m.index + m[0].length;
+    }
+    return out + esc(raw.slice(last));
+}
+function mdInline(raw) {
+    return String(raw == null ? '' : raw).split(/(`[^`]+`)/g).map((seg) => {
+        if (seg.length >= 2 && seg[0] === '`' && seg[seg.length - 1] === '`') {
+            return `<code>${esc(seg.slice(1, -1))}</code>`;
+        }
+        let s = esc(seg);
+        s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g,
+            (mm, txt, url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${txt}</a>`);
+        s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+        return s;
+    }).join('');
+}
+function mdToSafeHtml(src) {
+    const lines = String(src == null ? '' : src).replace(/\r\n?/g, '\n').split('\n');
+    const out = [];
+    let i = 0;
+    const flushList = (buf, tag) => { if (buf.length) { out.push(`<${tag}>${buf.map((x) => `<li>${mdInline(x)}</li>`).join('')}</${tag}>`); buf.length = 0; } };
+    while (i < lines.length) {
+        const line = lines[i];
+        // Bloc de code clôturé ```lang … ```
+        const fence = /^```(\w*)\s*$/.exec(line);
+        if (fence) {
+            const lang = fence[1] || '';
+            const body = [];
+            i++;
+            while (i < lines.length && !/^```\s*$/.test(lines[i])) { body.push(lines[i]); i++; }
+            i++; // saute la clôture
+            out.push(
+                `<div class="md-code"><div class="md-code__bar"><span class="md-code__lang">${esc(lang || 'code')}</span>` +
+                `<button type="button" class="md-copy" title="Copier le code">Copier</button></div>` +
+                `<pre><code>${mdHighlight(body.join('\n'))}</code></pre></div>`,
+            );
+            continue;
+        }
+        const h = /^(#{1,6})\s+(.*)$/.exec(line);
+        if (h) { const lvl = Math.min(h[1].length + 2, 6); out.push(`<h${lvl}>${mdInline(h[2])}</h${lvl}>`); i++; continue; }
+        if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { out.push('<hr/>'); i++; continue; }
+        if (/^\s*[-*]\s+/.test(line)) {
+            const buf = [];
+            while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { buf.push(lines[i].replace(/^\s*[-*]\s+/, '')); i++; }
+            flushList(buf, 'ul'); continue;
+        }
+        if (/^\s*\d+\.\s+/.test(line)) {
+            const buf = [];
+            while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) { buf.push(lines[i].replace(/^\s*\d+\.\s+/, '')); i++; }
+            flushList(buf, 'ol'); continue;
+        }
+        if (/^\s*>\s?/.test(line)) {
+            const buf = [];
+            while (i < lines.length && /^\s*>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^\s*>\s?/, '')); i++; }
+            out.push(`<blockquote>${mdInline(buf.join(' '))}</blockquote>`); continue;
+        }
+        if (!line.trim()) { i++; continue; }
+        const para = [];
+        while (i < lines.length && lines[i].trim() && !/^(```|#{1,6}\s|\s*[-*]\s|\s*\d+\.\s|\s*>\s?)/.test(lines[i])) { para.push(lines[i]); i++; }
+        out.push(`<p>${mdInline(para.join(' '))}</p>`);
+    }
+    return out.join('');
+}
+// Copie robuste (Electron) : Clipboard API, repli execCommand.
+async function copyToClipboard(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* repli */ }
+    try {
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        const ok = document.execCommand('copy'); ta.remove(); return ok;
+    } catch { return false; }
+}
+// Pose du Markdown rendu dans un conteneur + câblage des boutons « Copier ».
+function renderMarkdownInto(el, src) {
+    if (!el) return;
+    const text = String(src || '').trim();
+    if (!text) { el.innerHTML = ''; el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    el.innerHTML = mdToSafeHtml(text);
+    el.querySelectorAll('.md-code').forEach((block) => {
+        const btn = block.querySelector('.md-copy');
+        const code = block.querySelector('code');
+        if (!btn || !code) return;
+        btn.onclick = async () => {
+            const ok = await copyToClipboard(code.textContent || '');
+            btn.textContent = ok ? 'Copié ✓' : 'Échec';
+            setTimeout(() => { btn.textContent = 'Copier'; }, 1400);
+        };
+    });
+}
+// Section « Instructions / prérequis » titrée : masquée si vide, sinon libellé + rendu.
+function renderInstructionsBlock(wrapperId, src) {
+    const wrap = $(wrapperId);
+    if (!wrap) return;
+    const text = String(src || '').trim();
+    if (!text) { wrap.innerHTML = ''; wrap.classList.add('hidden'); return; }
+    wrap.classList.remove('hidden');
+    wrap.innerHTML = '<div class="modal__seclabel">Instructions / prérequis</div><div class="md-body"></div>';
+    renderMarkdownInto(wrap.querySelector('.md-body'), text);
 }
 
 // ── Joignabilité de l'API ──────────────────────────────────────────
@@ -139,7 +310,7 @@ const CAPS = [
 ];
 // Protocoles qui passent par un CONNECTEUR (endpoint + identifiants).
 const CONNECTOR_TYPES = {
-    rcon: { label: 'RCON (jeu)', fields: [['host', 'Adresse du serveur', 'text'], ['port', 'Port (défaut 25575)', 'number'], ['password', 'Mot de passe RCON', 'password'], ['player', 'Ton pseudo en jeu (remplace {player})', 'text']] },
+    rcon: { label: 'RCON (jeu)', fields: [['host', 'Adresse du serveur (ex. 127.0.0.1)', 'text'], ['port', 'Port RCON (souvent 25575 — PAS le port du jeu 25565)', 'number'], ['password', 'Mot de passe RCON (server.properties)', 'password'], ['player', 'Ton pseudo en jeu (remplace {player})', 'text']] },
     obs: { label: 'OBS', fields: [['url', 'URL (ws://127.0.0.1:4455)', 'text'], ['password', 'Mot de passe (optionnel)', 'password']] },
     mqtt: { label: 'MQTT (domotique)', fields: [['url', 'URL (mqtt://127.0.0.1:1883)', 'text'], ['username', 'Utilisateur (optionnel)', 'text'], ['password', 'Mot de passe (optionnel)', 'password']] },
     ws: { label: 'WebSocket', fields: [['url', 'URL (wss://…)', 'text']] },
@@ -220,14 +391,33 @@ async function loadWorkspaces() {
             engineState = 'idle';
             loggedConnected = false;
             setBadge('off', 'Déconnecté');
-            await loadInstalled();
-            // Rafraîchir la vue courante avec le NOUVEAU workspace (Mes bundles,
-            // Store, Lab… affichaient sinon les données de l'ancienne identité).
-            const active = document.querySelector('.nav.active');
-            if (active && active.dataset.view) switchView(active.dataset.view);
+            await refreshAfterAccountSwitch();
         };
         menu.appendChild(item);
     });
+}
+// Switch de compte : PURGE les caches/états scopés à l'ancienne identité puis
+// recharge tout, sinon le Store (filtre/recherche figés), les connecteurs, le
+// catalogue et le Lab affichent les données du compte précédent.
+async function refreshAfterAccountSwitch() {
+    // 1) Réinitialise l'état du Store (un filtre « Installés » ou une recherche
+    //    laissés par l'ancien compte masqueraient les bundles du nouveau).
+    storeQuery = ''; storeFilter = 'all';
+    const ss = $('store-search'); if (ss) ss.value = '';
+    document.querySelectorAll('.store-filter .seg__btn').forEach((x) =>
+        x.classList.toggle('is-active', x.dataset.storeFilter === 'all'),
+    );
+    mineQuery = ''; mineAll = []; const msr = $('mine-search'); if (msr) msr.value = '';
+    // 2) Vide les caches renderer scopés au compte (re-remplis par les loaders).
+    giftCatalog = [];
+    myConnectors = [];
+    labTags = [];
+    // 3) Force le refetch du catalogue de cadeaux (cache main 6 h).
+    try { await api.gifts.catalog(true); } catch { /* noop */ }
+    // 4) Recharge les packs installés + la vue courante avec la NOUVELLE identité.
+    await loadInstalled();
+    const active = document.querySelector('.nav.active');
+    if (active && active.dataset.view) switchView(active.dataset.view);
 }
 $('ws-current').onclick = () => $('ws-menu').classList.toggle('hidden');
 document.addEventListener('click', (e) => {
@@ -281,6 +471,35 @@ document.querySelectorAll('.nav').forEach((n) => (n.onclick = () => switchView(n
 // Boutons Rafraîchir (Store / Mes bundles) : re-fetch à la demande.
 { const b = $('store-refresh'); if (b) b.onclick = () => loadStore(); }
 { const b = $('mine-refresh'); if (b) b.onclick = () => loadMyBundles(); }
+// Recherche + filtre du Store (retrouver ses packs parmi des milliers).
+{
+    const s = $('store-search');
+    if (s) s.oninput = () => { storeQuery = s.value.trim(); clearTimeout(storeSearchTimer); storeSearchTimer = setTimeout(loadStore, 250); };
+    document.querySelectorAll('.store-filter .seg__btn').forEach((btn) => {
+        btn.onclick = () => {
+            document.querySelectorAll('.store-filter .seg__btn').forEach((x) => x.classList.toggle('is-active', x === btn));
+            storeFilter = btn.dataset.storeFilter;
+            loadStore();
+        };
+    });
+    // Recherche « Mes bundles » (client, débounce) : re-filtre + re-rend par chunks.
+    const ms = $('mine-search');
+    if (ms) ms.oninput = () => { mineQuery = ms.value.trim(); clearTimeout(mineSearchTimer); mineSearchTimer = setTimeout(renderMine, 200); };
+}
+// Scroll infini : quand on approche du bas de .content, charge la suite de la vue active.
+function maybeLoadMore() {
+    const content = document.querySelector('.content');
+    if (!content) return;
+    if (content.scrollTop + content.clientHeight < content.scrollHeight - 260) return;
+    const active = document.querySelector('.nav.active');
+    const view = active && active.dataset.view;
+    if (view === 'store') loadStorePage();
+    else if (view === 'mine' && mineRendered < mineFiltered.length) renderMoreMine();
+}
+{
+    const content = document.querySelector('.content');
+    if (content) content.addEventListener('scroll', maybeLoadMore, { passive: true });
+}
 
 // ── Capture ──
 // Machine à états du bouton toggle : un SEUL bouton, l'état est lisible par le TEXTE
@@ -314,7 +533,13 @@ function setEngineButton() {
         b.disabled = !hasPack;
         b.textContent = 'Démarrer';
     }
-    $('btn-test').disabled = engineState !== 'running'; // le test-fire exige une connexion active
+    // Test dispo dès qu'un pack est actif : off-live (rejoue l'effet localement) OU
+    // on-live (simule un vrai cadeau de bout en bout, une fois connecté).
+    const testBtn = $('btn-test');
+    testBtn.disabled = !hasPack;
+    testBtn.title = engineState === 'running'
+        ? 'Simule un vrai cadeau de bout en bout (en live)'
+        : 'Rejoue la 1ʳᵉ interaction MAINTENANT, sans être en live';
 }
 
 async function loadInstalled(toMine) {
@@ -385,7 +610,18 @@ $('btn-start').onclick = async () => {
         logLine({ allowed: false, reason: friendlyError(e, "Le pack n'a pas pu démarrer."), ruleId: 'start' });
     }
 };
-$('btn-test').onclick = () => api.engine.test();
+$('btn-test').onclick = async () => {
+    const slug = $('active-bundle').value;
+    if (!slug) return;
+    if (engineState === 'running') { api.engine.test(slug); return; } // on-live : cadeau simulé de bout en bout
+    // Off-live : rejoue la 1re interaction du pack via le pipeline sécurisé (sans connexion).
+    logLine({ allowed: true, ruleId: 'test', reason: 'Test hors live…' });
+    try {
+        const v = await api.engine.testInstalled(slug);
+        if (v && v.ok) logLine({ allowed: true, ruleId: 'test', reason: '✓ Interaction déclenchée (hors live)' });
+        else logLine({ allowed: false, ruleId: 'test', reason: '✗ ' + ((v && v.reason) || 'échec') });
+    } catch (e) { logLine({ allowed: false, ruleId: 'test', reason: '✗ ' + friendlyError(e, 'test impossible') }); }
+};
 $('btn-panic').onclick = () => {
     clearTimeout(connectWatchdog);
     api.engine.panic();
@@ -508,45 +744,129 @@ async function bindRequiredConnectors(slug, required) {
         }
     }
 }
+let storeFilter = 'all'; // 'all' | 'installed'
+let storeQuery = '';
+let storeSearchTimer = null;
+// Scroll infini du Store (« Tous ») : pages serveur via limit/offset.
+const STORE_PAGE = 40;
+let storeOffset = 0, storeLoading = false, storeExhausted = false, storeInstalledBy = new Map();
+// Jeton de génération : toute continuation async d'un chargement PÉRIMÉ (filtre/recherche
+// changés entre-temps) se voit et n'écrit ni le DOM ni l'état.
+let storeGen = 0;
+
+/** État vide riche (icône + titre + sous-texte + CTA optionnel). data-cta = classe du bouton. */
+function emptyStateHtml(icon, title, sub, ctaLabel, ctaClass) {
+    return `<div class="empty-state"><div class="empty-state__ic" aria-hidden="true">${icon}</div>`
+        + `<div class="empty-state__title">${esc(title)}</div>`
+        + `<div class="empty-state__sub">${esc(sub)}</div>`
+        + (ctaLabel ? `<button class="btn btn--primary ${ctaClass}">${esc(ctaLabel)}</button>` : '')
+        + '</div>';
+}
+// Câble les CTA des états vides (une seule fois par rendu).
+function wireEmptyCtas(scope) {
+    const root = scope || document;
+    root.querySelectorAll('.empty-cta-lab').forEach((b) => (b.onclick = () => switchView('lab')));
+    root.querySelectorAll('.empty-cta-all').forEach((b) => (b.onclick = () => {
+        storeFilter = 'all'; storeQuery = '';
+        const s = $('store-search'); if (s) s.value = '';
+        document.querySelectorAll('.store-filter .seg__btn').forEach((x) => x.classList.toggle('is-active', x.dataset.storeFilter === 'all'));
+        loadStore();
+    }));
+}
+
+/** Une carte de pack (Store ou vue Installés). `inst` = entrée installée (ou undefined). */
+function buildStoreCard(b, inst) {
+    const updateAvail = !!inst && !!b.version && !!inst.version && inst.version !== b.version;
+    const card = document.createElement('div');
+    card.className = 'bundle-card';
+    const banner = b.bannerUrl ? ` style="background-image:url('${esc(b.bannerUrl)}')"` : '';
+    const installBtn = !inst
+        ? `<button class="btn btn--primary install">Installer</button>`
+        : updateAvail
+            ? `<button class="btn btn--primary install" title="Une nouvelle version est disponible">Mettre à jour → v${esc(b.version)}</button>`
+            : `<button class="btn btn--ghost install" disabled>Installé ✓${inst.version ? ' · v' + esc(inst.version) : ''}</button>`;
+    const customizeBtn = inst ? `<button class="btn btn--ghost customize">Personnaliser</button>` : '';
+    card.innerHTML = `
+        <div class="bundle-card__banner"${banner}></div>
+        <div class="bundle-card__body">
+            <h3>${esc(b.title || b.slug)}</h3>
+            <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
+            <div class="muted small">${b.version ? `v${esc(b.version)}${b.versionDate ? ' · ' + esc(fmtDate(b.versionDate)) : ''}` : '&nbsp;'}</div>
+            <div class="row gap wrap card-actions">
+                ${installBtn}
+                ${customizeBtn}
+                <button class="btn btn--ghost more">Voir plus</button>
+            </div>
+        </div>`;
+    if (!inst || updateAvail) card.querySelector('.install').onclick = (e) => installBundle(b.slug, e.target);
+    if (inst) { const cb = card.querySelector('.customize'); if (cb) cb.onclick = () => openCustomize(b.slug, b.title || b.slug); }
+    card.querySelector('.more').onclick = () => openModal(b, !!inst);
+    return card;
+}
+
 async function loadStore() {
-    // On croise la liste du store avec les packs DÉJÀ installés (état local persistant),
-    // pour que le bouton reflète la réalité au retour sur la vue (bug : il repassait à
-    // « Installer » alors que le pack était installé).
-    const [list, installed] = await Promise.all([api.store.list(), api.store.installed()]);
-    const items = list || [];
-    const installedBy = new Map((installed || []).map((b) => [b.slug, b]));
+    const gen = ++storeGen; // invalide tout chargement précédent en vol
     const el = $('store-list');
+    storeOffset = 0; storeLoading = false; storeExhausted = false;
+    el.innerHTML = ''; $('store-more').textContent = '';
+    storeInstalledBy = new Map(((await api.store.installed()) || []).map((b) => [b.slug, b]));
+    if (gen !== storeGen) return; // périmé pendant l'await
+    if (storeFilter === 'installed') return renderInstalledStore(gen);
+    // Vue « Tous » : recherche + scroll infini SERVEUR (limit/offset).
+    await loadStorePage(gen);
+    if (gen !== storeGen) return;
+    if (!el.children.length) {
+        el.innerHTML = storeQuery
+            ? emptyStateHtml('🔎', 'Aucun résultat', `Aucun pack public ne correspond à « ${storeQuery} ».`, null)
+            : emptyStateHtml('📦', 'Le store est encore vide', 'Aucun pack public pour l\'instant. Reviens bientôt, ou crée le tien dans le Lab.', 'Ouvrir le Lab', 'empty-cta-lab');
+        wireEmptyCtas(el);
+    }
+}
+async function loadStorePage(gen) {
+    if (gen === undefined) gen = storeGen; // appel depuis le scroll = génération courante
+    if (storeLoading || storeExhausted || storeFilter !== 'all' || gen !== storeGen) return;
+    storeLoading = true;
+    const el = $('store-list'); const more = $('store-more');
+    if (storeOffset > 0) more.textContent = 'Chargement…';
+    let items = [];
+    try {
+        const q = { limit: String(STORE_PAGE), offset: String(storeOffset) };
+        if (storeQuery) q.q = storeQuery;
+        items = (await api.store.list(q)) || [];
+    } catch { items = []; }
+    // Périmé (un nouveau loadStore a démarré pendant la requête) : on jette CE résultat
+    // sans toucher au DOM ni à l'offset — le chargement courant gère storeLoading.
+    if (gen !== storeGen) return;
+    items.forEach((b) => el.appendChild(buildStoreCard(b, storeInstalledBy.get(b.slug))));
+    storeOffset += items.length;
+    if (items.length < STORE_PAGE) storeExhausted = true;
+    more.textContent = '';
+    storeLoading = false;
+    // La 1re page ne remplit pas l'écran mais il reste des packs -> charge la suite.
+    if (!storeExhausted) maybeLoadMore();
+}
+/** Vue « Installés » : packs locaux enrichis par aperçu (best-effort), sans paging. */
+async function renderInstalledStore(gen) {
+    const el = $('store-list');
+    el.innerHTML = '<p class="muted">Chargement…</p>';
+    const installed = [...storeInstalledBy.values()];
+    let items = await Promise.all(installed.map(async (i) => {
+        try { const p = await api.store.preview(i.slug); return (p && p.bundle) || { slug: i.slug }; }
+        catch { return { slug: i.slug }; }
+    }));
+    if (gen !== storeGen) return; // filtre/recherche changés pendant les aperçus -> on abandonne
+    const q = storeQuery.toLowerCase();
+    if (q) items = items.filter((b) => `${b.title || ''} ${b.slug || ''}`.toLowerCase().includes(q));
+    storeExhausted = true;
     el.innerHTML = '';
-    if (!items.length) { el.innerHTML = '<p class="muted">Le store est vide pour l\'instant.</p>'; return; }
-    items.forEach((b) => {
-        const inst = installedBy.get(b.slug);
-        const updateAvail = !!inst && !!b.version && !!inst.version && inst.version !== b.version;
-        const card = document.createElement('div');
-        card.className = 'bundle-card';
-        const banner = b.bannerUrl ? ` style="background-image:url('${esc(b.bannerUrl)}')"` : '';
-        const installBtn = !inst
-            ? `<button class="btn btn--primary install">Installer</button>`
-            : updateAvail
-                ? `<button class="btn btn--primary install" title="Une nouvelle version est disponible">Mettre à jour → v${esc(b.version)}</button>`
-                : `<button class="btn btn--ghost install" disabled>Installé ✓${inst.version ? ' · v' + esc(inst.version) : ''}</button>`;
-        const customizeBtn = inst ? `<button class="btn btn--ghost customize">Personnaliser</button>` : '';
-        card.innerHTML = `
-            <div class="bundle-card__banner"${banner}></div>
-            <div class="bundle-card__body">
-                <h3>${esc(b.title || b.slug)}</h3>
-                <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
-                <div class="muted small">${b.version ? `v${esc(b.version)}${b.versionDate ? ' · ' + esc(fmtDate(b.versionDate)) : ''}` : '&nbsp;'}</div>
-                <div class="row gap wrap card-actions">
-                    ${installBtn}
-                    ${customizeBtn}
-                    <button class="btn btn--ghost more">Voir plus</button>
-                </div>
-            </div>`;
-        if (!inst || updateAvail) card.querySelector('.install').onclick = (e) => installBundle(b.slug, e.target);
-        if (inst) { const cb = card.querySelector('.customize'); if (cb) cb.onclick = () => openCustomize(b.slug, b.title || b.slug); }
-        card.querySelector('.more').onclick = () => openModal(b, !!inst);
-        el.appendChild(card);
-    });
+    if (!items.length) {
+        el.innerHTML = storeQuery
+            ? emptyStateHtml('🔎', 'Aucun résultat', 'Aucun pack installé ne correspond à ta recherche.', null)
+            : emptyStateHtml('🧩', 'Aucun pack installé', 'Installe un pack depuis « Tous » pour le personnaliser et le piloter en live.', 'Voir tous les packs', 'empty-cta-all');
+        wireEmptyCtas(el);
+        return;
+    }
+    items.forEach((b) => el.appendChild(buildStoreCard(b, storeInstalledBy.get(b.slug))));
 }
 
 // ── Modal détail ──
@@ -562,11 +882,15 @@ function openModal(b, isInstalled) {
     $('modal-changelog').textContent = b.changelog || '';
     $('modal-changelog-wrap').classList.toggle('hidden', !(b.changelog && b.changelog.trim()));
     $('modal-caps').innerHTML = '';
+    // Instructions / prérequis (Markdown) : rendu immédiat depuis l'item de liste,
+    // puis rafraîchi depuis l'aperçu (source autoritaire).
+    renderInstructionsBlock('modal-instructions', b.instructions);
     api.store
         .preview(b.slug)
         .then((p) => {
             const caps = (p && p.capabilities) || [];
             $('modal-caps').innerHTML = caps.map((c) => `<span class="chip">${esc(c)}</span>`).join('');
+            renderInstructionsBlock('modal-instructions', p && p.bundle && p.bundle.instructions);
         })
         .catch(() => {});
     const btn = $('modal-install');
@@ -586,6 +910,7 @@ $('modal').onclick = (e) => { if (e.target.id === 'modal') $('modal').classList.
 
 // ── Personnalisation LOCALE d'un pack installé (calque : activer/désactiver + cooldown) ──
 async function openCustomize(slug, title) {
+    cancelTestCountdown(); // on va vider la liste des règles (rows détachées)
     $('cx-title').textContent = title || slug;
     $('cx-msg').textContent = '';
     $('cx-modal').dataset.slug = slug;
@@ -595,6 +920,8 @@ async function openCustomize(slug, title) {
     let data;
     try { data = await api.customize.get(slug); }
     catch (e) { box.innerHTML = `<p class="no">${esc(friendlyError(e, 'Pack indisponible.'))}</p>`; return; }
+    // Instructions / prérequis du créateur (Markdown) — visibles sur un pack installé.
+    renderInstructionsBlock('cx-instructions', data && data.instructions);
     const rules = (data && data.rules) || [];
     if (!rules.length) { box.innerHTML = '<p class="muted">Ce pack n\'a pas d\'interaction personnalisable.</p>'; return; }
     box.innerHTML = '';
@@ -607,12 +934,25 @@ async function openCustomize(slug, title) {
         row.innerHTML =
             `<label class="switch" title="Activer / désactiver cette interaction"><input type="checkbox" class="cx-en"${r.enabled ? ' checked' : ''}/><span class="switch__track"><span class="switch__thumb"></span></span></label>`
             + `<div class="cx-rule__info"><b>${name}</b> <span class="muted">${esc(r.effectType || '')}${r.giftSlug ? ' · ' + what : ''}</span></div>`
-            + `<label class="cx-cd muted" title="Temps minimum entre deux déclenchements">cooldown ms <input type="number" min="0" class="cx-cd-in" placeholder="${Number(r.defaultCooldownMs) || 0}" value="${r.cooldownMs != null ? r.cooldownMs : ''}"/></label>`;
+            + `<label class="cx-cd muted" title="Temps minimum entre deux déclenchements">cooldown ms <input type="number" min="0" class="cx-cd-in" placeholder="${Number(r.defaultCooldownMs) || 0}" value="${r.cooldownMs != null ? r.cooldownMs : ''}"/></label>`
+            + `<span class="cx-test-res"></span>`
+            + `<button class="btn btn--ghost cx-test" title="Tester cette interaction MAINTENANT, sans être en live">&#9654; Tester</button>`;
+        // Test OFF-LIVE : rejoue l'effet du manifeste signé via le pipeline sécurisé.
+        row.querySelector('.cx-test').onclick = (ev) => {
+            runEffectTest({
+                resEl: row.querySelector('.cx-test-res'),
+                cls: 'cx-test-res',
+                needsFocus: effectNeedsFocus(r.effectType),
+                btn: ev.currentTarget,
+                fire: () => api.engine.testInstalled(slug, r.id),
+            });
+        };
         box.appendChild(row);
     });
 }
-$('cx-close').onclick = () => $('cx-modal').classList.add('hidden');
-$('cx-modal').onclick = (e) => { if (e.target.id === 'cx-modal') $('cx-modal').classList.add('hidden'); };
+const cxCloseModal = () => { cancelTestCountdown(); $('cx-modal').classList.add('hidden'); };
+$('cx-close').onclick = cxCloseModal;
+$('cx-modal').onclick = (e) => { if (e.target.id === 'cx-modal') cxCloseModal(); };
 $('cx-save').onclick = async () => {
     const slug = $('cx-modal').dataset.slug;
     const disabled = [];
@@ -694,10 +1034,47 @@ function statsGraphSvg(daily) {
 }
 
 // ── Lab : éditeur visuel (QUAND … ALORS …) ──
-const EVENTS = [['gift', 'Cadeau'], ['gift-custom', 'Cadeau personnalisé'], ['follow', 'Nouvel abonné'], ['comment', 'Message chat'], ['hearts', 'Palier de likes'], ['share', 'Partage']];
+const EVENTS = [['gift', 'Cadeau'], ['gift-custom', 'Cadeau personnalisé'], ['follow', 'Nouvel abonné'], ['comment', 'Message chat'], ['hearts', 'Likes'], ['share', 'Partage'], ['viewer', 'Spectateurs']];
 const EXECS = [['keyboard', 'Clavier'], ['gamepad', 'Manette'], ['rcon', 'RCON'], ['obs', 'OBS'], ['http', 'HTTP'], ['mqtt', 'MQTT'], ['osc', 'OSC'], ['ws', 'WebSocket']];
 const ROLES = [['all', 'Tout le monde'], ['followers', 'Abonnés'], ['moderators', 'Modérateurs']];
 const GP_BUTTONS = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'START', 'BACK', 'LS', 'RS'];
+// Libellés HUMAINS (Xbox + équivalent Switch/PlayStation courant) — Flicky : « LT c'est ZL,
+// RS c'est le clic du stick droit ». Le token stocké reste l'énum manette (A/LT/RS…).
+const GP_LABEL = {
+    A: 'A (bas)', B: 'B (droite)', X: 'X (gauche)', Y: 'Y (haut)',
+    LB: 'LB · L', RB: 'RB · R', LT: 'LT · ZL (gâchette G)', RT: 'RT · ZR (gâchette D)',
+    UP: 'Croix ↑', DOWN: 'Croix ↓', LEFT: 'Croix ←', RIGHT: 'Croix →',
+    START: 'Start · +', BACK: 'Select · −', LS: 'L3 (clic stick G)', RS: 'R3 (clic stick D)',
+};
+const gpLabel = (t) => GP_LABEL[t] || t;
+// Résumé humain court d'un effet manette (affiché dans la ligne d'interaction).
+function gpSummary(e) {
+    if (e.analog) {
+        const a = e.analog; const parts = [];
+        if (a.lx != null || a.ly != null) parts.push(`stick G(${a.lx ?? 0},${a.ly ?? 0})`);
+        if (a.rx != null || a.ry != null) parts.push(`stick D(${a.rx ?? 0},${a.ry ?? 0})`);
+        if (a.lt != null) parts.push(`ZL ${Math.round((a.lt) * 100)}%`);
+        if (a.rt != null) parts.push(`ZR ${Math.round((a.rt) * 100)}%`);
+        return 'Analogique : ' + (parts.join(' · ') || '—');
+    }
+    if (e.steps && e.steps.length) {
+        return 'Chronologie : ' + e.steps.map((s) => {
+            const btns = (s.buttons && s.buttons.length ? s.buttons : (s.button ? [s.button] : [])).map(gpLabelShort).join('+');
+            return (btns || '⏸') + (s.waitMs ? ` ⏱${s.waitMs}ms` : '');
+        }).join(' → ');
+    }
+    if (e.buttons && e.buttons.length) return 'Combo : ' + e.buttons.map(gpLabelShort).join(' + ');
+    const parts = [];
+    if (e.button) parts.push(gpLabelShort(e.button));
+    for (const b of e.sequence || []) parts.push(gpLabelShort(b));
+    if (e.randomFrom && e.randomFrom.length) parts.push('aléa(' + e.randomFrom.map(gpLabelShort).join('/') + ')');
+    let s = parts.join(' → ');
+    if (e.repeat && e.repeat > 1) s += ` ×${e.repeat}`;
+    return s || '—';
+}
+// Libellé court (juste l'équivalent Switch quand il existe) pour les résumés compacts.
+const GP_SHORT = { LT: 'ZL', RT: 'ZR', LB: 'L', RB: 'R', LS: 'L3', RS: 'R3', START: '+', BACK: '−', UP: '↑', DOWN: '↓', LEFT: '←', RIGHT: '→' };
+const gpLabelShort = (t) => GP_SHORT[t] || t;
 let labRules = [];
 let labDragIndex = -1; // index de la règle en cours de glisser (échange de slot)
 let labCurrentSlug = null;
@@ -782,26 +1159,41 @@ function eventFieldHtml(r) {
             + `<input type="checkbox" class="r-accent-on"${hasAccent ? ' checked' : ''}> bordure`
             + `<input type="color" class="r-accent" value="${esc(accent)}"></label>`;
     }
-    if (r.event.type === 'comment') return `<input type="text" class="r-contains" placeholder="contient ce mot…" />`;
-    if (r.event.type === 'hearts') return `<input type="number" class="r-milestone" placeholder="palier (ex. 100)" min="1" />`;
+    if (r.event.type === 'comment') {
+        const mode = r.event._cmode || (r.event.every != null ? 'every' : 'contains');
+        return `<select class="r-cmode" title="Déclencher sur un mot-clé, ou toutes les N messages"><option value="contains"${mode === 'contains' ? ' selected' : ''}>contient le mot</option><option value="every"${mode === 'every' ? ' selected' : ''}>tous les N messages</option></select>`
+            + (mode === 'every'
+                ? `<input type="number" class="r-every" min="1" placeholder="tous les N (ex. 100)" />`
+                : `<input type="text" class="r-contains" placeholder="contient ce mot…" />`);
+    }
+    if (r.event.type === 'hearts') {
+        const mode = r.event._hmode || (r.event.every != null ? 'every' : 'milestone');
+        return `<select class="r-hmode" title="Un palier atteint une fois, ou toutes les N likes"><option value="milestone"${mode === 'milestone' ? ' selected' : ''}>palier atteint</option><option value="every"${mode === 'every' ? ' selected' : ''}>tous les N likes</option></select>`
+            + (mode === 'every'
+                ? `<input type="number" class="r-every" min="1" placeholder="tous les N (ex. 100)" />`
+                : `<input type="number" class="r-milestone" min="1" placeholder="palier (ex. 100)" />`);
+    }
+    if (r.event.type === 'share') return `<input type="number" class="r-every" min="1" placeholder="tous les N partages (vide = chaque partage)" />`;
+    if (r.event.type === 'viewer') return `<input type="number" class="r-every" min="1" placeholder="tous les N nouveaux spectateurs (ex. 100)" />`;
     return '';
 }
 function execFieldHtml(r) {
     switch (r.effect.type) {
-        case 'keyboard': return `<input type="text" class="r-keys" placeholder="touches (ex. space, shift+c)" /><select class="r-backend"><option value="auto">clavier normal</option><option value="interception">bas niveau (pilote)</option></select>`;
+        case 'keyboard': return `<input type="text" class="r-keys" placeholder="touche (ex. e, space, up)…" title="Astuce : + = touches ENSEMBLE · virgule = à la suite · :ms = maintenir. Ou clique « Action avancée » pour enregistrer une suite." /><button type="button" class="r-kb-edit btn btn--ghost btn--mini" title="Enregistrer une suite de touches, un combo, régler le rythme et le maintien">🎬 Action avancée</button><select class="r-backend"><option value="auto">clavier normal</option><option value="interception">bas niveau (pilote)</option></select>`;
         case 'gamepad': {
-            // Un effet combo (séquence / tirage aléatoire) est édité en avancé
-            // (seed) : on l'affiche en lecture seule pour ne pas l'écraser ici.
-            const seq = Array.isArray(r.effect.sequence) ? r.effect.sequence : [];
-            const rnd = Array.isArray(r.effect.randomFrom) ? r.effect.randomFrom : [];
-            if (seq.length || rnd.length) {
-                const parts = [];
-                if (r.effect.button) parts.push(r.effect.button);
-                parts.push(...seq);
-                if (rnd.length) parts.push('aléatoire(' + rnd.join('/') + ')');
-                return `<span class="r-combo" title="Combo manette (édition avancée, préservé)">🎮 ${esc(parts.join(' → '))}</span>`;
+            const adv = (r.effect.buttons && r.effect.buttons.length) ||
+                (r.effect.sequence && r.effect.sequence.length) ||
+                (r.effect.randomFrom && r.effect.randomFrom.length) ||
+                (r.effect.steps && r.effect.steps.length) || r.effect.analog;
+            if (adv) {
+                // Action manette avancée : résumé humain + bouton pour rouvrir l'éditeur.
+                return `<span class="r-combo" title="Action manette avancée">🎮 ${esc(gpSummary(r.effect))}</span>` +
+                    `<button type="button" class="r-gp-edit btn btn--ghost btn--mini">Éditer</button>`;
             }
-            return `<select class="r-button">${GP_BUTTONS.map((b) => `<option>${b}</option>`).join('')}</select>`;
+            // Cas simple : bouton unique (libellés humains) + capturer + options avancées.
+            return `<select class="r-button" title="Bouton manette">${GP_BUTTONS.map((b) => `<option value="${b}">${esc(gpLabel(b))}</option>`).join('')}</select>` +
+                `<button type="button" class="r-gp-cap btn btn--ghost btn--mini" title="Capturer un bouton depuis ta manette">Capturer</button>` +
+                `<button type="button" class="r-gp-edit btn btn--ghost btn--mini" title="Options avancées : combo, séquence, chronologie, analogique, répétition">⚙</button>`;
         }
         case 'rcon': return `<input type="text" class="r-command" placeholder="commande (ex. give {player} minecraft:diamond 1)" />`;
         case 'obs': return `<input type="text" class="r-request" placeholder="requête OBS (ex. SetCurrentProgramScene)" />`;
@@ -832,8 +1224,24 @@ function readRule(el, r) {
         const on = q('.r-accent-on');
         r.event.accentColor = (on && on.checked && q('.r-accent')) ? q('.r-accent').value : undefined;
     }
-    if (r.event.type === 'comment') r.event.contains = q('.r-contains') ? q('.r-contains').value : '';
-    if (r.event.type === 'hearts') r.event.milestone = q('.r-milestone') ? Number(q('.r-milestone').value) || undefined : undefined;
+    if (r.event.type === 'comment') {
+        // NON destructif : le mode décide ce qui part (buildRule), on garde les deux
+        // saisies en mémoire pour ne rien perdre en basculant contient <-> tous les N.
+        const cmode = q('.r-cmode') ? q('.r-cmode').value : (r.event._cmode || (r.event.every != null ? 'every' : 'contains'));
+        r.event._cmode = cmode;
+        if (cmode === 'every') { if (q('.r-every')) r.event.every = Number(q('.r-every').value) || undefined; }
+        else if (q('.r-contains')) r.event.contains = q('.r-contains').value;
+    }
+    if (r.event.type === 'hearts') {
+        const hmode = q('.r-hmode') ? q('.r-hmode').value : (r.event._hmode || (r.event.every != null ? 'every' : 'milestone'));
+        r.event._hmode = hmode;
+        if (hmode === 'every') { if (q('.r-every')) r.event.every = Number(q('.r-every').value) || undefined; }
+        else if (q('.r-milestone')) r.event.milestone = Number(q('.r-milestone').value) || undefined;
+    }
+    if (r.event.type === 'share' || r.event.type === 'viewer') {
+        const v = q('.r-every') ? Number(q('.r-every').value) : NaN;
+        r.event.every = Number.isFinite(v) && v >= 1 ? v : undefined;
+    }
     if (r.effect.type === 'keyboard') { r.effect.keys = q('.r-keys') ? q('.r-keys').value : ''; r.effect.backend = q('.r-backend') ? q('.r-backend').value : 'auto'; }
     // Ne touche button QUE si le sélecteur simple est présent (un combo n'en a pas
     // -> on préserve sequence/randomFrom/gapMs déjà sur r.effect).
@@ -916,6 +1324,7 @@ function swapSlots(i, j) {
 }
 function renderRules() {
     const box = $('lab-rules');
+    cancelTestCountdown(); // un décompte en cours pointe une ligne qu'on va détacher
     box.innerHTML = '';
     labRules.forEach((r, i) => {
         const el = document.createElement('div');
@@ -939,6 +1348,11 @@ function renderRules() {
         const q = (s) => el.querySelector(s);
         if (r.event.type === 'comment' && q('.r-contains')) q('.r-contains').value = r.event.contains || '';
         if (r.event.type === 'hearts' && q('.r-milestone')) q('.r-milestone').value = r.event.milestone || '';
+        if (q('.r-every')) q('.r-every').value = r.event.every || '';
+        // Bascule du mode (contient/tous les N, palier/tous les N) : re-render pour
+        // échanger le champ affiché, après avoir lu la saisie courante.
+        if (q('.r-cmode')) q('.r-cmode').onchange = () => { readRule(el, r); renderRules(); };
+        if (q('.r-hmode')) q('.r-hmode').onchange = () => { readRule(el, r); renderRules(); };
         if (r.effect.type === 'keyboard') { if (q('.r-keys')) q('.r-keys').value = r.effect.keys || ''; if (q('.r-backend')) q('.r-backend').value = r.effect.backend || 'auto'; }
         if (r.effect.type === 'gamepad' && q('.r-button')) q('.r-button').value = r.effect.button || 'A';
         if (r.effect.type === 'rcon' && q('.r-command')) q('.r-command').value = r.effect.command || '';
@@ -950,6 +1364,32 @@ function renderRules() {
         if (q('.r-role')) q('.r-role').value = r.moderatorsOnly ? 'moderators' : r.followersOnly ? 'followers' : 'all';
         if (q('.r-connector')) q('.r-connector').onchange = () => onConnectorPick(el, r);
         if (q('.r-iconguide')) q('.r-iconguide').onclick = () => $('icon-guide-modal').classList.remove('hidden');
+        // Capturer un bouton depuis la VRAIE manette branchée (auto-sélection).
+        if (q('.r-gp-cap')) q('.r-gp-cap').onclick = async (ev) => {
+            const b = ev.currentTarget; const old = b.textContent; b.textContent = 'Appuie…'; b.disabled = true;
+            const tok = await captureGamepadToken(4000);
+            b.textContent = old; b.disabled = false;
+            if (tok && q('.r-button')) { q('.r-button').value = tok; readRule(el, r); }
+            else if (!tok) $('lab-msg2').textContent = 'Aucun bouton détecté (manette branchée + appuie pendant la capture).';
+        };
+        // Éditeur avancé manette : combo, séquence, chronologie, analogique, répétition.
+        if (q('.r-gp-edit')) q('.r-gp-edit').onclick = () => {
+            readRule(el, r);
+            openGamepadEditor(r.effect, (built) => { r.effect = { type: 'gamepad', ...built }; renderRules(); });
+        };
+        // Capturer une touche depuis le clavier (auto-sélection).
+        if (q('.r-kb-cap')) q('.r-kb-cap').onclick = async (ev) => {
+            const b = ev.currentTarget; const old = b.textContent; b.textContent = 'Appuie…'; b.disabled = true;
+            // Capture un COMBO (plusieurs touches ensemble). Une seule touche = combo d'un.
+            const spec = await captureKeyboardChord(6000);
+            b.textContent = old; b.disabled = false;
+            if (spec && q('.r-keys')) { q('.r-keys').value = spec; readRule(el, r); }
+        };
+        // Éditeur clavier visuel (touche / combo / suite + rythme).
+        if (q('.r-kb-edit')) q('.r-kb-edit').onclick = () => {
+            readRule(el, r);
+            openKeyboardEditor(r.effect, (built) => { r.effect = { type: 'keyboard', ...built }; renderRules(); });
+        };
         if (q('.r-iconbtn')) q('.r-iconbtn').onclick = async () => {
             readRule(el, r);
             const picked = await api.lab.pickIcon(); // choisir SANS créer le pack
@@ -1021,15 +1461,16 @@ function renderRules() {
             inp.addEventListener('input', () => readRule(el, r));
         });
         q('.r-del').onclick = () => { labRules.splice(i, 1); renderRules(); };
-        q('.r-test').onclick = async () => {
+        q('.r-test').onclick = (ev) => {
             readRule(el, r); // synchronise la saisie DOM -> objet règle
-            const res = q('.rule__result');
-            res.textContent = 'Test en cours…'; res.className = 'rule__result';
-            try {
-                const v = await api.engine.testRule(buildRule(r, i), labCurrentSlug);
-                if (v && v.ok) { res.textContent = '✓ Déclenché'; res.className = 'rule__result ok'; }
-                else { res.textContent = '✗ ' + ((v && v.reason) || 'échec'); res.className = 'rule__result no'; }
-            } catch (e) { res.textContent = '✗ ' + friendlyError(e, 'test impossible'); res.className = 'rule__result no'; }
+            const rule = buildRule(r, i);
+            runEffectTest({
+                resEl: q('.rule__result'),
+                cls: 'rule__result',
+                needsFocus: effectNeedsFocus(rule.effect && rule.effect.type),
+                btn: ev.currentTarget,
+                fire: () => api.engine.testRule(rule, labCurrentSlug),
+            });
         };
         box.appendChild(el);
     });
@@ -1041,15 +1482,44 @@ function buildRule(r, i) {
     if (onType === 'gift') on.giftSlug = r.event.giftSlug || r.event.slot;
     if (r.event.type === 'gift-custom' && r.event.iconUrl) on.iconUrl = r.event.iconUrl;
     if (r.event.type === 'gift-custom' && r.event.accentColor) on.accentColor = r.event.accentColor;
-    if (r.event.type === 'comment') on.contains = r.event.contains;
-    if (r.event.type === 'hearts') on.milestone = r.event.milestone;
+    // Le MODE choisi (et non la simple présence d'un champ) décide ce qui part :
+    // les deux saisies (contient/tous les N, palier/tous les N) coexistent en mémoire.
+    if (r.event.type === 'comment') {
+        const cm = r.event._cmode || (r.event.every != null ? 'every' : 'contains');
+        if (cm === 'every') { if (r.event.every != null) on.every = r.event.every; }
+        else if (r.event.contains) on.contains = r.event.contains;
+    }
+    if (r.event.type === 'hearts') {
+        const hm = r.event._hmode || (r.event.every != null ? 'every' : 'milestone');
+        if (hm === 'every') { if (r.event.every != null) on.every = r.event.every; }
+        else if (r.event.milestone != null) on.milestone = r.event.milestone;
+    }
+    if (r.event.type === 'share' && r.event.every != null) on.every = r.event.every;
+    if (r.event.type === 'viewer' && r.event.every != null) on.every = r.event.every;
     const effect = { type: r.effect.type };
-    if (r.effect.type === 'keyboard') { effect.keys = r.effect.keys; if (r.effect.backend && r.effect.backend !== 'auto') effect.backend = r.effect.backend; }
+    if (r.effect.type === 'keyboard') { effect.keys = r.effect.keys; if (r.effect.backend && r.effect.backend !== 'auto') effect.backend = r.effect.backend; if (typeof r.effect.gapMs === 'number') effect.gapMs = r.effect.gapMs; }
     if (r.effect.type === 'gamepad') {
-        if (r.effect.button) effect.button = r.effect.button;
-        if (Array.isArray(r.effect.sequence) && r.effect.sequence.length) effect.sequence = r.effect.sequence;
-        if (Array.isArray(r.effect.randomFrom) && r.effect.randomFrom.length) effect.randomFrom = r.effect.randomFrom;
-        if (typeof r.effect.gapMs === 'number') effect.gapMs = r.effect.gapMs;
+        const g = r.effect;
+        if (g.analog && Object.keys(g.analog).length) {
+            effect.analog = g.analog;
+        } else if (Array.isArray(g.steps) && g.steps.length) {
+            effect.steps = g.steps;
+        } else {
+            if (Array.isArray(g.buttons) && g.buttons.length) effect.buttons = g.buttons;
+            else if (g.button) effect.button = g.button;
+            if (Array.isArray(g.sequence) && g.sequence.length) effect.sequence = g.sequence;
+            if (Array.isArray(g.randomFrom) && g.randomFrom.length) effect.randomFrom = g.randomFrom;
+            if (typeof g.gapMs === 'number') effect.gapMs = g.gapMs;
+        }
+        if (typeof g.holdMs === 'number') effect.holdMs = g.holdMs;
+        if (typeof g.repeat === 'number' && g.repeat > 1) effect.repeat = g.repeat;
+        if (typeof g.repeatGapMs === 'number' && g.repeatGapMs > 0) effect.repeatGapMs = g.repeatGapMs;
+        // Filet : basculer en « Manette » sans toucher au sélecteur laisse le bouton A
+        // affiché mais non écrit dans le modèle -> effet vide refusé par le validateur.
+        // On garantit une action valide (le bouton A visible par défaut).
+        if (!effect.button && !effect.buttons && !effect.sequence && !effect.randomFrom && !effect.steps && !effect.analog) {
+            effect.button = 'A';
+        }
     }
     if (r.effect.type === 'rcon') effect.command = r.effect.command;
     if (r.effect.type === 'obs') effect.request = r.effect.request;
@@ -1088,7 +1558,502 @@ function bumpVersion(v, type) {
     return `${maj}.${min}.${pat + 1}`;
 }
 
+// ══════════════ AUTO-CAPTURE (manette + clavier) ══════════════
+// Lit l'entrée PHYSIQUE branchée sur ce PC pour auto-sélectionner un bouton/une
+// touche (retour de Flicky : « on appuie, ça se sélectionne tout seul »). Lecture
+// SEULE (API Gamepad du renderer / keydown) : aucun pilotage, aucun sidecar.
+const GP_STD_INDEX = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'BACK', 'START', 'LS', 'RS', 'UP', 'DOWN', 'LEFT', 'RIGHT'];
+function captureGamepadToken(timeoutMs = 4000) {
+    return new Promise((resolve) => {
+        if (!navigator.getGamepads) { resolve(null); return; }
+        const start = performance.now();
+        let raf = 0;
+        const scan = () => {
+            const pads = navigator.getGamepads();
+            for (const p of pads) {
+                if (!p || !p.buttons) continue;
+                for (let i = 0; i < p.buttons.length && i < GP_STD_INDEX.length; i++) {
+                    const btn = p.buttons[i];
+                    const pressed = typeof btn === 'object' ? (btn.pressed || btn.value > 0.5) : btn > 0.5;
+                    if (pressed) { cancelAnimationFrame(raf); resolve(GP_STD_INDEX[i]); return; }
+                }
+            }
+            if (performance.now() - start > timeoutMs) { resolve(null); return; }
+            raf = requestAnimationFrame(scan);
+        };
+        raf = requestAnimationFrame(scan);
+    });
+}
+function captureKeyboardSpec(timeoutMs = 4000) {
+    return new Promise((resolve) => {
+        let done = false;
+        const finish = (spec) => {
+            if (done) return; done = true;
+            clearTimeout(to);
+            window.removeEventListener('keydown', onKey, true);
+            resolve(spec);
+        };
+        const onKey = (e) => {
+            if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return; // attend une vraie touche
+            e.preventDefault();
+            const mods = [];
+            if (e.ctrlKey) mods.push('ctrl');
+            if (e.shiftKey) mods.push('shift');
+            if (e.altKey) mods.push('alt');
+            let k = e.key;
+            if (k === ' ') k = 'space';
+            else if (k.startsWith('Arrow')) k = k.slice(5).toLowerCase();
+            else k = k.toLowerCase();
+            finish([...mods, k].join('+'));
+        };
+        const to = setTimeout(() => finish(null), timeoutMs);
+        window.addEventListener('keydown', onKey, true);
+    });
+}
+// Capture un COMBO clavier : appuie sur PLUSIEURS touches EN MÊME TEMPS (ex. a+b+c,
+// ctrl+shift+e). On mémorise l'ensemble le plus large tenu simultanément, et on rend
+// dès que tout est relâché -> « touche1+touche2+… » (modificateurs en tête).
+// Symboles rangée principale (repli si e.code absent) : « + » « , » « : » sont les
+// séparateurs de la grammaire (combo / suite / maintien) et casseraient le spec bruts.
+const KB_SYMBOL = {
+    '+': 'plus', '-': 'minus', '=': 'equal', ',': 'comma', '.': 'period',
+    '/': 'slash', ';': 'semicolon', "'": 'quote', '\\': 'backslash',
+    '[': 'bracketleft', ']': 'bracketright', '`': 'grave', ':': 'semicolon',
+};
+// e.code = touche PHYSIQUE (indépendante de Maj et de la disposition) : c'est ce
+// qu'un jeu lit. On la préfère pour la ponctuation et le pavé numérique, ce qui
+// (1) distingue le « + » du PAVÉ du « + » (Maj+=) de la rangée principale, et
+// (2) rend le token stable entre keydown et keyup même si Maj change entre-temps
+//     (sinon held.delete raterait et la touche resterait « coincée » à la capture).
+const KB_CODE = {
+    Equal: 'equal', Minus: 'minus', Comma: 'comma', Period: 'period', Slash: 'slash',
+    Semicolon: 'semicolon', Quote: 'quote', Backslash: 'backslash',
+    BracketLeft: 'bracketleft', BracketRight: 'bracketright', Backquote: 'grave',
+    Backspace: 'backspace', Delete: 'delete', Home: 'home', End: 'end',
+    PageUp: 'pageup', PageDown: 'pagedown', Insert: 'insert',
+    NumpadAdd: 'numadd', NumpadSubtract: 'numsubtract', NumpadMultiply: 'nummultiply',
+    NumpadDivide: 'numdivide', NumpadDecimal: 'numdecimal', NumpadEnter: 'enter',
+};
+const KB_TOKEN = (e) => {
+    const k = e.key;
+    if (k === 'Control') return 'ctrl';
+    if (k === 'Shift') return 'shift';
+    if (k === 'Alt') return 'alt';
+    if (k === 'Meta') return 'meta';
+    if (k === 'Escape') return 'esc'; // l'exécuteur connaît 'esc' (pas 'escape')
+    if (k === ' ') return 'space';
+    if (k.startsWith('Arrow')) return k.slice(5).toLowerCase();
+    const code = e.code || '';
+    if (KB_CODE[code]) return KB_CODE[code];
+    if (/^Numpad[0-9]$/.test(code)) return 'num' + code.slice(6);
+    if (KB_SYMBOL[k]) return KB_SYMBOL[k];
+    return k.toLowerCase();
+};
+const KB_ORDER = ['ctrl', 'shift', 'alt', 'meta'];
+const orderChord = (arr) => arr.slice().sort((a, b) => {
+    const ia = KB_ORDER.indexOf(a), ib = KB_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+}).join('+');
+function captureKeyboardChord(timeoutMs = 6000) {
+    return new Promise((resolve) => {
+        let done = false;
+        const held = new Set();
+        let maxChord = [];
+        const finish = (spec) => {
+            if (done) return; done = true;
+            clearTimeout(to);
+            window.removeEventListener('keydown', onDown, true);
+            window.removeEventListener('keyup', onUp, true);
+            resolve(spec);
+        };
+        const onDown = (e) => {
+            e.preventDefault();
+            held.add(KB_TOKEN(e));
+            if (held.size > maxChord.length) maxChord = [...held];
+        };
+        const onUp = (e) => {
+            held.delete(KB_TOKEN(e));
+            if (held.size === 0 && maxChord.length) finish(orderChord(maxChord));
+        };
+        const to = setTimeout(() => finish(maxChord.length ? orderChord(maxChord) : null), timeoutMs);
+        window.addEventListener('keydown', onDown, true);
+        window.addEventListener('keyup', onUp, true);
+    });
+}
+
+// ══════════════ ÉDITEUR MANETTE avancé (modale) ══════════════
+let gpEdit = null; // { mode, gp, onSave }
+const GP_MODE_HELP = {
+    single: 'Un seul bouton (ex. ZR pour accélérer). « Capturer » lit ta manette.',
+    chord: 'Plusieurs boutons EN MÊME TEMPS (ex. L + clic du stick gauche).',
+    sequence: 'Des boutons l\'un APRÈS l\'autre (ex. ↓ puis A).',
+    random: 'Un bouton AU HASARD parmi la sélection (résultat imprévisible à chaque déclenchement). Tu peux le faire précéder d\'un bouton fixe (ex. ↓ pour ouvrir un menu, puis une direction au hasard).',
+    timeline: 'Chronologie : chaque étape presse des boutons puis attend. Idéal « combo, puis dans 5 s la touche stop ».',
+    analog: 'Pousse les sticks / gâchettes à une intensité (ex. stick à moitié = tourner doucement), tenu pendant « Appui (ms) ».',
+};
+function gpDetectMode(e) {
+    if (e.analog && Object.keys(e.analog).length) return 'analog';
+    if (Array.isArray(e.steps) && e.steps.length) return 'timeline';
+    if (Array.isArray(e.buttons) && e.buttons.length) return 'chord';
+    if (Array.isArray(e.sequence) && e.sequence.length) return 'sequence';
+    if (Array.isArray(e.randomFrom) && e.randomFrom.length) return 'random';
+    return 'single';
+}
+const gpSelect = (cls, val) => `<select class="${cls}">${GP_BUTTONS.map((b) => `<option value="${b}"${b === val ? ' selected' : ''}>${esc(gpLabel(b))}</option>`).join('')}</select>`;
+const gpChip = (cls, b, checked) => `<label class="gp-chip"><input type="checkbox" class="${cls}" value="${b}"${checked ? ' checked' : ''}/> ${esc(gpLabelShort(b))}</label>`;
+
+function openGamepadEditor(effect, onSave) {
+    cancelTestCountdown(); // tue un décompte orphelin d'une session d'édition précédente
+    const gp = {
+        button: effect.button || 'A',
+        buttons: Array.isArray(effect.buttons) ? effect.buttons.slice() : [],
+        sequence: Array.isArray(effect.sequence) ? effect.sequence.slice() : [],
+        steps: Array.isArray(effect.steps) ? effect.steps.map((s) => ({ buttons: (s.buttons || (s.button ? [s.button] : [])).slice(), holdMs: s.holdMs, waitMs: s.waitMs })) : [],
+        analog: effect.analog ? { ...effect.analog } : {},
+        randomFrom: Array.isArray(effect.randomFrom) ? effect.randomFrom.slice() : [],
+        // Lead du mode Aléatoire = bouton fixe joué AVANT le tirage. DÉCOUPLÉ de
+        // gp.button (mode Bouton) : sinon un effet 'A' rouvert en Aléatoire hériterait
+        // d'un appui 'A' fantôme. N'existe que si l'effet portait DÉJÀ button + randomFrom.
+        randLead: (Array.isArray(effect.randomFrom) && effect.randomFrom.length && effect.button) ? effect.button : '',
+        gapMs: typeof effect.gapMs === 'number' ? effect.gapMs : null,
+        holdMs: typeof effect.holdMs === 'number' ? effect.holdMs : 120,
+        repeat: typeof effect.repeat === 'number' ? effect.repeat : 1,
+        repeatGapMs: typeof effect.repeatGapMs === 'number' ? effect.repeatGapMs : 0,
+    };
+    gpEdit = { mode: gpDetectMode(effect), gp, onSave };
+    $('gp-hold').value = gp.holdMs;
+    $('gp-repeat').value = gp.repeat;
+    $('gp-repeatgap').value = gp.repeatGapMs;
+    $('gp-test-res').textContent = '';
+    document.querySelectorAll('#gp-modal .seg__btn').forEach((b) => b.classList.toggle('is-active', b.dataset.mode === gpEdit.mode));
+    renderGpBody();
+    $('gp-modal').classList.remove('hidden');
+}
+function renderGpBody() {
+    const { mode, gp } = gpEdit;
+    $('gp-mode-help').textContent = GP_MODE_HELP[mode] || '';
+    const body = $('gp-body');
+    if (mode === 'single') {
+        body.innerHTML = `<div class="gp-row">Bouton ${gpSelect('gp-single', gp.button)} <button type="button" class="btn btn--ghost btn--mini gp-cap-single">Capturer</button></div>`;
+        body.querySelector('.gp-single').onchange = (e) => { gp.button = e.target.value; };
+        body.querySelector('.gp-cap-single').onclick = (ev) => gpCaptureInto(ev.currentTarget, (tok) => { gp.button = tok; body.querySelector('.gp-single').value = tok; });
+    } else if (mode === 'chord') {
+        const set = new Set(gp.buttons);
+        body.innerHTML = `<div class="gp-chips">${GP_BUTTONS.map((b) => gpChip('gp-chord-btn', b, set.has(b))).join('')}</div>` +
+            `<button type="button" class="btn btn--ghost btn--mini gp-cap-chord">Capturer (ajouter)</button>`;
+        const sync = () => { gp.buttons = [...body.querySelectorAll('.gp-chord-btn:checked')].map((x) => x.value); };
+        body.querySelectorAll('.gp-chord-btn').forEach((c) => (c.onchange = sync));
+        body.querySelector('.gp-cap-chord').onclick = (ev) => gpCaptureInto(ev.currentTarget, (tok) => {
+            const cb = body.querySelector(`.gp-chord-btn[value="${tok}"]`); if (cb) cb.checked = true; sync();
+        });
+    } else if (mode === 'sequence') {
+        if (!gp.sequence.length) gp.sequence = ['A'];
+        const items = gp.sequence.map((b, i) => `<div class="gp-seq-item" data-i="${i}"><span class="gp-seq-n">${i + 1}.</span> ${gpSelect('gp-seq-sel', b)} <button type="button" class="btn btn--ghost btn--mini gp-seq-del">✕</button></div>`).join('');
+        body.innerHTML = `<div class="gp-seq">${items}</div><div class="row gap"><button type="button" class="btn btn--ghost btn--mini gp-seq-add">+ étape</button><button type="button" class="btn btn--ghost btn--mini gp-seq-cap">Capturer (ajouter)</button></div>`;
+        body.querySelectorAll('.gp-seq-item').forEach((it) => {
+            const i = Number(it.dataset.i);
+            it.querySelector('.gp-seq-sel').onchange = (e) => { gp.sequence[i] = e.target.value; };
+            it.querySelector('.gp-seq-del').onclick = () => { gp.sequence.splice(i, 1); renderGpBody(); };
+        });
+        body.querySelector('.gp-seq-add').onclick = () => { gp.sequence.push('A'); renderGpBody(); };
+        body.querySelector('.gp-seq-cap').onclick = (ev) => gpCaptureInto(ev.currentTarget, (tok) => { gp.sequence.push(tok); renderGpBody(); });
+    } else if (mode === 'random') {
+        const pool = new Set(gp.randomFrom);
+        body.innerHTML =
+            '<div class="gp-row muted">Un bouton AU HASARD parmi la sélection (au moins 2).</div>' +
+            `<div class="gp-chips">${GP_BUTTONS.map((b) => gpChip('gp-rand-btn', b, pool.has(b))).join('')}</div>` +
+            '<button type="button" class="btn btn--ghost btn--mini gp-cap-rand">Capturer (ajouter au tirage)</button>' +
+            `<label class="gp-row" style="margin-top:8px">Précédé de (optionnel) <select class="gp-rand-lead"><option value="">— aucun —</option>${GP_BUTTONS.map((b) => `<option value="${b}"${gp.randLead === b ? ' selected' : ''}>${esc(gpLabel(b))}</option>`).join('')}</select></label>`;
+        const sync = () => { gp.randomFrom = [...body.querySelectorAll('.gp-rand-btn:checked')].map((x) => x.value); };
+        body.querySelectorAll('.gp-rand-btn').forEach((c) => (c.onchange = sync));
+        body.querySelector('.gp-cap-rand').onclick = (ev) => gpCaptureInto(ev.currentTarget, (tok) => {
+            const cb = body.querySelector(`.gp-rand-btn[value="${tok}"]`); if (cb) cb.checked = true; sync();
+        });
+        // Bouton fixe joué AVANT le tirage (ex. ouvrir un menu) ; vide = tirage seul.
+        body.querySelector('.gp-rand-lead').onchange = (e) => { gp.randLead = e.target.value || ''; };
+    } else if (mode === 'timeline') {
+        if (!gp.steps.length) gp.steps = [{ buttons: ['A'], holdMs: 120, waitMs: 0 }];
+        const stepHtml = (s, i) => `<div class="gp-step" data-i="${i}">` +
+            `<div class="gp-step__head"><b>Étape ${i + 1}</b> <button type="button" class="btn btn--ghost btn--mini gp-step-del">✕</button></div>` +
+            `<div class="gp-chips">${GP_BUTTONS.map((b) => gpChip('gp-step-btn', b, (s.buttons || []).includes(b))).join('')}</div>` +
+            `<div class="row gap wrap"><label class="gp-field">appui ms <input type="number" class="gp-step-hold" min="0" max="10000" value="${s.holdMs != null ? s.holdMs : 120}"/></label>` +
+            `<label class="gp-field">puis attendre ms <input type="number" class="gp-step-wait" min="0" max="30000" value="${s.waitMs != null ? s.waitMs : 0}"/></label>` +
+            `<button type="button" class="btn btn--ghost btn--mini gp-step-cap">Capturer</button></div></div>`;
+        body.innerHTML = `<div class="gp-steps">${gp.steps.map(stepHtml).join('')}</div><button type="button" class="btn btn--ghost btn--mini gp-step-add">+ étape</button>`;
+        const readSteps = () => {
+            gp.steps = [...body.querySelectorAll('.gp-step')].map((el) => ({
+                buttons: [...el.querySelectorAll('.gp-step-btn:checked')].map((x) => x.value),
+                holdMs: Math.max(0, Math.min(Number(el.querySelector('.gp-step-hold').value) || 0, 10000)),
+                waitMs: Math.max(0, Math.min(Number(el.querySelector('.gp-step-wait').value) || 0, 30000)),
+            }));
+        };
+        body.querySelectorAll('.gp-step').forEach((el) => {
+            const i = Number(el.dataset.i);
+            el.querySelectorAll('.gp-step-btn, .gp-step-hold, .gp-step-wait').forEach((inp) => (inp.onchange = readSteps));
+            el.querySelector('.gp-step-del').onclick = () => { readSteps(); gp.steps.splice(i, 1); renderGpBody(); };
+            el.querySelector('.gp-step-cap').onclick = (ev) => gpCaptureInto(ev.currentTarget, (tok) => {
+                const cb = el.querySelector(`.gp-step-btn[value="${tok}"]`); if (cb) cb.checked = true; readSteps();
+            });
+        });
+        body.querySelector('.gp-step-add').onclick = () => { readSteps(); gp.steps.push({ buttons: ['A'], holdMs: 120, waitMs: 0 }); renderGpBody(); };
+    } else if (mode === 'analog') {
+        const sliderRow = (k, label, min, max) => {
+            const v = gp.analog[k] != null ? gp.analog[k] : 0;
+            return `<label class="gp-slider">${label} <input type="range" class="gp-an" data-k="${k}" min="${min}" max="${max}" step="0.05" value="${v}"/><output class="gp-an-out" data-k="${k}">${v}</output></label>`;
+        };
+        body.innerHTML = `<div class="gp-analog">${sliderRow('lx', 'Stick G ←→', -1, 1)}${sliderRow('ly', 'Stick G ↑↓', -1, 1)}${sliderRow('rx', 'Stick D ←→', -1, 1)}${sliderRow('ry', 'Stick D ↑↓', -1, 1)}${sliderRow('lt', 'Gâchette ZL', 0, 1)}${sliderRow('rt', 'Gâchette ZR', 0, 1)}</div>`;
+        body.querySelectorAll('.gp-an').forEach((sl) => {
+            sl.oninput = (e) => {
+                const k = e.target.dataset.k; const val = Number(e.target.value);
+                gp.analog[k] = val;
+                const out = body.querySelector(`.gp-an-out[data-k="${k}"]`); if (out) out.textContent = String(val);
+            };
+        });
+    }
+}
+// Capture manette et applique via callback ; feedback visuel sur le bouton.
+async function gpCaptureInto(btn, apply) {
+    const old = btn.textContent; btn.textContent = 'Appuie…'; btn.disabled = true;
+    const tok = await captureGamepadToken(4000);
+    btn.textContent = old; btn.disabled = false;
+    if (tok) apply(tok);
+}
+// Construit l'effet manette depuis le mode actif + champs communs.
+function gpBuildEffect() {
+    const { mode, gp } = gpEdit;
+    const hold = Math.max(0, Math.min(Number($('gp-hold').value) || 0, 10000));
+    const repeat = Math.max(1, Math.min(Number($('gp-repeat').value) || 1, 20));
+    const repeatGapMs = Math.max(0, Math.min(Number($('gp-repeatgap').value) || 0, 30000));
+    const e = {};
+    if (mode === 'single') e.button = gp.button || 'A';
+    else if (mode === 'chord') e.buttons = gp.buttons.length ? gp.buttons : ['A'];
+    else if (mode === 'sequence') e.sequence = gp.sequence.length ? gp.sequence : ['A'];
+    else if (mode === 'random') {
+        // Un bouton au hasard parmi la sélection (min 2), éventuellement précédé d'un bouton fixe (lead).
+        e.randomFrom = gp.randomFrom.length >= 2 ? gp.randomFrom : ['A', 'B'];
+        if (gp.randLead) e.button = gp.randLead;
+    }
+    // randomFrom est édité par le mode « Aléatoire » : on ne le ré-injecte PAS ici
+    // (sinon bascule random -> Bouton impossible, et tirage dégénéré). On préserve
+    // juste gapMs (espacement de séquence, sans UI dédiée) pour ne pas le perdre.
+    if (mode === 'sequence' && typeof gp.gapMs === 'number') e.gapMs = gp.gapMs;
+    if (mode === 'timeline') {
+        // Une étape « attente seule » ne doit PAS sérialiser un chord vide (le
+        // validateur exige 1..8 boutons) : on n'émet `buttons` que s'il y en a.
+        e.steps = gp.steps.map((s) => {
+            const st = {};
+            if (s.buttons && s.buttons.length) { st.buttons = s.buttons; if (typeof s.holdMs === 'number') st.holdMs = s.holdMs; }
+            if (typeof s.waitMs === 'number' && s.waitMs > 0) st.waitMs = s.waitMs;
+            return st;
+        }).filter((st) => st.buttons || st.waitMs != null);
+        if (!e.steps.length) e.steps = [{ button: 'A', holdMs: hold }];
+    } else if (mode === 'analog') {
+        const a = {};
+        for (const k of ['lx', 'ly', 'rx', 'ry']) if (gp.analog[k]) a[k] = gp.analog[k];
+        for (const k of ['lt', 'rt']) if (gp.analog[k] > 0) a[k] = gp.analog[k];
+        e.analog = Object.keys(a).length ? a : { lt: 1 };
+    }
+    e.holdMs = hold;
+    if (repeat > 1) e.repeat = repeat;
+    if (repeatGapMs > 0) e.repeatGapMs = repeatGapMs;
+    return e;
+}
+document.querySelectorAll('#gp-modal .seg__btn').forEach((b) => {
+    b.onclick = () => {
+        if (!gpEdit) return;
+        document.querySelectorAll('#gp-modal .seg__btn').forEach((x) => x.classList.toggle('is-active', x === b));
+        gpEdit.mode = b.dataset.mode;
+        renderGpBody();
+    };
+});
+const gpCloseModal = () => { cancelTestCountdown(); $('gp-modal').classList.add('hidden'); };
+$('gp-close').onclick = gpCloseModal;
+$('gp-cancel').onclick = gpCloseModal;
+$('gp-modal').onclick = (e) => { if (e.target.id === 'gp-modal') gpCloseModal(); };
+$('gp-save').onclick = () => {
+    if (!gpEdit) return;
+    const built = gpBuildEffect();
+    $('gp-modal').classList.add('hidden');
+    gpEdit.onSave(built);
+};
+$('gp-test').onclick = (ev) => {
+    const built = gpBuildEffect();
+    runEffectTest({
+        resEl: $('gp-test-res'),
+        cls: 'cx-test-res',
+        needsFocus: true,
+        btn: ev.currentTarget,
+        fire: () => api.engine.testRule({ id: 'gp-test', on: { type: 'gift' }, effect: { type: 'gamepad', ...built } }, labCurrentSlug),
+    });
+};
+
+// ══════════════ ÉDITEUR CLAVIER (modale) ══════════════
+// Une touche / Combo (ensemble) / Suite (enchaînement + rythme). Émet la key-spec
+// ('e' | 'a+b' | 'up,up,down,down') + gapMs (délai entre touches d'une suite).
+let kbEdit = null; // { mode, single, combo, seq, onSave }
+const KB_MODE_HELP = {
+    single: 'Une seule touche (ex. « e » pour interagir). « Capturer » : appuie, ça s\'écrit.',
+    combo: 'Plusieurs touches EN MÊME TEMPS (ex. Ctrl + Espace). Capture : appuie sur toutes ensemble.',
+    sequence: 'Des touches L\'UNE APRÈS L\'AUTRE (ex. ↑ ↑ ↓ ↓ ← →). Ajoute-les puis règle le RYTHME (délai entre chaque).',
+};
+function kbParse(effect) {
+    const raw = String(effect.keys || '').trim();
+    const backend = effect.backend || 'auto';
+    const gapMs = typeof effect.gapMs === 'number' ? effect.gapMs : 40;
+    const steps = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    const holdOf = (h) => (h ? Math.max(0, Math.min(Number(h) || 0, 2000)) : null);
+    if (steps.length > 1) {
+        return { mode: 'sequence', single: { key: '', hold: null }, combo: { keys: '', hold: null }, seq: { steps, gapMs }, backend };
+    }
+    const [combo, hold] = (steps[0] || '').split(':');
+    const parts = (combo || '').split('+').map((s) => s.trim()).filter(Boolean);
+    if (parts.length > 1) return { mode: 'combo', single: { key: parts[0] || '', hold: holdOf(hold) }, combo: { keys: parts.join('+'), hold: holdOf(hold) }, seq: { steps: [], gapMs }, backend };
+    return { mode: 'single', single: { key: parts[0] || '', hold: holdOf(hold) }, combo: { keys: '', hold: null }, seq: { steps: parts.length ? [parts[0]] : [], gapMs }, backend };
+}
+function openKeyboardEditor(effect, onSave) {
+    cancelTestCountdown(); // tue un décompte orphelin d'une session d'édition précédente
+    kbStopSeqRecording();
+    const s = kbParse(effect);
+    kbEdit = { ...s, onSave, recording: false };
+    if (kbEdit.mode === 'sequence' && !kbEdit.seq.steps.length) kbEdit.seq.steps = ['up'];
+    $('kb-backend').value = s.backend === 'interception' ? 'interception' : 'auto';
+    $('kb-test-res').textContent = '';
+    document.querySelectorAll('#kb-modal .seg__btn').forEach((b) => b.classList.toggle('is-active', b.dataset.kbmode === kbEdit.mode));
+    renderKbBody();
+    $('kb-modal').classList.remove('hidden');
+}
+function renderKbBody() {
+    const { mode } = kbEdit;
+    $('kb-mode-help').textContent = KB_MODE_HELP[mode] || '';
+    const body = $('kb-body');
+    if (mode === 'single') {
+        body.innerHTML = `<div class="gp-row">Touche <input type="text" class="kb-single" value="${esc(kbEdit.single.key)}" placeholder="ex. e, space, up" style="width:130px;margin:0"/> `
+            + `<button type="button" class="btn btn--ghost btn--mini kb-cap-single">Capturer</button> `
+            + `<label class="gp-field">maintenir ms <input type="number" class="kb-hold" min="0" max="2000" value="${kbEdit.single.hold != null ? kbEdit.single.hold : ''}" placeholder="0"/></label></div>`;
+        body.querySelector('.kb-single').oninput = (e) => { kbEdit.single.key = e.target.value.trim(); };
+        body.querySelector('.kb-hold').oninput = (e) => { kbEdit.single.hold = Number(e.target.value) || null; };
+        body.querySelector('.kb-cap-single').onclick = (ev) => kbCaptureInto(ev.currentTarget, (spec) => { kbEdit.single.key = spec; body.querySelector('.kb-single').value = spec; });
+    } else if (mode === 'combo') {
+        body.innerHTML = `<div class="gp-row">Combo <input type="text" class="kb-combo" value="${esc(kbEdit.combo.keys)}" placeholder="ex. ctrl+space" style="flex:1;min-width:160px;margin:0"/> `
+            + `<button type="button" class="btn btn--ghost btn--mini kb-cap-combo">Capturer combo</button> `
+            + `<label class="gp-field">maintenir ms <input type="number" class="kb-hold" min="0" max="2000" value="${kbEdit.combo.hold != null ? kbEdit.combo.hold : ''}" placeholder="0"/></label></div>`;
+        body.querySelector('.kb-combo').oninput = (e) => { kbEdit.combo.keys = e.target.value.trim(); };
+        body.querySelector('.kb-hold').oninput = (e) => { kbEdit.combo.hold = Number(e.target.value) || null; };
+        body.querySelector('.kb-cap-combo').onclick = (ev) => kbCaptureInto(ev.currentTarget, (spec) => { kbEdit.combo.keys = spec; body.querySelector('.kb-combo').value = spec; });
+    } else { // sequence
+        const rec = kbEdit.recording;
+        const items = kbEdit.seq.steps.map((k, i) => `<div class="gp-seq-item" data-i="${i}"><span class="gp-seq-n">${i + 1}.</span> <input type="text" class="kb-seq-in" value="${esc(k)}" placeholder="touche" style="flex:1;margin:0"/> <button type="button" class="btn btn--ghost btn--mini kb-seq-cap">Capturer</button> <button type="button" class="btn btn--ghost btn--mini kb-seq-del">✕</button></div>`).join('')
+            || '<div class="muted" style="padding:6px 2px">Clique « Enregistrer » puis tape tes touches (↑ ↑ ↓ ↓ ← →), ou ajoute-les à la main.</div>';
+        const recBtn = rec
+            ? '<button type="button" class="btn btn--panic btn--mini kb-rec">⏹ Arrêter</button> <span class="kb-rec-live">● Enregistrement… appuie sur tes touches (Échap pour finir)</span>'
+            : '<button type="button" class="btn btn--primary btn--mini kb-rec">🎬 Enregistrer une suite</button> <span class="muted">Tape tes touches l\'une après l\'autre, elles se listent.</span>';
+        body.innerHTML = `<div class="gp-row" style="margin-bottom:8px">${recBtn}</div>`
+            + `<div class="gp-seq">${items}</div>`
+            + `<div class="row gap" style="margin:8px 0"><button type="button" class="btn btn--ghost btn--mini kb-seq-add">+ étape</button><button type="button" class="btn btn--ghost btn--mini kb-seq-addcap">Capturer et ajouter</button></div>`
+            + `<label class="gp-field">Délai entre chaque touche (ms) <input type="number" id="kb-gap" min="0" max="5000" step="10" value="${kbEdit.seq.gapMs != null ? kbEdit.seq.gapMs : 40}"/></label>`
+            + `<div class="hint">Augmente le délai si le jeu « rate » des touches jouées trop vite (ex. 120 ms pour un rythme net). 0 = aucune pause.</div>`;
+        body.querySelector('.kb-rec').onclick = () => {
+            if (kbEdit.recording) kbStopSeqRecording();
+            else {
+                kbEdit.recording = true;
+                kbEdit.seq.steps = []; // suite fraîche
+                kbStartSeqRecording((tok) => { kbEdit.seq.steps.push(tok); renderKbBody(); }, () => { kbStopSeqRecording(); renderKbBody(); });
+            }
+            renderKbBody();
+        };
+        // Synchronise le délai à CHAQUE frappe (sinon ajouter/retirer une étape recrée
+        // le champ depuis une valeur périmée). 0 est une valeur VALIDE (aucune pause).
+        body.querySelector('#kb-gap').oninput = (e) => {
+            const v = e.target.value;
+            kbEdit.seq.gapMs = v === '' ? 40 : Math.max(0, Math.min(Number(v) || 0, 5000));
+        };
+        body.querySelectorAll('.gp-seq-item').forEach((it) => {
+            const i = Number(it.dataset.i);
+            it.querySelector('.kb-seq-in').oninput = (e) => { kbEdit.seq.steps[i] = e.target.value.trim(); };
+            it.querySelector('.kb-seq-del').onclick = () => { kbEdit.seq.steps.splice(i, 1); renderKbBody(); };
+            it.querySelector('.kb-seq-cap').onclick = (ev) => kbCaptureInto(ev.currentTarget, (spec) => { kbEdit.seq.steps[i] = spec; it.querySelector('.kb-seq-in').value = spec; });
+        });
+        body.querySelector('.kb-seq-add').onclick = () => { kbEdit.seq.steps.push('up'); renderKbBody(); };
+        body.querySelector('.kb-seq-addcap').onclick = (ev) => kbCaptureInto(ev.currentTarget, (spec) => { kbEdit.seq.steps.push(spec); renderKbBody(); });
+    }
+}
+// Enregistrement d'une SUITE : chaque appui de touche s'ajoute comme une étape.
+let kbRecStop = null;
+function kbStartSeqRecording(onKey, onStop) {
+    kbStopSeqRecording();
+    const onDown = (e) => {
+        if (e.repeat) return;
+        e.preventDefault();
+        if (e.key === 'Escape') { if (onStop) onStop(); return; }
+        if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return; // ignore les modificateurs seuls
+        onKey(KB_TOKEN(e));
+    };
+    window.addEventListener('keydown', onDown, true);
+    kbRecStop = () => { window.removeEventListener('keydown', onDown, true); kbRecStop = null; };
+}
+function kbStopSeqRecording() {
+    if (kbRecStop) kbRecStop();
+    if (kbEdit) kbEdit.recording = false;
+}
+async function kbCaptureInto(btn, apply) {
+    const old = btn.textContent; btn.textContent = 'Appuie…'; btn.disabled = true;
+    const spec = await captureKeyboardChord(6000);
+    btn.textContent = old; btn.disabled = false;
+    if (spec) apply(spec);
+}
+function kbBuildEffect() {
+    const { mode, single, combo, seq } = kbEdit;
+    const backend = $('kb-backend').value;
+    const holdSuffix = (h) => (h && h > 0 ? ':' + Math.round(Math.min(h, 2000)) : '');
+    const out = { keys: '' };
+    if (backend === 'interception') out.backend = 'interception';
+    if (mode === 'single') out.keys = (single.key || 'space') + holdSuffix(single.hold);
+    else if (mode === 'combo') out.keys = (combo.keys || 'ctrl+space') + holdSuffix(combo.hold);
+    else {
+        const steps = seq.steps.map((s) => s.trim()).filter(Boolean);
+        out.keys = (steps.length ? steps : ['up', 'down']).join(',');
+        // gapMs est synchronisé en direct (oninput #kb-gap). 0 est une valeur VALIDE
+        // (aucune pause) : on l'émet dès qu'il diffère du défaut 40.
+        const g = typeof seq.gapMs === 'number' ? Math.max(0, Math.min(seq.gapMs, 5000)) : 40;
+        if (g !== 40) out.gapMs = g;
+    }
+    return out;
+}
+document.querySelectorAll('#kb-modal .seg__btn').forEach((b) => {
+    b.onclick = () => {
+        if (!kbEdit) return;
+        kbStopSeqRecording(); // ne pas laisser un enregistrement actif en changeant de mode
+        document.querySelectorAll('#kb-modal .seg__btn').forEach((x) => x.classList.toggle('is-active', x === b));
+        kbEdit.mode = b.dataset.kbmode;
+        if (kbEdit.mode === 'sequence' && !kbEdit.seq.steps.length) kbEdit.seq.steps = ['up'];
+        renderKbBody();
+    };
+});
+const kbCloseModal = () => { cancelTestCountdown(); kbStopSeqRecording(); $('kb-modal').classList.add('hidden'); };
+$('kb-close').onclick = kbCloseModal;
+$('kb-cancel').onclick = kbCloseModal;
+$('kb-modal').onclick = (e) => { if (e.target.id === 'kb-modal') kbCloseModal(); };
+$('kb-save').onclick = () => {
+    if (!kbEdit) return;
+    kbStopSeqRecording();
+    const built = kbBuildEffect();
+    $('kb-modal').classList.add('hidden');
+    kbEdit.onSave(built);
+};
+$('kb-test').onclick = (ev) => {
+    const built = kbBuildEffect();
+    runEffectTest({
+        resEl: $('kb-test-res'),
+        cls: 'cx-test-res',
+        needsFocus: true,
+        btn: ev.currentTarget,
+        fire: () => api.engine.testRule({ id: 'kb-test', on: { type: 'gift' }, effect: { type: 'keyboard', ...built } }, labCurrentSlug),
+    });
+};
+
 $('lab-add-rule').onclick = () => { labRules.push(newRule()); renderRules(); };
+setupLabMarkdownEditor();
+setupFeeSlider();
 $('lab-mode').onchange = () => {
     labJsonMode = $('lab-mode').checked;
     if (labJsonMode) {
@@ -1151,15 +2116,120 @@ function setLabMode(mode) {
 // Libellé vivant du curseur de commission (0 = gratuit, sinon N % des étoiles).
 function syncFeeLabel() {
     const v = Number($('lab-fee').value) || 0;
-    $('lab-fee').style.setProperty('--fill', (v / 15) * 100 + '%'); // remplissage 0 a 100
     $('lab-fee-val').innerHTML = v > 0 ? v + ' % des étoiles' : '0 % · gratuit';
+}
+// Curseur de commission CUSTOM : reflète la valeur (input caché #lab-fee) sur --pct.
+function renderFeeSlider() {
+    const val = Math.max(0, Math.min(Number($('lab-fee').value) || 0, 15));
+    const slider = $('lab-fee-slider');
+    if (slider) { slider.style.setProperty('--pct', (val / 15) * 100 + '%'); slider.setAttribute('aria-valuenow', String(val)); }
+}
+function setupFeeSlider() {
+    const slider = $('lab-fee-slider');
+    if (!slider) return;
+    const MAX = 15;
+    const setFromX = (clientX) => {
+        const r = slider.getBoundingClientRect();
+        const pct = r.width ? Math.max(0, Math.min(1, (clientX - r.left) / r.width)) : 0;
+        $('lab-fee').value = String(Math.round(pct * MAX));
+        renderFeeSlider(); syncFeeLabel();
+    };
+    let dragging = false;
+    slider.addEventListener('pointerdown', (e) => { dragging = true; try { slider.setPointerCapture(e.pointerId); } catch { /* noop */ } setFromX(e.clientX); });
+    slider.addEventListener('pointermove', (e) => { if (dragging) setFromX(e.clientX); });
+    const end = (e) => { dragging = false; try { slider.releasePointerCapture(e.pointerId); } catch { /* noop */ } };
+    slider.addEventListener('pointerup', end);
+    slider.addEventListener('pointercancel', end);
+    slider.addEventListener('keydown', (e) => {
+        let v = Number($('lab-fee').value) || 0;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowUp') v = Math.min(MAX, v + 1);
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') v = Math.max(0, v - 1);
+        else if (e.key === 'Home') v = 0;
+        else if (e.key === 'End') v = MAX;
+        else return;
+        e.preventDefault(); $('lab-fee').value = String(v); renderFeeSlider(); syncFeeLabel();
+    });
+}
+// ── Éditeur Markdown des Instructions (Lab) : onglets Éditer/Aperçu + compteurs ──
+function syncLabCounters() {
+    const d = $('lab-desc-count'); if (d) d.textContent = String(($('lab-desc').value || '').length);
+    const i = $('lab-instr-count'); if (i) i.textContent = String(($('lab-instructions').value || '').length);
+}
+function showLabInstrTab(which) {
+    const editing = which !== 'preview';
+    $('lab-instr-edit-tab').classList.toggle('is-active', editing);
+    $('lab-instr-preview-tab').classList.toggle('is-active', !editing);
+    $('lab-instructions').classList.toggle('hidden', !editing);
+    $('lab-instr-toolbar').classList.toggle('hidden', !editing); // outils cachés en Aperçu
+    const prev = $('lab-instr-preview');
+    prev.classList.toggle('hidden', editing);
+    if (!editing) renderMarkdownInto(prev, $('lab-instructions').value); // rendu SÛR (même moteur)
+}
+// Mini-WYSIWYG : insère du Markdown au niveau de la sélection du textarea (aucune
+// lib externe — la CSP bloquerait un CDN de toute façon). Opère sur #lab-instructions.
+function applyMdTool(action) {
+    const ta = $('lab-instructions');
+    if (!ta) return;
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const sel = ta.value.slice(s, e);
+    const done = () => { ta.focus(); ta.dispatchEvent(new Event('input')); };
+    const wrap = (b, a, ph) => {
+        const inner = sel || ph;
+        ta.setRangeText(b + inner + a, s, e, 'end');
+        if (!sel) { ta.selectionStart = s + b.length; ta.selectionEnd = s + b.length + inner.length; }
+        done();
+    };
+    const prefixLines = (pfx) => {
+        // Couvre les LIGNES ENTIÈRES touchées (début de la 1re -> fin de la dernière),
+        // pas seulement jusqu'au curseur : sinon on écrase le texte / on double le marqueur.
+        const ls = ta.value.lastIndexOf('\n', s - 1) + 1;
+        const nl = ta.value.indexOf('\n', e);
+        const le = nl === -1 ? ta.value.length : nl;
+        const block = ta.value.slice(ls, le); // peut être '' (ligne vide) -> insère juste le préfixe
+        const out = block.split('\n').map((l) => (l.startsWith(pfx) ? l : pfx + l)).join('\n');
+        ta.setRangeText(out, ls, le, 'end');
+        done();
+    };
+    switch (action) {
+        case 'bold': return wrap('**', '**', 'texte en gras');
+        case 'italic': return wrap('*', '*', 'texte en italique');
+        case 'code': return wrap('`', '`', 'code');
+        case 'link': return wrap('[', '](https://)', 'texte du lien');
+        case 'title': return prefixLines('## ');
+        case 'list': return prefixLines('- ');
+        case 'codeblock': {
+            const inner = sel || 'ton code ici';
+            const pre = (s > 0 && ta.value[s - 1] !== '\n') ? '\n' : '';
+            ta.setRangeText(pre + '```\n' + inner + '\n```\n', s, e, 'end');
+            return done();
+        }
+        default: return undefined;
+    }
+}
+function setupLabMarkdownEditor() {
+    $('lab-instr-edit-tab').onclick = () => showLabInstrTab('edit');
+    $('lab-instr-preview-tab').onclick = () => showLabInstrTab('preview');
+    $('lab-desc').addEventListener('input', syncLabCounters);
+    $('lab-instructions').addEventListener('input', syncLabCounters);
+    // Barre d'outils : chaque bouton insère le Markdown correspondant.
+    $('lab-instr-toolbar').querySelectorAll('.md-tool').forEach((b) => {
+        b.onclick = () => applyMdTool(b.dataset.md);
+    });
+    // Raccourcis clavier dans l'éditeur (gras / italique).
+    $('lab-instructions').addEventListener('keydown', (ev) => {
+        if (!(ev.ctrlKey || ev.metaKey)) return;
+        const k = ev.key.toLowerCase();
+        if (k === 'b') { ev.preventDefault(); applyMdTool('bold'); }
+        else if (k === 'i') { ev.preventDefault(); applyMdTool('italic'); }
+    });
 }
 function enterCreateMode() {
     labCurrentSlug = null; labLatestVersion = null; labTags = [];
     labRules = [newRule()];
     $('lab-slug').value = ''; $('lab-title').value = ''; $('lab-game').value = '';
     $('lab-desc').value = ''; $('lab-fee').value = 0;
-    $('lab-fee').oninput = syncFeeLabel; syncFeeLabel();
+    $('lab-instructions').value = ''; showLabInstrTab('edit'); syncLabCounters();
+    renderFeeSlider(); syncFeeLabel();
     $('lab-banner-preview').style.backgroundImage = '';
     $('lab-versions').innerHTML = '';
     $('lab-msg').textContent = ''; $('lab-msg2').textContent = '';
@@ -1178,7 +2248,8 @@ async function enterEditMode(slug) {
     labTags = Array.isArray(b.tags) ? b.tags.slice() : [];
     $('lab-slug').value = b.slug; $('lab-title').value = b.title || ''; $('lab-game').value = b.game || '';
     $('lab-desc').value = b.description || ''; $('lab-fee').value = b.creatorFeePercent || 0;
-    $('lab-fee').oninput = syncFeeLabel; syncFeeLabel();
+    $('lab-instructions').value = b.instructions || ''; showLabInstrTab('edit'); syncLabCounters();
+    renderFeeSlider(); syncFeeLabel();
     $('lab-banner-preview').style.backgroundImage = b.bannerUrl ? `url('${b.bannerUrl}')` : '';
     // Historique des versions (numéro + statut de modération + date + changelog).
     $('lab-versions').innerHTML = versions.length
@@ -1210,6 +2281,7 @@ async function loadLab() {
     if (pendingEditSlug) {
         $('lab-mode-title').textContent = 'Chargement…';
         $('lab-slug').value = ''; $('lab-title').value = ''; $('lab-desc').value = '';
+        $('lab-instructions').value = ''; showLabInstrTab('edit'); syncLabCounters();
         $('lab-versions').innerHTML = ''; labRules = [];
         if (!labJsonMode) renderRules();
     }
@@ -1248,7 +2320,7 @@ $('lab-save-meta').onclick = async () => {
     const btn = $('lab-save-meta');
     setBtnBusy(btn, true, 'Enregistrement…');
     try {
-        await api.lab.update(labCurrentSlug, { title: $('lab-title').value.trim(), description: $('lab-desc').value.trim(), game: $('lab-game').value.trim() || '', tags: labTags, creatorFeePercent: Math.max(0, Math.min(Number($('lab-fee').value) || 0, 15)) });
+        await api.lab.update(labCurrentSlug, { title: $('lab-title').value.trim(), description: $('lab-desc').value.trim(), instructions: $('lab-instructions').value.trim(), game: $('lab-game').value.trim() || '', tags: labTags, creatorFeePercent: Math.max(0, Math.min(Number($('lab-fee').value) || 0, 15)) });
         showToast('lab-save', { kind: 'ok', title: 'Infos enregistrées', msg: 'Titre, description et réglages du pack sont à jour.' });
     } catch (e) {
         showToast('lab-save', { kind: 'error', title: 'Échec de l’enregistrement', msg: friendlyError(e, "Les infos n'ont pas pu être enregistrées.") });
@@ -1257,6 +2329,23 @@ $('lab-save-meta').onclick = async () => {
 /** true s'il reste un « cadeau personnalisé » sans icône (uploadée OU en mémoire). */
 function missingCustomIcon() {
     return labRules.some((r) => r.event.type === 'gift-custom' && !r.event.iconUrl && !r.event._iconFile);
+}
+/** Première règle dont le déclencheur « tous les N » (ou contient/palier) est vide :
+ *  sinon la règle part MORTE (le routeur l'ignore) ou le serveur refuse la version. */
+function incompleteTrigger() {
+    return labRules.find((r) => {
+        const t = r.event.type;
+        if (t === 'viewer') return r.event.every == null;
+        if (t === 'comment') {
+            const cm = r.event._cmode || (r.event.every != null ? 'every' : 'contains');
+            return cm === 'every' ? r.event.every == null : !(r.event.contains && r.event.contains.trim());
+        }
+        if (t === 'hearts') {
+            const hm = r.event._hmode || (r.event.every != null ? 'every' : 'milestone');
+            return hm === 'every' ? r.event.every == null : r.event.milestone == null;
+        }
+        return false;
+    });
 }
 /** Upload les icônes gardées EN MÉMOIRE (une fois le pack créé). */
 async function uploadHeldIcons() {
@@ -1307,13 +2396,23 @@ $('lab-submit-btn').onclick = async () => {
         return showToast('lab-save', { kind: 'warn', title: 'Connecteur manquant', msg: 'Chaque interaction réseau doit avoir un connecteur — choisis-en un ou crée-en un (+ Nouveau…).' });
     if (!labJsonMode && missingCustomIcon())
         return showToast('lab-save', { kind: 'warn', title: 'Icône manquante', msg: 'Chaque « cadeau personnalisé » doit avoir une icône avant l’enregistrement.' });
+    if (!labJsonMode) {
+        const bad = incompleteTrigger();
+        if (bad) {
+            const t = bad.event.type;
+            const msg = t === 'viewer' ? 'Indique un nombre pour « tous les N nouveaux spectateurs ».'
+                : t === 'comment' ? 'Un message chat doit avoir un mot-clé, ou un nombre pour « tous les N messages ».'
+                    : 'Un déclencheur Likes doit avoir un palier, ou un nombre pour « tous les N likes ».';
+            return showToast('lab-save', { kind: 'warn', title: 'Déclencheur incomplet', msg });
+        }
+    }
 
     if (labMode === 'create') {
         const slug = $('lab-slug').value.trim(), title = $('lab-title').value.trim();
         if (!slug || !title) return showToast('lab-save', { kind: 'warn', title: 'Champs requis', msg: 'Le slug et le titre sont obligatoires.' });
         setBtnBusy(btn, true, 'Création…');
         try {
-            await api.lab.create({ slug, title, description: $('lab-desc').value.trim() || undefined, game: $('lab-game').value.trim() || undefined, tags: labTags, creatorFeePercent: Math.max(0, Math.min(Number($('lab-fee').value) || 0, 15)) });
+            await api.lab.create({ slug, title, description: $('lab-desc').value.trim() || undefined, instructions: $('lab-instructions').value.trim() || undefined, game: $('lab-game').value.trim() || undefined, tags: labTags, creatorFeePercent: Math.max(0, Math.min(Number($('lab-fee').value) || 0, 15)) });
             labCurrentSlug = slug; labLatestVersion = null;
             syncLabBindings(); // enregistre les liaisons rôle->connecteur (slug désormais connu)
             await uploadHeldIcons(); // pose les icônes gardées en mémoire
@@ -1361,32 +2460,59 @@ function growthChip(g) {
 }
 
 // ── Mes bundles (cliquables -> édition dans le Lab) ──
+const MINE_PAGE = 24;
+let mineAll = [], mineFiltered = [], mineRendered = 0, mineQuery = '', mineSearchTimer = null;
+
+function buildMineCard(b) {
+    const card = document.createElement('div');
+    card.className = 'bundle-card';
+    const banner = b.bannerUrl ? ` style="background-image:url('${esc(b.bannerUrl)}')"` : '';
+    const ver = b.version ? `v${esc(b.version)}${b.versionDate ? ' · ' + esc(fmtDate(b.versionDate)) : ''}` : 'aucune version publiée';
+    card.innerHTML = `
+        <div class="bundle-card__banner"${banner}></div>
+        <div class="bundle-card__body">
+            <div class="row between"><h3>${esc(b.title || b.slug)}</h3><span class="chips">${Number(b.creatorFeePercent) > 0 ? `<span class="badge badge--fee">${Number(b.creatorFeePercent)}% commission</span>` : ''}<span class="badge badge--off">${esc(b.visibility)}</span></span></div>
+            <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
+            <div class="muted small">${ver}${b.official ? ' · officiel' : ''}</div>
+            <div class="mine-earn"><span>Généré&nbsp;: <b>${Number(b.earnedStars || 0)}</b>&nbsp;⭐</span><span>Gagné&nbsp;: <b>${Number(b.earnedCreatorStars || 0)}</b>&nbsp;⭐</span>${growthChip(b.growthPct)}</div>
+            <div class="row gap wrap mine-foot">
+                <button class="btn btn--ghost stats">Voir les stats</button>
+                <button class="btn btn--primary edit">Éditer</button>
+            </div>
+        </div>`;
+    card.querySelector('.edit').onclick = () => { pendingEditSlug = b.slug; switchView('lab'); };
+    card.querySelector('.stats').onclick = () => openStats(b.slug, b.title || b.slug);
+    return card;
+}
 async function loadMyBundles() {
-    const mine = (await api.lab.myBundles()) || [];
+    mineAll = (await api.lab.myBundles()) || [];
+    renderMine();
+}
+// Recherche (client) + rendu par CHUNKS (scroll infini) : prêt pour un créateur qui
+// publie beaucoup de bundles.
+function renderMine() {
     const box = $('mine-list');
-    box.innerHTML = '';
-    if (!mine.length) { box.innerHTML = '<p class="muted">Aucun bundle créé. Va dans le Lab pour en créer un.</p>'; return; }
-    mine.forEach((b) => {
-        const card = document.createElement('div');
-        card.className = 'bundle-card';
-        const banner = b.bannerUrl ? ` style="background-image:url('${esc(b.bannerUrl)}')"` : '';
-        const ver = b.version ? `v${esc(b.version)}${b.versionDate ? ' · ' + esc(fmtDate(b.versionDate)) : ''}` : 'aucune version publiée';
-        card.innerHTML = `
-            <div class="bundle-card__banner"${banner}></div>
-            <div class="bundle-card__body">
-                <div class="row between"><h3>${esc(b.title || b.slug)}</h3><span class="chips">${Number(b.creatorFeePercent) > 0 ? `<span class="badge badge--fee">${Number(b.creatorFeePercent)}% commission</span>` : ''}<span class="badge badge--off">${esc(b.visibility)}</span></span></div>
-                <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
-                <div class="muted small">${ver}${b.official ? ' · officiel' : ''}</div>
-                <div class="mine-earn"><span>Généré&nbsp;: <b>${Number(b.earnedStars || 0)}</b>&nbsp;⭐</span><span>Gagné&nbsp;: <b>${Number(b.earnedCreatorStars || 0)}</b>&nbsp;⭐</span>${growthChip(b.growthPct)}</div>
-                <div class="row gap wrap mine-foot">
-                    <button class="btn btn--ghost stats">Voir les stats</button>
-                    <button class="btn btn--primary edit">Éditer</button>
-                </div>
-            </div>`;
-        card.querySelector('.edit').onclick = () => { pendingEditSlug = b.slug; switchView('lab'); };
-        card.querySelector('.stats').onclick = () => openStats(b.slug, b.title || b.slug);
-        box.appendChild(card);
-    });
+    const q = mineQuery.toLowerCase();
+    mineFiltered = q ? mineAll.filter((b) => `${b.title || ''} ${b.slug || ''}`.toLowerCase().includes(q)) : mineAll;
+    mineRendered = 0;
+    box.innerHTML = ''; $('mine-more').textContent = '';
+    if (!mineFiltered.length) {
+        box.innerHTML = mineAll.length
+            ? emptyStateHtml('🔎', 'Aucun résultat', `Aucun de tes bundles ne correspond à « ${mineQuery} ».`, null)
+            : emptyStateHtml('✨', 'Crée ton premier pack', 'Dans le Lab, mappe des cadeaux, messages, likes ou partages de ton live sur des actions réelles : commandes Minecraft (RCON), scènes OBS, manette, domotique…', 'Ouvrir le Lab', 'empty-cta-lab');
+        wireEmptyCtas(box);
+        return;
+    }
+    renderMoreMine();
+}
+function renderMoreMine() {
+    const box = $('mine-list');
+    const next = mineFiltered.slice(mineRendered, mineRendered + MINE_PAGE);
+    next.forEach((b) => box.appendChild(buildMineCard(b)));
+    mineRendered += next.length;
+    // Auto-remplissage : si le chunk ne crée pas de barre de défilement, on continue
+    // (sinon, sur grand écran, les bundles au-delà du 1er chunk resteraient invisibles).
+    if (mineRendered < mineFiltered.length) maybeLoadMore();
 }
 
 // ── Settings ──
