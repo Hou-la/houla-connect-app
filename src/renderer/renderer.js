@@ -752,6 +752,50 @@ async function installBundle(slug, btn) {
         await loadStore(); // rafraîchit l'état installé/mise à jour des cartes
     } catch { if (btn) btn.textContent = 'Échec'; }
 }
+// Modale de CHOIX générique : renvoie la clé du bouton cliqué (ou null si fermée).
+function showChoice({ title, msg, choices }) {
+    return new Promise((resolve) => {
+        const modal = $('choice-modal');
+        $('choice-title').textContent = title || '';
+        $('choice-msg').textContent = msg || '';
+        const actions = $('choice-actions');
+        actions.innerHTML = '';
+        let done = false;
+        const finish = (key) => { if (done) return; done = true; modal.classList.add('hidden'); modal.onclick = null; resolve(key); };
+        (choices || []).forEach((c) => {
+            const b = document.createElement('button');
+            b.className = 'btn ' + (c.kind === 'primary' ? 'btn--primary' : 'btn--ghost');
+            b.textContent = c.label;
+            b.onclick = () => finish(c.key);
+            actions.appendChild(b);
+        });
+        modal.onclick = (e) => { if (e.target.id === 'choice-modal') finish(null); };
+        modal.classList.remove('hidden');
+    });
+}
+// Mise à jour d'un pack DÉJÀ personnalisé : on demande quoi faire des réglages locaux
+// (interactions désactivées, cooldowns) avant d'écraser par la version du créateur.
+async function updateBundleFlow(slug, btn) {
+    let customized = false;
+    try {
+        const cx = await api.customize.get(slug);
+        customized = ((cx && cx.rules) || []).some((r) => r.enabled === false || r.cooldownMs != null);
+    } catch { /* aperçu indispo -> on met à jour normalement */ }
+    if (!customized) return installBundle(slug, btn);
+    const choice = await showChoice({
+        title: 'Tu as personnalisé ce pack',
+        msg: 'Une mise à jour du créateur est disponible. Que faire de TES réglages (interactions désactivées, cooldowns) ?',
+        choices: [
+            { key: 'merge', label: 'Garder mes réglages', kind: 'primary' },
+            { key: 'overwrite', label: 'Repartir des réglages du créateur' },
+            { key: 'cancel', label: 'Annuler' },
+        ],
+    });
+    if (!choice || choice === 'cancel') return;
+    // « Écraser » = on vide l'overlay local avant d'installer ; « Garder » = on le laisse.
+    if (choice === 'overwrite') { try { await api.customize.save(slug, {}); } catch { /* best-effort */ } }
+    return installBundle(slug, btn);
+}
 /** À l'install : lie chaque connecteur requis (auto sur le 1er du type, sinon création). */
 async function bindRequiredConnectors(slug, required) {
     if (!required.length) return;
@@ -840,7 +884,8 @@ function buildStoreCard(b, inst) {
                 ${uninstallBtn}
             </div>
         </div>`;
-    if (!inst || updateAvail) card.querySelector('.install').onclick = (e) => installBundle(b.slug, e.target);
+    if (!inst) card.querySelector('.install').onclick = (e) => installBundle(b.slug, e.target);
+    else if (updateAvail) card.querySelector('.install').onclick = (e) => updateBundleFlow(b.slug, e.target);
     if (inst) { const cb = card.querySelector('.customize'); if (cb) cb.onclick = () => openCustomize(b.slug, b.title || b.slug); }
     card.querySelector('.more').onclick = () => openModal(b, !!inst);
     if (inst) {

@@ -248,6 +248,9 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
 .modal__banner { flex: 0 0 auto; aspect-ratio: 16 / 9; background: #14141f linear-gradient(135deg, #1e2740, #33244a); background-size: contain;
     background-repeat: no-repeat; background-position: center; }
 .modal__body { flex: 1 1 auto; overflow-y: auto; padding: 22px; }
+.modal__box--sm { width: 460px; }
+.choice-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+.choice-actions .btn { flex: 0 0 auto; }
 /* Pied fixe : le(s) bouton(s) d'installation restent visibles quand le corps défile. */
 .modal__footer { flex: 0 0 auto; padding: 14px 22px; border-top: 1px solid var(--border); background: var(--bg-2); }
 .modal__footer .btn { width: 100%; }

@@ -10,6 +10,10 @@
     const unsub = () => noop;
     const calls = (window.__E2E_CALLS__ = {});
     const rec = (name, fn) => (...args) => { (calls[name] = calls[name] || []).push(args); return fn(...args); };
+    // État d'installation MUTABLE : install(slug) ajoute le pack, uninstall le retire ->
+    // les cartes du Store reflètent la transition (Installer <-> Installé ✓) en E2E.
+    const installedState = (cfg.installed || []).slice();
+    const verOf = (slug) => ((cfg.store || []).find((p) => p.slug === slug) || {}).version || '1.0.0';
 
     window.houlaConnect = {
         login: () => R(), logout: () => R(),
@@ -25,12 +29,23 @@
         gifts: { catalog: () => R(cfg.gifts || []) },
         store: {
             list: () => R(cfg.store || []),
-            preview: (slug) => R({ bundle: { slug } }),
-            install: rec('install', () => (cfg.installError ? rej(cfg.installError) : R({ ok: true, requiredConnectors: [] }))),
-            installed: () => R(cfg.installed || []),
-            uninstall: rec('uninstall', () => R({ ok: true })),
+            preview: (slug) => R({ bundle: (cfg.store || []).find((p) => p.slug === slug) || { slug } }),
+            install: rec('install', (slug) => {
+                if (cfg.installError) return rej(cfg.installError);
+                if (!installedState.find((x) => x.slug === slug)) installedState.push({ slug, version: verOf(slug) });
+                return R({ ok: true, requiredConnectors: [] });
+            }),
+            installed: () => R(installedState),
+            uninstall: rec('uninstall', (slug) => {
+                const i = installedState.findIndex((x) => x.slug === slug);
+                if (i >= 0) installedState.splice(i, 1);
+                return R({ ok: true });
+            }),
         },
-        customize: { get: () => R(cfg.customize || { slug: 's', version: '1.0.0', rules: [], instructions: null }), save: () => R({ ok: true }) },
+        customize: {
+            get: () => R(cfg.customize || { slug: 's', version: '1.0.0', rules: [], instructions: null }),
+            save: rec('customizeSave', () => R({ ok: true })),
+        },
         lab: {
             create: rec('create', () => (cfg.createError ? rej(cfg.createError) : R({ ok: true }))),
             update: () => R({ ok: true }),
