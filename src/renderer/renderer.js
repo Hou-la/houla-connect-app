@@ -786,6 +786,20 @@ function wireEmptyCtas(scope) {
 }
 
 /** Une carte de pack (Store ou vue Installés). `inst` = entrée installée (ou undefined). */
+// ── Chargement (spinner centré / squelettes) — voir styles.css .loading/.skeleton-* ──
+function loadingHtml(text) {
+    return `<div class="loading"><span class="spinner"></span><span>${esc(text || 'Chargement…')}</span></div>`;
+}
+function skeletonCardsHtml(n) {
+    const one = '<div class="skeleton-card" aria-hidden="true"><div class="skeleton-card__banner"></div>'
+        + '<div class="skeleton-card__body"><div class="skeleton-line sk-60"></div>'
+        + '<div class="skeleton-line sk-40"></div><div class="skeleton-line sk-80"></div></div></div>';
+    return one.repeat(Math.max(1, n || 6));
+}
+function skeletonRowsHtml(n) {
+    return '<div class="skeleton-row" aria-hidden="true"></div>'.repeat(Math.max(1, n || 5));
+}
+
 function buildStoreCard(b, inst) {
     const updateAvail = !!inst && !!b.version && !!inst.version && inst.version !== b.version;
     const card = document.createElement('div');
@@ -842,7 +856,7 @@ async function loadStore() {
     const gen = ++storeGen; // invalide tout chargement précédent en vol
     const el = $('store-list');
     storeOffset = 0; storeLoading = false; storeExhausted = false;
-    el.innerHTML = ''; $('store-more').textContent = '';
+    el.innerHTML = skeletonCardsHtml(8); $('store-more').textContent = ''; // squelettes le temps du fetch
     storeInstalledBy = new Map(((await api.store.installed()) || []).map((b) => [b.slug, b]));
     if (gen !== storeGen) return; // périmé pendant l'await
     if (storeFilter === 'installed') return renderInstalledStore(gen);
@@ -871,6 +885,7 @@ async function loadStorePage(gen) {
     // Périmé (un nouveau loadStore a démarré pendant la requête) : on jette CE résultat
     // sans toucher au DOM ni à l'offset — le chargement courant gère storeLoading.
     if (gen !== storeGen) return;
+    if (storeOffset === 0) el.innerHTML = ''; // 1re page : on retire les squelettes avant d'insérer
     items.forEach((b) => el.appendChild(buildStoreCard(b, storeInstalledBy.get(b.slug))));
     storeOffset += items.length;
     if (items.length < STORE_PAGE) storeExhausted = true;
@@ -882,7 +897,7 @@ async function loadStorePage(gen) {
 /** Vue « Installés » : packs locaux enrichis par aperçu (best-effort), sans paging. */
 async function renderInstalledStore(gen) {
     const el = $('store-list');
-    el.innerHTML = '<p class="muted">Chargement…</p>';
+    el.innerHTML = skeletonCardsHtml(6);
     const installed = [...storeInstalledBy.values()];
     let items = await Promise.all(installed.map(async (i) => {
         try { const p = await api.store.preview(i.slug); return (p && p.bundle) || { slug: i.slug }; }
@@ -949,7 +964,7 @@ async function openCustomize(slug, title) {
     $('cx-msg').textContent = '';
     $('cx-modal').dataset.slug = slug;
     const box = $('cx-rules');
-    box.innerHTML = '<p class="muted">Chargement…</p>';
+    box.innerHTML = skeletonRowsHtml(6);
     $('cx-modal').classList.remove('hidden');
     let data;
     try { data = await api.customize.get(slug); }
@@ -1006,7 +1021,7 @@ $('cx-save').onclick = async () => {
 // ── Stats créateur d'un pack (revenus + graphe) ──
 async function openStats(slug, title) {
     $('stats-title').textContent = title || slug;
-    $('stats-totals').innerHTML = '<p class="muted">Chargement…</p>';
+    $('stats-totals').innerHTML = loadingHtml('Chargement des stats…');
     $('stats-graph').innerHTML = '';
     $('stats-top').innerHTML = '';
     $('stats-modal').classList.remove('hidden');
@@ -1648,42 +1663,8 @@ function captureKeyboardSpec(timeoutMs = 4000) {
 // Capture un COMBO clavier : appuie sur PLUSIEURS touches EN MÊME TEMPS (ex. a+b+c,
 // ctrl+shift+e). On mémorise l'ensemble le plus large tenu simultanément, et on rend
 // dès que tout est relâché -> « touche1+touche2+… » (modificateurs en tête).
-// Symboles rangée principale (repli si e.code absent) : « + » « , » « : » sont les
-// séparateurs de la grammaire (combo / suite / maintien) et casseraient le spec bruts.
-const KB_SYMBOL = {
-    '+': 'plus', '-': 'minus', '=': 'equal', ',': 'comma', '.': 'period',
-    '/': 'slash', ';': 'semicolon', "'": 'quote', '\\': 'backslash',
-    '[': 'bracketleft', ']': 'bracketright', '`': 'grave', ':': 'semicolon',
-};
-// e.code = touche PHYSIQUE (indépendante de Maj et de la disposition) : c'est ce
-// qu'un jeu lit. On la préfère pour la ponctuation et le pavé numérique, ce qui
-// (1) distingue le « + » du PAVÉ du « + » (Maj+=) de la rangée principale, et
-// (2) rend le token stable entre keydown et keyup même si Maj change entre-temps
-//     (sinon held.delete raterait et la touche resterait « coincée » à la capture).
-const KB_CODE = {
-    Equal: 'equal', Minus: 'minus', Comma: 'comma', Period: 'period', Slash: 'slash',
-    Semicolon: 'semicolon', Quote: 'quote', Backslash: 'backslash',
-    BracketLeft: 'bracketleft', BracketRight: 'bracketright', Backquote: 'grave',
-    Backspace: 'backspace', Delete: 'delete', Home: 'home', End: 'end',
-    PageUp: 'pageup', PageDown: 'pagedown', Insert: 'insert',
-    NumpadAdd: 'numadd', NumpadSubtract: 'numsubtract', NumpadMultiply: 'nummultiply',
-    NumpadDivide: 'numdivide', NumpadDecimal: 'numdecimal', NumpadEnter: 'enter',
-};
-const KB_TOKEN = (e) => {
-    const k = e.key;
-    if (k === 'Control') return 'ctrl';
-    if (k === 'Shift') return 'shift';
-    if (k === 'Alt') return 'alt';
-    if (k === 'Meta') return 'meta';
-    if (k === 'Escape') return 'esc'; // l'exécuteur connaît 'esc' (pas 'escape')
-    if (k === ' ') return 'space';
-    if (k.startsWith('Arrow')) return k.slice(5).toLowerCase();
-    const code = e.code || '';
-    if (KB_CODE[code]) return KB_CODE[code];
-    if (/^Numpad[0-9]$/.test(code)) return 'num' + code.slice(6);
-    if (KB_SYMBOL[k]) return KB_SYMBOL[k];
-    return k.toLowerCase();
-};
+// KB_TOKEN vit dans le module partagé TESTÉ manifest-lib.js (kbToken). Alias ici.
+const KB_TOKEN = HoulaManifest.kbToken;
 const KB_ORDER = ['ctrl', 'shift', 'alt', 'meta'];
 const orderChord = (arr) => arr.slice().sort((a, b) => {
     const ia = KB_ORDER.indexOf(a), ib = KB_ORDER.indexOf(b);
@@ -2531,7 +2512,9 @@ function buildMineCard(b) {
     return card;
 }
 async function loadMyBundles() {
-    mineAll = (await api.lab.myBundles()) || [];
+    $('mine-list').innerHTML = skeletonCardsHtml(6); $('mine-more').textContent = ''; // le temps du fetch
+    try { mineAll = (await api.lab.myBundles()) || []; }
+    catch { mineAll = []; }
     renderMine();
 }
 // Recherche (client) + rendu par CHUNKS (scroll infini) : prêt pour un créateur qui
@@ -2649,7 +2632,7 @@ function renderConnectorsList() {
         const del = row.querySelector('.cx-del'); if (del) del.onclick = async () => { await api.connectors.remove(c.id); await loadConnectors(); renderConnectorsList(); };
     });
 }
-async function loadConnectorsView() { await loadConnectors(); renderConnectorsList(); }
+async function loadConnectorsView() { $('cx-list').innerHTML = skeletonRowsHtml(3); await loadConnectors(); renderConnectorsList(); }
 $('cx-add').onclick = () => openConnectorModal(null, () => renderConnectorsList());
 $('cx-info').onclick = () => $('cx-info-modal').classList.remove('hidden');
 $('cx-info-close').onclick = () => $('cx-info-modal').classList.add('hidden');

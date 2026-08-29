@@ -116,3 +116,49 @@ test('canonicalize : deux manifestes sémantiquement identiques -> même chaîne
     const m2 = { rules: [{ effect: { keys: 'a', type: 'keyboard' }, on: { giftSlug: 'x', type: 'gift' }, id: 'r1' }], schema: 2 };
     assert.strictEqual(M.canonicalize(m1), M.canonicalize(m2));
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// kbToken — résolution touche capturée -> token (les bugs corrigés : Échap avalé,
+// symbole cassant la grammaire, pavé numérique confondu avec la rangée principale)
+// ─────────────────────────────────────────────────────────────────────────
+test('kbToken : Échap -> "esc" (l\'exécuteur ne connaît pas "escape")', () => {
+    assert.strictEqual(M.kbToken({ key: 'Escape', code: 'Escape' }), 'esc');
+});
+
+test('kbToken : modificateurs, espace, flèches', () => {
+    assert.strictEqual(M.kbToken({ key: 'Control' }), 'ctrl');
+    assert.strictEqual(M.kbToken({ key: 'Shift' }), 'shift');
+    assert.strictEqual(M.kbToken({ key: 'Alt' }), 'alt');
+    assert.strictEqual(M.kbToken({ key: 'Meta' }), 'meta');
+    assert.strictEqual(M.kbToken({ key: ' ', code: 'Space' }), 'space');
+    assert.strictEqual(M.kbToken({ key: 'ArrowUp', code: 'ArrowUp' }), 'up');
+    assert.strictEqual(M.kbToken({ key: 'ArrowDown', code: 'ArrowDown' }), 'down');
+});
+
+test('kbToken : lettres/chiffres de la rangée principale', () => {
+    assert.strictEqual(M.kbToken({ key: 'a', code: 'KeyA' }), 'a');
+    assert.strictEqual(M.kbToken({ key: 'A', code: 'KeyA' }), 'a'); // insensible à la casse
+    assert.strictEqual(M.kbToken({ key: '5', code: 'Digit5' }), '5');
+});
+
+test('kbToken : « + » de la rangée (Maj+=) via e.code=Equal -> "equal" (PAS le pavé)', () => {
+    assert.strictEqual(M.kbToken({ key: '+', code: 'Equal' }), 'equal');
+    assert.strictEqual(M.kbToken({ key: '=', code: 'Equal' }), 'equal');
+});
+
+test('kbToken : pavé numérique distinct de la rangée principale', () => {
+    assert.strictEqual(M.kbToken({ key: '+', code: 'NumpadAdd' }), 'numadd');
+    assert.strictEqual(M.kbToken({ key: '5', code: 'Numpad5' }), 'num5');
+    assert.strictEqual(M.kbToken({ key: '0', code: 'Numpad0' }), 'num0');
+});
+
+test('kbToken : « ; » et « : » (même touche physique) -> "semicolon"', () => {
+    assert.strictEqual(M.kbToken({ key: ';', code: 'Semicolon' }), 'semicolon');
+    assert.strictEqual(M.kbToken({ key: ':', code: 'Semicolon' }), 'semicolon');
+});
+
+test('kbToken : repli KB_SYMBOL quand e.code absent (ne casse pas la grammaire)', () => {
+    // Sans e.code, le « + » brut casserait le séparateur de combo -> doit devenir "plus".
+    assert.strictEqual(M.kbToken({ key: '+' }), 'plus');
+    assert.strictEqual(M.kbToken({ key: ',' }), 'comma');
+});

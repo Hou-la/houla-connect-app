@@ -62,5 +62,42 @@
         return '{' + keys.map(function (k) { return JSON.stringify(k) + ':' + canonicalize(value[k]); }).join(',') + '}';
     }
 
-    return { validateManifestClient: validateManifestClient, manifestToRules: manifestToRules, canonicalize: canonicalize };
+    // ── Résolution de la touche capturée -> token de la key-spec ──────────────
+    // Symboles rangée principale (repli si e.code absent) : « + » « , » « : » sont les
+    // séparateurs de la grammaire et casseraient le spec bruts.
+    const KB_SYMBOL = {
+        '+': 'plus', '-': 'minus', '=': 'equal', ',': 'comma', '.': 'period',
+        '/': 'slash', ';': 'semicolon', "'": 'quote', '\\': 'backslash',
+        '[': 'bracketleft', ']': 'bracketright', '`': 'grave', ':': 'semicolon',
+    };
+    // e.code = touche PHYSIQUE (indépendante de Maj/disposition) : distingue le « + » du
+    // PAVÉ de celui de la rangée du haut, et reste stable entre keydown/keyup.
+    const KB_CODE = {
+        Equal: 'equal', Minus: 'minus', Comma: 'comma', Period: 'period', Slash: 'slash',
+        Semicolon: 'semicolon', Quote: 'quote', Backslash: 'backslash',
+        BracketLeft: 'bracketleft', BracketRight: 'bracketright', Backquote: 'grave',
+        Backspace: 'backspace', Delete: 'delete', Home: 'home', End: 'end',
+        PageUp: 'pageup', PageDown: 'pagedown', Insert: 'insert',
+        NumpadAdd: 'numadd', NumpadSubtract: 'numsubtract', NumpadMultiply: 'nummultiply',
+        NumpadDivide: 'numdivide', NumpadDecimal: 'numdecimal', NumpadEnter: 'enter',
+    };
+    // Convertit un event clavier ({key, code}) en token de key-spec. Échap -> 'esc'
+    // (l'exécuteur ne connaît pas 'escape'), pavé numérique distinct, etc.
+    function kbToken(e) {
+        const k = e.key;
+        if (k === 'Control') return 'ctrl';
+        if (k === 'Shift') return 'shift';
+        if (k === 'Alt') return 'alt';
+        if (k === 'Meta') return 'meta';
+        if (k === 'Escape') return 'esc';
+        if (k === ' ') return 'space';
+        if (k.startsWith('Arrow')) return k.slice(5).toLowerCase();
+        const code = e.code || '';
+        if (KB_CODE[code]) return KB_CODE[code];
+        if (/^Numpad[0-9]$/.test(code)) return 'num' + code.slice(6);
+        if (KB_SYMBOL[k]) return KB_SYMBOL[k];
+        return k.toLowerCase();
+    }
+
+    return { validateManifestClient: validateManifestClient, manifestToRules: manifestToRules, canonicalize: canonicalize, kbToken: kbToken };
 });

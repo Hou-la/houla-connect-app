@@ -128,6 +128,23 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.6s; } }
 
+/* ── Chargement : spinner centré + squelettes (forme/mouvement animés, jamais que la
+   couleur -> propriétaire daltonien). Utilisés partout où une vue charge en async. ── */
+.loading { display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; padding: 40px 20px; color: var(--muted); font-size: 13px; }
+.loading .spinner { width: 26px; height: 26px; margin: 0; border-width: 3px;
+    border-color: var(--border); border-top-color: var(--accent); }
+.skeleton-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius);
+    overflow: hidden; animation: pulse 1.2s ease-in-out infinite; }
+.skeleton-card__banner { height: 118px; background: var(--bg-3); }
+.skeleton-card__body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.skeleton-line { height: 12px; border-radius: 6px; background: var(--bg-3); }
+.skeleton-line.sk-40 { width: 40%; } .skeleton-line.sk-60 { width: 60%; } .skeleton-line.sk-80 { width: 80%; }
+/* Squelette de LIGNE (Personnaliser, connecteurs…) : barre unique qui pulse. */
+.skeleton-row { height: 44px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--border);
+    margin-bottom: 8px; animation: pulse 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .skeleton-card, .skeleton-row { animation: none; opacity: .6; } }
+
 .badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 .badge--off { background: var(--bg-3); color: var(--muted); border: 1px solid var(--border); }
 .badge--on { background: rgba(53,208,127,.15); color: var(--ok); border: 1px solid var(--ok); }
