@@ -14,8 +14,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ── Job 0 : TESTS (BLOQUANT : rien ne se publie si les TU échouent) ─
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - name: Tests unitaires (node --test)
+        run: npm test
+
   # ── Job 1 : bump patch auto sur push main ──────────────────────────
   bump:
+    needs: [test]
     if: >-
       github.ref_type != 'tag' &&
       !contains(github.event.head_commit.message, 'chore: bump version')
@@ -48,8 +62,8 @@ jobs:
 
   # ── Job 2 : build + publish (win / mac / linux) ────────────────────
   release:
-    needs: [bump]
-    if: always() && (needs.bump.result == 'success' || github.ref_type == 'tag')
+    needs: [test, bump]
+    if: always() && needs.test.result == 'success' && (needs.bump.result == 'success' || github.ref_type == 'tag')
     permissions:
       contents: write
     runs-on: ${{ matrix.os }}

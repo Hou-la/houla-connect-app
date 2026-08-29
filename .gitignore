@@ -8,3 +8,7 @@ resources/sidecar/*.exe
 resources/sidecar/build/
 resources/sidecar/dist/
 resources/sidecar/__pycache__/
+
+# Tests
+test-results/
+playwright-report/

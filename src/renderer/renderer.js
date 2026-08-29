@@ -1574,46 +1574,17 @@ function buildRule(r, i) {
 function buildManifest() {
     return { schema: 2, rules: labRules.map((r, i) => buildRule(r, i)) };
 }
-// Validation CLIENT du manifeste AVANT tout appel serveur. Le serveur est fail-closed
-// (un seul effet invalide rejette TOUT le manifeste) : sans ce garde, une création
-// laissait un bundle « orphelin » sans version -> à la réouverture, éditeur vide =
-// travail perdu (bug remonté par un utilisateur). Retourne un message ou null.
-function validateManifestClient(m) {
-    const rules = (m && m.rules) || [];
-    if (!rules.length) return 'Ajoute au moins une interaction avant d\'enregistrer.';
-    const empty = (v) => !String(v == null ? '' : v).trim();
-    for (let i = 0; i < rules.length; i++) {
-        const e = rules[i].effect || {}, n = `Interaction ${i + 1}`;
-        switch (e.type) {
-            case 'keyboard': if (empty(e.keys)) return `${n} : la touche ou le combo clavier est vide.`; break;
-            case 'rcon': if (empty(e.command)) return `${n} : la commande RCON est vide.`; break;
-            case 'obs': if (empty(e.request)) return `${n} : la requête OBS est vide.`; break;
-            case 'mqtt': if (empty(e.topic)) return `${n} : le topic MQTT est vide.`; break;
-            case 'osc': if (empty(e.address)) return `${n} : l'adresse OSC est vide.`; break;
-            case 'http': if (empty(e.method)) return `${n} : la méthode HTTP est vide.`; break;
-            case 'python': if (!e.helper) return `${n} : helper Python manquant.`; break;
-            case undefined: case '': return `${n} : le type d'action est manquant.`;
-            default: break; // gamepad (défaut bouton A garanti) / ws (message optionnel)
-        }
-    }
-    return null;
-}
+// validateManifestClient / manifestToRules / canonicalize vivent dans le module PARTAGÉ
+// et TESTÉ src/renderer/manifest-lib.js (chargé avant renderer.js). On les alias ici pour
+// que le renderer et les tests exécutent EXACTEMENT le même code.
+const validateManifestClient = HoulaManifest.validateManifestClient;
 // Le slug existe déjà, m'appartient, et n'a AUCUNE version (orphelin d'une création
 // ratée) ? -> on peut y rattacher la version au lieu d'échouer sur « slug déjà pris ».
 async function isMyOrphanSlug(slug) {
     try { const d = await api.lab.detail(slug); return !!d && (!d.versions || d.versions.length === 0); }
     catch { return false; } // pas à moi / introuvable
 }
-function manifestToRules(m) {
-    return ((m && m.rules) || []).map((rule) => {
-        const event = { ...rule.on };
-        // Normalise l'alias déprécié slot -> giftSlug pour l'édition.
-        if (event.type === 'gift' && !event.giftSlug && event.slot) { event.giftSlug = event.slot; delete event.slot; }
-        // Un slug de slot réservé -> vue « Cadeau personnalisé » ; sinon « Cadeau ».
-        if (event.type === 'gift' && /^ix_slot_\d{2}$/.test(event.giftSlug || '')) event.type = 'gift-custom';
-        return { event, effect: { ...rule.effect }, label: rule.label || '', followersOnly: !!rule.followersOnly, moderatorsOnly: !!rule.moderatorsOnly };
-    });
-}
+const manifestToRules = HoulaManifest.manifestToRules; // module partagé testé (voir ci-dessus)
 function bumpVersion(v, type) {
     if (!v) return '1.0.0';
     const [maj, min, pat] = v.split('.').map(Number);

@@ -10,6 +10,8 @@
     "build:main": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json",
     "build:renderer": "node scripts/copy-renderer.js",
     "build": "npm run build:main && npm run build:renderer",
+    "test": "node --test",
+    "test:e2e": "playwright test",
     "start": "npm run build:main && npm run build:renderer && electron .",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
@@ -32,6 +34,7 @@
     "vigemclient": "^1.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.0.0",
     "electron": "^33.3.1",
     "electron-builder": "^25.1.8",
