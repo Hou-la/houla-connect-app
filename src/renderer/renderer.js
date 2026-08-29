@@ -479,6 +479,21 @@ async function loadSettings() {
     } catch { /* noop */ }
 }
 document.querySelectorAll('.nav').forEach((n) => (n.onclick = () => switchView(n.dataset.view)));
+// Masque de l'identifiant unique (ex-« slug ») : minuscules, chiffres, tirets. Espaces/
+// underscores -> tiret, le reste retiré. Simplifie la saisie et évite les caractères
+// refusés par le serveur (plus de « création échouée » pour un identifiant invalide).
+{
+    const slugEl = $('lab-slug');
+    if (slugEl) slugEl.addEventListener('input', () => {
+        const cleaned = slugEl.value.toLowerCase()
+            .normalize('NFD').replace(/[̀-ͯ]/g, '') // é -> e (retire les accents)
+            .replace(/[\s_]+/g, '-')
+            .replace(/[^a-z0-9-]/g, '')
+            .replace(/-{2,}/g, '-')
+            .replace(/^-+/, '');
+        if (cleaned !== slugEl.value) slugEl.value = cleaned;
+    });
+}
 // Boutons Rafraîchir (Store / Mes bundles) : re-fetch à la demande.
 { const b = $('store-refresh'); if (b) b.onclick = () => loadStore(); }
 { const b = $('mine-refresh'); if (b) b.onclick = () => loadMyBundles(); }

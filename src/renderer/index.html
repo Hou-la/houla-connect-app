@@ -116,7 +116,11 @@
 
                     <div class="card">
                         <label>Infos du pack</label>
-                        <input id="lab-slug" placeholder="slug (minuscules-tirets, ex. mon-pack)" />
+                        <label for="lab-slug" class="field-lbl">Identifiant unique
+                            <span class="field-help" tabindex="0" role="img" aria-label="Aide"
+                                title="Un identifiant court et unique pour ton pack, comme une adresse web (ex. mon-pack-minecraft). Minuscules, chiffres et tirets uniquement. Il apparaît dans les liens et NE peut PAS être changé après la création.">&#9432;</span>
+                        </label>
+                        <input id="lab-slug" placeholder="ex. mon-pack-minecraft" maxlength="80" autocomplete="off" spellcheck="false" />
                         <input id="lab-title" placeholder="Titre (anglais)" />
                         <textarea id="lab-desc" rows="4" maxlength="2000" placeholder="Description courte : à quoi sert le pack, en une ou deux phrases. Les détails/prérequis vont dans « Instructions » ci-dessous."></textarea>
                         <div class="char-counter"><span id="lab-desc-count">0</span> / 2000</div>

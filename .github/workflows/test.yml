@@ -21,19 +21,17 @@ jobs:
       - name: Tests unitaires (node --test)
         run: npm test
 
-  # E2E (Playwright + Electron) — FONDATION. Non bloquant tant que le lancement Electron
-  # headless en CI n'est pas stabilisé (xvfb + libs natives) ; à passer bloquant une fois vert.
+  # E2E "renderer" (Chromium headless, API mockée) — BLOQUANT. Teste le VRAI renderer +
+  # l'UI + les gardes (dont l'anti-perte-de-données du Lab), sans Electron ni OAuth.
   e2e:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm ci
-      - name: Dépendances système (GTK/NSS… pour Electron)
-        run: npx playwright install-deps
-      - run: npm run build
-      - name: E2E (sous xvfb)
-        run: xvfb-run -a npm run test:e2e
+      - name: Navigateur Chromium (+ deps système)
+        run: npx playwright install --with-deps chromium
+      - name: E2E renderer (Playwright + Chromium)
+        run: npm run test:e2e
