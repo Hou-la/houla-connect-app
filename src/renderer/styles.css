@@ -511,12 +511,18 @@ button.is-busy::before {
 /* ── En-tête FIXE (Store / Mes bundles) : reste visible, seule la liste scrolle ──
    Sticky dans le conteneur .content (padding 22/26) : marges négatives pour couvrir
    le padding et rester pleine largeur, fond opaque pour masquer les cartes dessous. */
-.list-head { position: sticky; top: 0; z-index: 6; background: var(--bg);
+/* top:-22px compense le margin-top negatif : une fois collé, le header arrive
+   PILE au bord haut (sinon un ecart de 22px laissait dépasser la 1ere ligne de
+   cartes, qui paraissait tronquée depuis l'ajout de la barre de recherche). */
+.list-head { position: sticky; top: -22px; z-index: 6; background: var(--bg);
     margin: -22px -26px 14px; padding: 22px 26px 12px; }
 .list-head .view-head { margin-bottom: 12px; }
 /* Sentinelle bas de liste (scroll infini : « chargement… » / « fin »). */
 .list-more { min-height: 8px; text-align: center; padding: 10px 0 4px;
     color: var(--muted); font-size: 12px; }
+/* Bouton « Désinstaller » armé : le LIBELLÉ change (« Confirmer ? »), la couleur
+   n'est qu'un renfort (proprio daltonien). */
+.uninstall.is-confirm { border-color: var(--danger); color: var(--danger); font-weight: 600; }
 
 /* ── État vide riche (Store / Mes bundles vides) ───────────────────────── */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center;

@@ -786,6 +786,7 @@ function buildStoreCard(b, inst) {
             ? `<button class="btn btn--primary install" title="Une nouvelle version est disponible">Mettre à jour → v${esc(b.version)}</button>`
             : `<button class="btn btn--ghost install" disabled>Installé ✓${inst.version ? ' · v' + esc(inst.version) : ''}</button>`;
     const customizeBtn = inst ? `<button class="btn btn--ghost customize">Personnaliser</button>` : '';
+    const uninstallBtn = inst ? `<button class="btn btn--ghost uninstall" title="Retirer ce pack de tes packs installés (réversible)">Désinstaller</button>` : '';
     card.innerHTML = `
         <div class="bundle-card__banner"${banner}></div>
         <div class="bundle-card__body">
@@ -796,11 +797,33 @@ function buildStoreCard(b, inst) {
                 ${installBtn}
                 ${customizeBtn}
                 <button class="btn btn--ghost more">Voir plus</button>
+                ${uninstallBtn}
             </div>
         </div>`;
     if (!inst || updateAvail) card.querySelector('.install').onclick = (e) => installBundle(b.slug, e.target);
     if (inst) { const cb = card.querySelector('.customize'); if (cb) cb.onclick = () => openCustomize(b.slug, b.title || b.slug); }
     card.querySelector('.more').onclick = () => openModal(b, !!inst);
+    if (inst) {
+        const ub = card.querySelector('.uninstall');
+        // Deux temps (« Désinstaller » -> « Confirmer ? ») : évite un retrait accidentel, sans modale.
+        if (ub) ub.onclick = async () => {
+            if (ub.dataset.armed !== '1') {
+                ub.dataset.armed = '1'; ub.textContent = 'Confirmer ?'; ub.classList.add('is-confirm');
+                setTimeout(() => { if (ub.isConnected && ub.dataset.armed === '1') { ub.dataset.armed = ''; ub.textContent = 'Désinstaller'; ub.classList.remove('is-confirm'); } }, 3000);
+                return;
+            }
+            ub.disabled = true; ub.textContent = '…';
+            try {
+                await api.store.uninstall(b.slug);
+                showToast('uninstall', { kind: 'ok', title: 'Pack désinstallé', msg: `${b.title || b.slug} a été retiré.` });
+                await loadInstalled(); // rafraîchit le menu Capture
+                await loadStore();     // la carte repasse à « Installer »
+            } catch (e) {
+                ub.disabled = false; ub.dataset.armed = ''; ub.textContent = 'Désinstaller'; ub.classList.remove('is-confirm');
+                showToast('uninstall', { kind: 'error', title: 'Désinstallation échouée', msg: friendlyError(e, 'Réessaie dans un instant.') });
+            }
+        };
+    }
     return card;
 }
 
@@ -1179,7 +1202,7 @@ function eventFieldHtml(r) {
 }
 function execFieldHtml(r) {
     switch (r.effect.type) {
-        case 'keyboard': return `<input type="text" class="r-keys" placeholder="touche (ex. e, space, up)…" title="Astuce : + = touches ENSEMBLE · virgule = à la suite · :ms = maintenir. Ou clique « Action avancée » pour enregistrer une suite." /><button type="button" class="r-kb-edit btn btn--ghost btn--mini" title="Enregistrer une suite de touches, un combo, régler le rythme et le maintien">🎬 Action avancée</button><select class="r-backend"><option value="auto">clavier normal</option><option value="interception">bas niveau (pilote)</option></select>`;
+        case 'keyboard': return `<input type="text" class="r-keys" placeholder="touche (ex. e, space, up)…" title="Astuce : + = touches ENSEMBLE · virgule = à la suite · :ms = maintenir. Ou clique « Action avancée » pour enregistrer une suite." /><button type="button" class="r-kb-edit btn btn--ghost btn--mini" title="Options avancées : enregistrer une suite de touches, un combo, régler le rythme et le maintien">⚙</button><select class="r-backend"><option value="auto">clavier normal</option><option value="interception">bas niveau (pilote)</option></select>`;
         case 'gamepad': {
             const adv = (r.effect.buttons && r.effect.buttons.length) ||
                 (r.effect.sequence && r.effect.sequence.length) ||
@@ -1188,7 +1211,7 @@ function execFieldHtml(r) {
             if (adv) {
                 // Action manette avancée : résumé humain + bouton pour rouvrir l'éditeur.
                 return `<span class="r-combo" title="Action manette avancée">🎮 ${esc(gpSummary(r.effect))}</span>` +
-                    `<button type="button" class="r-gp-edit btn btn--ghost btn--mini">Éditer</button>`;
+                    `<button type="button" class="r-gp-edit btn btn--ghost btn--mini" title="Modifier l'action avancée : combo, séquence, chronologie, analogique, répétition">⚙</button>`;
             }
             // Cas simple : bouton unique (libellés humains) + capturer + options avancées.
             return `<select class="r-button" title="Bouton manette">${GP_BUTTONS.map((b) => `<option value="${b}">${esc(gpLabel(b))}</option>`).join('')}</select>` +
@@ -2453,7 +2476,7 @@ $('lab-submit-btn').onclick = async () => {
 // Indicateur de croissance (étoiles 7j vs 7j précédents). Flèche = FORME (pas la
 // seule couleur, daltonien) + le pourcentage signé. null = activité toute neuve.
 function growthChip(g) {
-    if (g === null || g === undefined) return '<span class="growth growth--new" title="Activité récente, pas encore de comparaison">🆕 nouveau</span>';
+    if (g === null || g === undefined) return '<span class="growth growth--new" title="Activité récente, pas encore de comparaison">✦ nouveau</span>';
     if (g > 0) return `<span class="growth growth--up" title="Croissance sur 7 jours">↗ +${g}%</span>`;
     if (g < 0) return `<span class="growth growth--down" title="Baisse sur 7 jours">↘ ${g}%</span>`;
     return '<span class="growth growth--flat" title="Stable sur 7 jours">→ stable</span>';
