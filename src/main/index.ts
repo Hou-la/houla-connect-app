@@ -75,6 +75,15 @@ function applyPackOverlay(
 function setupAutoUpdate(): void {
     if (!app.isPackaged) return;
     autoUpdater.autoDownload = true;
+    // Build Windows NON SIGNÉ : sinon electron-updater rejette la mise à jour téléchargée
+    // (« not signed by the application owner ») -> l'utilisateur voit « Vérification
+    // indisponible ». On saute la vérif de SIGNATURE (il n'y a pas de signature à vérifier) ;
+    // l'INTÉGRITÉ du téléchargement reste garantie par le sha512 de latest.yml. À retirer
+    // le jour où le build est signé (Azure Trusted Signing, cf. docs/CODE_SIGNING.md).
+    if (process.platform === 'win32') {
+        (autoUpdater as unknown as { verifyUpdateCodeSignature?: () => Promise<string | null> })
+            .verifyUpdateCodeSignature = () => Promise.resolve(null);
+    }
     autoUpdater.on('checking-for-update', () => send('onUpdate', { status: 'checking' }));
     autoUpdater.on('update-available', (i: any) => send('onUpdate', { status: 'available', version: i?.version }));
     autoUpdater.on('update-not-available', () => send('onUpdate', { status: 'none' }));
@@ -83,12 +92,14 @@ function setupAutoUpdate(): void {
     autoUpdater.on('error', (e: any) => {
         const raw = String(e?.message || e || '');
         console.error('[autoUpdate] error:', raw); // détail technique en console seulement
-        // 404 / latest.yml absent = pas encore de métadonnées de mise à jour pour cette
-        // plateforme -> bénin, on affiche « à jour » plutôt qu'une trace effrayante.
-        if (/latest\.yml|404|not found|ENOTFOUND|getaddrinfo/i.test(raw)) {
+        // Bénin -> on affiche « à jour » plutôt qu'une trace effrayante :
+        //  - 404 / latest.yml absent = pas encore de métadonnées pour cette plateforme ;
+        //  - « not signed / signature » = build non signé (ceinture-bretelles avec le skip
+        //    de verifyUpdateCodeSignature ci-dessus).
+        if (/latest\.yml|404|not found|ENOTFOUND|getaddrinfo|not signed|signature/i.test(raw)) {
             send('onUpdate', { status: 'none' });
         } else {
-            send('onUpdate', { status: 'error', message: 'Vérification des mises à jour indisponible pour le moment.' });
+            send('onUpdate', { status: 'error', message: 'Mise à jour automatique indisponible. Réessaie plus tard, ou télécharge la dernière version depuis hou.la.' });
         }
     });
 }
