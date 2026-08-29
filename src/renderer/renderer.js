@@ -864,23 +864,25 @@ function buildStoreCard(b, inst) {
     const card = document.createElement('div');
     card.className = 'bundle-card';
     const banner = b.bannerUrl ? ` style="background-image:url('${esc(b.bannerUrl)}')"` : '';
+    // Actions sur UNE ligne : statut/CTA à gauche (texte court) + actions secondaires en
+    // ICÔNES à droite (formes distinctes + infobulle -> lisible même daltonien).
     const installBtn = !inst
         ? `<button class="btn btn--primary install">Installer</button>`
         : updateAvail
-            ? `<button class="btn btn--primary install" title="Une nouvelle version est disponible">Mettre à jour → v${esc(b.version)}</button>`
-            : `<button class="btn btn--ghost install" disabled>Installé ✓${inst.version ? ' · v' + esc(inst.version) : ''}</button>`;
-    const customizeBtn = inst ? `<button class="btn btn--ghost customize">Personnaliser</button>` : '';
-    const uninstallBtn = inst ? `<button class="btn btn--ghost uninstall" title="Retirer ce pack de tes packs installés (réversible)">Désinstaller</button>` : '';
+            ? `<button class="btn btn--primary install" title="Mettre à jour vers v${esc(b.version)}">&#8593; v${esc(b.version)}</button>`
+            : `<button class="btn btn--ghost install" disabled title="Installé${inst.version ? ' (v' + esc(inst.version) + ')' : ''}">&#10003; Installé</button>`;
+    const customizeBtn = inst ? `<button class="btn btn--ghost btn--icon customize" title="Personnaliser (activer/désactiver, cooldowns)">&#9881;</button>` : '';
+    const uninstallBtn = inst ? `<button class="btn btn--ghost btn--icon uninstall" title="Désinstaller (réversible)">&#128465;</button>` : '';
     card.innerHTML = `
         <div class="bundle-card__banner"${banner}></div>
         <div class="bundle-card__body">
             <h3>${esc(b.title || b.slug)}</h3>
             <div class="publisher">${publisherHtml(b.publisher, b.installCount)}</div>
             <div class="muted small">${b.version ? `v${esc(b.version)}${b.versionDate ? ' · ' + esc(fmtDate(b.versionDate)) : ''}` : '&nbsp;'}</div>
-            <div class="row gap wrap card-actions">
+            <div class="card-actions">
                 ${installBtn}
                 ${customizeBtn}
-                <button class="btn btn--ghost more">Voir plus</button>
+                <button class="btn btn--ghost btn--icon more" title="Voir plus (détails, changelog)">&#8943;</button>
                 ${uninstallBtn}
             </div>
         </div>`;
@@ -890,11 +892,12 @@ function buildStoreCard(b, inst) {
     card.querySelector('.more').onclick = () => openModal(b, !!inst);
     if (inst) {
         const ub = card.querySelector('.uninstall');
-        // Deux temps (« Désinstaller » -> « Confirmer ? ») : évite un retrait accidentel, sans modale.
+        const ubIcon = ub ? ub.innerHTML : ''; // 🗑 à restaurer après « Confirmer ? »
+        // Deux temps (🗑 -> « Confirmer ? ») : évite un retrait accidentel, sans modale.
         if (ub) ub.onclick = async () => {
             if (ub.dataset.armed !== '1') {
                 ub.dataset.armed = '1'; ub.textContent = 'Confirmer ?'; ub.classList.add('is-confirm');
-                setTimeout(() => { if (ub.isConnected && ub.dataset.armed === '1') { ub.dataset.armed = ''; ub.textContent = 'Désinstaller'; ub.classList.remove('is-confirm'); } }, 3000);
+                setTimeout(() => { if (ub.isConnected && ub.dataset.armed === '1') { ub.dataset.armed = ''; ub.innerHTML = ubIcon; ub.classList.remove('is-confirm'); } }, 3000);
                 return;
             }
             ub.disabled = true; ub.textContent = '…';
@@ -904,7 +907,7 @@ function buildStoreCard(b, inst) {
                 await loadInstalled(); // rafraîchit le menu Capture
                 await loadStore();     // la carte repasse à « Installer »
             } catch (e) {
-                ub.disabled = false; ub.dataset.armed = ''; ub.textContent = 'Désinstaller'; ub.classList.remove('is-confirm');
+                ub.disabled = false; ub.dataset.armed = ''; ub.innerHTML = ubIcon; ub.classList.remove('is-confirm');
                 showToast('uninstall', { kind: 'error', title: 'Désinstallation échouée', msg: friendlyError(e, 'Réessaie dans un instant.') });
             }
         };

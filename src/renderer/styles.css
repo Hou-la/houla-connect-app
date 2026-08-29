@@ -184,7 +184,11 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
 /* Sans changelog, ne pas afficher une barre sombre vide (modale détail du store). */
 .changelog:empty { display: none; }
 /* Rangée d'actions de la carte store : espace constant sous la version, installé ou non. */
-.bundle-card__body .card-actions { margin-top: 12px; }
+.bundle-card__body .card-actions { margin-top: 12px; display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; }
+/* Statut/CTA à gauche (prend la place, ellipse si besoin), actions en icônes à droite. */
+.card-actions .install { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.btn--icon { flex: 0 0 auto; width: 38px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1; }
+.btn--icon.is-confirm { width: auto; padding: 0 12px; font-size: 12px; } /* « Confirmer ? » : s'élargit */
 .lab-versions { margin-top: 14px; }
 .mine-foot { margin-top: 12px; }
 .mine-earn { margin-top: 6px; font-size: 12px; color: var(--text); }

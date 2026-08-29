@@ -9,7 +9,7 @@ async function gotoStoreWithUpdate(page) {
     await boot(page, { store: [PACK], installed: [{ slug: 'demo-pack', version: '1.0.0' }], customize: CUSTOMIZED });
     await page.locator('.nav[data-view="store"]').click();
     const card = page.locator('.bundle-card', { hasText: 'Pack Démo' });
-    await expect(card.locator('.install')).toContainText(/Mettre à jour/i);
+    await expect(card.locator('.install')).toContainText(/v1\.0\.1/); // CTA de mise à jour (↑ v1.0.1)
     return card;
 }
 const installedSlugs = (page) => page.evaluate(() => (window.__E2E_CALLS__.install || []).map((a) => a[0]));
