@@ -61,8 +61,19 @@ function runEffectTest({ resEl, cls, needsFocus, btn, fire }) {
         try {
             const v = await fire();
             if (v && v.ok) setRes('✓ Déclenché', 'ok');
-            else setRes('✗ ' + ((v && v.reason) || 'échec'), 'no');
-        } catch (e) { setRes('✗ ' + friendlyError(e, 'test impossible'), 'no'); }
+            else {
+                // Un échec s'écrit dans un span minuscule ; or pour clavier/manette on vient
+                // d'envoyer l'utilisateur SUR SON JEU (décompte) -> il ne voit pas le span.
+                // On double donc par un TOAST, visible au retour dans Connect.
+                const r = (v && v.reason) || 'échec';
+                setRes('✗ ' + r, 'no');
+                showToast('effect-test', { kind: 'warn', title: 'Test non déclenché', msg: r });
+            }
+        } catch (e) {
+            const r = friendlyError(e, 'test impossible');
+            setRes('✗ ' + r, 'no');
+            showToast('effect-test', { kind: 'error', title: 'Test impossible', msg: r });
+        }
         finish();
     };
     if (btn) btn.disabled = true;
@@ -1563,6 +1574,36 @@ function buildRule(r, i) {
 function buildManifest() {
     return { schema: 2, rules: labRules.map((r, i) => buildRule(r, i)) };
 }
+// Validation CLIENT du manifeste AVANT tout appel serveur. Le serveur est fail-closed
+// (un seul effet invalide rejette TOUT le manifeste) : sans ce garde, une création
+// laissait un bundle « orphelin » sans version -> à la réouverture, éditeur vide =
+// travail perdu (bug remonté par un utilisateur). Retourne un message ou null.
+function validateManifestClient(m) {
+    const rules = (m && m.rules) || [];
+    if (!rules.length) return 'Ajoute au moins une interaction avant d\'enregistrer.';
+    const empty = (v) => !String(v == null ? '' : v).trim();
+    for (let i = 0; i < rules.length; i++) {
+        const e = rules[i].effect || {}, n = `Interaction ${i + 1}`;
+        switch (e.type) {
+            case 'keyboard': if (empty(e.keys)) return `${n} : la touche ou le combo clavier est vide.`; break;
+            case 'rcon': if (empty(e.command)) return `${n} : la commande RCON est vide.`; break;
+            case 'obs': if (empty(e.request)) return `${n} : la requête OBS est vide.`; break;
+            case 'mqtt': if (empty(e.topic)) return `${n} : le topic MQTT est vide.`; break;
+            case 'osc': if (empty(e.address)) return `${n} : l'adresse OSC est vide.`; break;
+            case 'http': if (empty(e.method)) return `${n} : la méthode HTTP est vide.`; break;
+            case 'python': if (!e.helper) return `${n} : helper Python manquant.`; break;
+            case undefined: case '': return `${n} : le type d'action est manquant.`;
+            default: break; // gamepad (défaut bouton A garanti) / ws (message optionnel)
+        }
+    }
+    return null;
+}
+// Le slug existe déjà, m'appartient, et n'a AUCUNE version (orphelin d'une création
+// ratée) ? -> on peut y rattacher la version au lieu d'échouer sur « slug déjà pris ».
+async function isMyOrphanSlug(slug) {
+    try { const d = await api.lab.detail(slug); return !!d && (!d.versions || d.versions.length === 0); }
+    catch { return false; } // pas à moi / introuvable
+}
 function manifestToRules(m) {
     return ((m && m.rules) || []).map((rule) => {
         const event = { ...rule.on };
@@ -2430,12 +2471,27 @@ $('lab-submit-btn').onclick = async () => {
         }
     }
 
+    // Manifeste construit + VALIDÉ avant tout appel serveur : le serveur est fail-closed
+    // (un seul effet invalide rejette TOUT) -> sans ce garde, la création laissait un
+    // bundle orphelin sans version = travail perdu à la réouverture.
+    let manifest;
+    try { manifest = labJsonMode ? JSON.parse($('lab-manifest').value) : buildManifest(); }
+    catch { return showToast('lab-save', { kind: 'error', title: 'JSON invalide', msg: "Le manifeste JSON n'est pas valide." }); }
+    const manifestProblem = validateManifestClient(manifest);
+    if (manifestProblem) return showToast('lab-save', { kind: 'warn', title: 'Interaction incomplète', msg: manifestProblem });
+
     if (labMode === 'create') {
         const slug = $('lab-slug').value.trim(), title = $('lab-title').value.trim();
         if (!slug || !title) return showToast('lab-save', { kind: 'warn', title: 'Champs requis', msg: 'Le slug et le titre sont obligatoires.' });
         setBtnBusy(btn, true, 'Création…');
         try {
-            await api.lab.create({ slug, title, description: $('lab-desc').value.trim() || undefined, instructions: $('lab-instructions').value.trim() || undefined, game: $('lab-game').value.trim() || undefined, tags: labTags, creatorFeePercent: Math.max(0, Math.min(Number($('lab-fee').value) || 0, 15)) });
+            // Tolérant à l'orphelin : si le slug est déjà à MOI sans version (création
+            // précédente ratée), on saute create et on rattache directement la version.
+            try {
+                await api.lab.create({ slug, title, description: $('lab-desc').value.trim() || undefined, instructions: $('lab-instructions').value.trim() || undefined, game: $('lab-game').value.trim() || undefined, tags: labTags, creatorFeePercent: Math.max(0, Math.min(Number($('lab-fee').value) || 0, 15)) });
+            } catch (e) {
+                if (!(await isMyOrphanSlug(slug))) throw e; // slug pris par un autre / vraie erreur
+            }
             labCurrentSlug = slug; labLatestVersion = null;
             syncLabBindings(); // enregistre les liaisons rôle->connecteur (slug désormais connu)
             await uploadHeldIcons(); // pose les icônes gardées en mémoire
@@ -2443,7 +2499,6 @@ $('lab-submit-btn').onclick = async () => {
                 try { await api.lab.uploadBannerFile(slug, pendingBannerFile); } catch { /* non bloquant */ }
                 pendingBannerFile = null;
             }
-            const manifest = labJsonMode ? JSON.parse($('lab-manifest').value) : buildManifest();
             await api.lab.submitVersion(slug, { version: '1.0.0', manifest, visibility });
             await enterEditMode(slug);
             saveVersionToast('1.0.0', visibility, visibility === 'public' || manifestHasCustomIcons(manifest));
@@ -2458,9 +2513,6 @@ $('lab-submit-btn').onclick = async () => {
     try {
         syncLabBindings();
         await uploadHeldIcons();
-        let manifest;
-        if (labJsonMode) { try { manifest = JSON.parse($('lab-manifest').value); } catch { setBtnBusy(btn, false); return showToast('lab-save', { kind: 'error', title: 'JSON invalide', msg: "Le manifeste JSON n'est pas valide." }); } }
-        else manifest = buildManifest();
         const version = labLatestVersion ? bumpVersion(labLatestVersion, $('lab-bump').value) : '1.0.0';
         const changelog = ($('lab-changelog').value || '').trim() || undefined;
         await api.lab.submitVersion(labCurrentSlug, { version, manifest, visibility, changelog });

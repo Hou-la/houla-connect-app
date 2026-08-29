@@ -39,6 +39,18 @@ export class PythonSidecar {
             for (const p of this.pending.values()) p.reject(new Error('sidecar arrêté'));
             this.pending.clear();
         });
+        // Spawn IMPOSSIBLE (exe figé absent du build, ou `python` non installé en dev) :
+        // sans ce handler, l'erreur passait inaperçue et l'appel « expirait » à 8 s. On
+        // rejette tout de suite avec un message actionnable (pilote bas niveau manquant).
+        this.proc.on('error', (err: NodeJS.ErrnoException) => {
+            this.proc = null;
+            this.rl = null;
+            const msg = err && err.code === 'ENOENT'
+                ? 'moteur de pilotage bas niveau introuvable (pilote/sidecar non installé)'
+                : `moteur de pilotage indisponible : ${err?.message || 'erreur inconnue'}`;
+            for (const p of this.pending.values()) p.reject(new Error(msg));
+            this.pending.clear();
+        });
         this.rl = createInterface({ input: this.proc.stdout! });
         this.rl.on('line', (line) => this.onLine(line));
         return this.proc;
@@ -79,7 +91,14 @@ export class PythonSidecar {
                 fn(v);
             };
             this.pending.set(id, { resolve: done(resolve), reject: done(reject) });
-            proc.stdin!.write(JSON.stringify({ id, method: helper, params: args }) + '\n');
+            // stdin peut être absent/fermé si le spawn a échoué : on rejette proprement
+            // au lieu de laisser l'appel « expirer ».
+            try {
+                if (!proc.stdin || !proc.stdin.writable) throw new Error('sidecar non démarré');
+                proc.stdin.write(JSON.stringify({ id, method: helper, params: args }) + '\n');
+            } catch (e: any) {
+                if (this.pending.delete(id)) { clearTimeout(timeout); reject(new Error(e?.message || 'écriture sidecar impossible')); }
+            }
         });
     }
 
