@@ -2705,9 +2705,15 @@ function renderConnectorsList() {
     if (!myConnectors.length) { box.innerHTML = '<p class="muted">Aucun connecteur.</p>'; return; }
     box.innerHTML = myConnectors.map((c) => {
         const isLocal = !CONNECTOR_TYPES[c.type];
+        // La manette virtuelle exige le pilote ViGEmBus : bouton d'install DIRECTEMENT sur
+        // sa ligne (là où on l'active), plutôt qu'enterré ailleurs.
+        const driverBtn = c.type === 'gamepad'
+            ? '<button class="cx-driver btn btn--ghost btn--mini" title="Installer le pilote de la manette virtuelle (ViGEmBus). Une seule fois, sous Windows. Une fenêtre UAC demandera l\'autorisation.">Installer le pilote</button>'
+            : '';
         return `<div class="cx-row" data-id="${esc(c.id)}">`
             + `<label class="switch" title="Activer / désactiver"><input type="checkbox" class="cx-enable"${c.enabled ? ' checked' : ''}/><span class="switch__track"><span class="switch__thumb"></span></span></label>`
             + `<span class="cx-type">${esc(connectorTypeLabel(c.type))}</span><b>${esc(c.name)}</b>`
+            + driverBtn
             + (isLocal ? '' : `<button class="cx-edit">Éditer</button><button class="cx-del" title="Supprimer">&#10005;</button>`)
             + `</div>`;
     }).join('');
@@ -2718,6 +2724,17 @@ function renderConnectorsList() {
         row.querySelector('.cx-enable').onchange = (e) => { c.enabled = e.target.checked; api.connectors.enable(c.id, e.target.checked); };
         const edit = row.querySelector('.cx-edit'); if (edit) edit.onclick = () => openConnectorModal(c, () => renderConnectorsList());
         const del = row.querySelector('.cx-del'); if (del) del.onclick = async () => { await api.connectors.remove(c.id); await loadConnectors(); renderConnectorsList(); };
+        const drv = row.querySelector('.cx-driver');
+        if (drv) drv.onclick = async () => {
+            setBtnBusy(drv, true, 'Installation…');
+            try {
+                const res = await api.driver.installGamepad();
+                if (res && res.ok) showToast('driver', { kind: 'ok', title: 'Pilote installé', msg: 'La manette virtuelle est prête. Teste une interaction « Manette ».' });
+                else showToast('driver', { kind: 'error', title: 'Installation non terminée', msg: (res && res.reason) || 'Autorise la fenêtre Windows (UAC) puis réessaie.' });
+            } catch (e) {
+                showToast('driver', { kind: 'error', title: 'Installation impossible', msg: friendlyError(e, 'Réessaie dans un instant.') });
+            } finally { setBtnBusy(drv, false); }
+        };
     });
 }
 async function loadConnectorsView() { $('cx-list').innerHTML = skeletonRowsHtml(3); await loadConnectors(); renderConnectorsList(); }
@@ -2763,23 +2780,6 @@ async function openCgu(gate) {
 }
 $('icon-guide-close').onclick = () => $('icon-guide-modal').classList.add('hidden');
 $('cgu-open').onclick = () => openCgu(false);
-// Installer le pilote de la manette virtuelle (ViGEmBus) de façon PROACTIVE, sans avoir à
-// échouer un test d'abord. L'install (MSI empaqueté + UAC) est gérée côté main.
-{ const b = $('driver-gamepad-install'); if (b) b.onclick = async () => {
-    const s = $('driver-gamepad-status');
-    setBtnBusy(b, true, 'Installation…');
-    try {
-        const res = await api.driver.installGamepad();
-        if (res && res.ok) {
-            if (s) s.textContent = 'Pilote installé ✓ — la manette virtuelle est prête. Teste une interaction « Manette ».';
-            showToast('driver', { kind: 'ok', title: 'Pilote installé', msg: 'La manette virtuelle est prête.' });
-        } else {
-            showToast('driver', { kind: 'error', title: 'Installation non terminée', msg: (res && res.reason) || 'Autorise la fenêtre Windows (UAC) puis réessaie.' });
-        }
-    } catch (e) {
-        showToast('driver', { kind: 'error', title: 'Installation impossible', msg: friendlyError(e, 'Réessaie dans un instant.') });
-    } finally { setBtnBusy(b, false); }
-}; }
 $('cgu-close').onclick = () => $('cgu-modal').classList.add('hidden');
 $('cgu-accept').onclick = async () => { await api.legal.accept(); $('cgu-modal').classList.add('hidden'); };
 async function checkLegalGate() {
