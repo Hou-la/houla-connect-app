@@ -167,7 +167,6 @@
                             <div id="lab-banner-preview" class="lab-banner"></div>
                             <button id="lab-banner-btn" class="btn btn--ghost">Choisir une bannière (1600×900)</button>
                         </div>
-                        <button id="lab-save-meta" class="btn btn--ghost hidden">Enregistrer les infos</button>
                         <p id="lab-msg" class="hint"></p>
                         <div id="lab-versions" class="lab-versions"></div>
                     </div>
@@ -196,20 +195,24 @@
                             <span class="lab-sub">Nouveautés de cette version</span>
                             <textarea id="lab-changelog" rows="3" placeholder="Décris ce qui change dans cette version (nouveaux cadeaux, corrections…). Affiché dans le store et l'historique."></textarea>
                         </div>
-                        <div class="row gap lab-version-row" style="margin-top: 14px">
-                            <select id="lab-bump" class="hidden" title="Type de changement pour la nouvelle version">
-                                <option value="patch">Correction</option>
-                                <option value="minor">Amélioration</option>
-                                <option value="major">Gros changement</option>
-                            </select>
-                            <label class="switch" title="Visibilité de cette version">
-                                <input type="checkbox" id="lab-vis" />
-                                <span class="switch__track"><span class="switch__thumb"></span></span>
-                                <span id="lab-vis-label">Privé</span>
-                            </label>
-                            <button id="lab-submit-btn" class="btn btn--primary">Créer le pack</button>
-                        </div>
                         <p id="lab-msg2" class="hint"></p>
+                    </div>
+
+                    <!-- UN SEUL bouton d'enregistrement, collé en bas et toujours visible au
+                         scroll : il enregistre TOUT (infos du pack + version). Fini les deux
+                         boutons séparés qui faisaient perdre la saisie des instructions. -->
+                    <div id="lab-actionbar" class="lab-actionbar">
+                        <select id="lab-bump" class="hidden" title="Type de changement pour la nouvelle version">
+                            <option value="patch">Correction</option>
+                            <option value="minor">Amélioration</option>
+                            <option value="major">Gros changement</option>
+                        </select>
+                        <label class="switch" title="Visibilité de cette version">
+                            <input type="checkbox" id="lab-vis" />
+                            <span class="switch__track"><span class="switch__thumb"></span></span>
+                            <span id="lab-vis-label">Privé</span>
+                        </label>
+                        <button id="lab-submit-btn" class="btn btn--primary lab-save">Créer le pack</button>
                     </div>
                 </section>
 

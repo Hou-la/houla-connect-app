@@ -48,7 +48,7 @@
         },
         lab: {
             create: rec('create', () => (cfg.createError ? rej(cfg.createError) : R({ ok: true }))),
-            update: () => R({ ok: true }),
+            update: rec('update', () => R({ ok: true })),
             dictionary: () => R(cfg.dictionary || []), // liste de {slug,label} (types/games)
             myBundles: () => R(cfg.myBundles || []),
             detail: () => R(cfg.labDetail || { bundle: { slug: 's' }, versions: [] }),

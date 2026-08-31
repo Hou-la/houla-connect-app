@@ -2187,9 +2187,8 @@ function setLabMode(mode) {
     $('lab-slug').readOnly = !create;
     $('lab-bump').classList.toggle('hidden', create);
     $('lab-changelog-field').classList.toggle('hidden', create); // changelog = nouvelle version (édition)
-    $('lab-save-meta').classList.toggle('hidden', create);
     $('lab-new-btn').classList.toggle('hidden', create);
-    $('lab-submit-btn').textContent = create ? 'Créer le pack' : 'Enregistrer la version';
+    $('lab-submit-btn').textContent = create ? 'Créer le pack' : 'Enregistrer';
     $('lab-changelog').value = ''; // une nouvelle version démarre avec un changelog vierge
 }
 // Libellé vivant du curseur de commission (0 = gratuit, sinon N % des étoiles).
@@ -2394,17 +2393,6 @@ $('lab-banner-btn').onclick = async () => {
         $('lab-banner-btn').disabled = false;
     }
 };
-$('lab-save-meta').onclick = async () => {
-    if (!labCurrentSlug) return;
-    const btn = $('lab-save-meta');
-    setBtnBusy(btn, true, 'Enregistrement…');
-    try {
-        await api.lab.update(labCurrentSlug, { title: $('lab-title').value.trim(), description: $('lab-desc').value.trim(), instructions: $('lab-instructions').value.trim(), game: $('lab-game').value.trim() || '', tags: labTags, creatorFeePercent: Math.max(0, Math.min(Number($('lab-fee').value) || 0, 15)) });
-        showToast('lab-save', { kind: 'ok', title: 'Infos enregistrées', msg: 'Titre, description et réglages du pack sont à jour.' });
-    } catch (e) {
-        showToast('lab-save', { kind: 'error', title: 'Échec de l’enregistrement', msg: friendlyError(e, "Les infos n'ont pas pu être enregistrées.") });
-    } finally { setBtnBusy(btn, false); }
-};
 /** true s'il reste un « cadeau personnalisé » sans icône (uploadée OU en mémoire). */
 function missingCustomIcon() {
     return labRules.some((r) => r.event.type === 'gift-custom' && !r.event.iconUrl && !r.event._iconFile);
@@ -2530,6 +2518,12 @@ $('lab-submit-btn').onclick = async () => {
         await uploadHeldIcons();
         const version = labLatestVersion ? bumpVersion(labLatestVersion, $('lab-bump').value) : '1.0.0';
         const changelog = ($('lab-changelog').value || '').trim() || undefined;
+        // Le bouton principal enregistre AUSSI les métadonnées visibles (instructions,
+        // titre, description, jeu, tags, commission) AVANT la version : sinon un créateur
+        // qui édite ces champs puis clique « Enregistrer la version » perd sa saisie
+        // (elle n'était sauvée que par « Enregistrer les infos », bouton séparé et non
+        // évident). Fait avant submitVersion pour que le snapshot serveur gèle la bonne valeur.
+        await api.lab.update(labCurrentSlug, { title: $('lab-title').value.trim(), description: $('lab-desc').value.trim(), instructions: $('lab-instructions').value.trim(), game: $('lab-game').value.trim() || '', tags: labTags, creatorFeePercent: Math.max(0, Math.min(Number($('lab-fee').value) || 0, 15)) });
         await api.lab.submitVersion(labCurrentSlug, { version, manifest, visibility, changelog });
         saveVersionToast(version, visibility, visibility === 'public' || manifestHasCustomIcons(manifest));
         // Recharge depuis le serveur : la nouvelle version apparaît dans l'historique ET
