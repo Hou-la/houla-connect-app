@@ -102,14 +102,26 @@ jobs:
       #    qui n'existe dans aucun build -> la manette virtuelle / le clavier bas niveau
       #    échouent avec « moteur introuvable ». On le fige avec PyInstaller et on empaquette
       #    l'installeur du pilote ViGEmBus. NON bloquant : si le freeze rate, la release part
-      #    quand même (sans moteur bas niveau = comportement actuel), avec un ::warning::. ──
-      - name: Setup Python (sidecar figé, Windows)
+      #    quand même (sans moteur bas niveau = comportement actuel), avec un ::warning::.
+      #    CACHÉ : vgamepad se COMPILE depuis les sources (pas de wheel py3.12) -> ~10-12 min.
+      #    On ne le refige QUE si houla_sidecar.py change (clé = son hash) ; sinon on restaure
+      #    l'exe + le MSI en quelques secondes. Bump « -vN » si on change la recette de freeze. ──
+      - name: Cache du sidecar figé (Windows)
         if: matrix.os == 'windows-2022'
+        id: sidecar-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            resources/sidecar/houla-sidecar.exe
+            resources/sidecar/ViGEmBusSetup_x64.msi
+          key: sidecar-win-py312-${{ hashFiles('resources/sidecar/houla_sidecar.py') }}-v1
+      - name: Setup Python (sidecar figé, Windows)
+        if: matrix.os == 'windows-2022' && steps.sidecar-cache.outputs.cache-hit != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Freeze sidecar (PyInstaller) + bundle pilote ViGEmBus (Windows)
-        if: matrix.os == 'windows-2022'
+        if: matrix.os == 'windows-2022' && steps.sidecar-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set +e
