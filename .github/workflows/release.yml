@@ -122,18 +122,20 @@ jobs:
           python-version: '3.12'
       - name: Freeze sidecar (PyInstaller) + bundle pilote ViGEmBus (Windows)
         if: matrix.os == 'windows-2022' && steps.sidecar-cache.outputs.cache-hit != 'true'
-        timeout-minutes: 20   # filet anti-hang : si le freeze coince, il est TUÉ (pas 28 min)
+        timeout-minutes: 8   # filet anti-hang COURT : si le freeze coince, il est tué à 8 min
         continue-on-error: true   # ... et la release continue quand même (sans le moteur bas niveau)
         shell: bash
         env:
-          # CAUSE du hang de 28 min : vgamepad/setup.py lance un `msiexec /i` INTERACTIF (sans
-          # /quiet) pendant pip -> en CI headless, la fenêtre attend une interaction et bloque
-          # POUR TOUJOURS. Cette variable saute cette install de pilote (qu'on ne veut pas en CI
-          # de toute façon : on livre le pilote nous-mêmes, MSI empaqueté + bouton in-app). La
-          # DLL et le MSI restent bien présents dans le package (donc bundlés par PyInstaller).
+          # vgamepad/setup.py lance un `msiexec /i` INTERACTIF (sans /quiet) pendant pip -> en CI
+          # headless la fenêtre attend une interaction et bloque. Cette variable saute cette install
+          # (on livre le pilote nous-mêmes, MSI empaqueté + bouton in-app). La DLL/MSI restent bundlés.
           VGAMEPAD_SKIP_VIGEMBUS_INSTALL: 'true'
         run: |
           set +e
+          # RE-export dans le shell : le `env:` du step ne semblait pas atteindre le sous-process
+          # de build de pip (d'où un hang persistant). L'export garantit l'héritage. L'echo trace.
+          export VGAMEPAD_SKIP_VIGEMBUS_INSTALL=true
+          echo "VGAMEPAD_SKIP=[${VGAMEPAD_SKIP_VIGEMBUS_INSTALL:-UNSET}]"
           python -m pip install --upgrade pip
           python -m pip install pyinstaller vgamepad
           if [ $? -ne 0 ]; then echo "::warning::pip pyinstaller/vgamepad a échoué — build livré SANS moteur manette"; exit 0; fi
