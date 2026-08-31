@@ -484,7 +484,27 @@ async function showApp() {
 }
 
 // ── Nav ──
-function switchView(name) {
+async function switchView(name) {
+    // Garde anti-perte : quitter le Lab avec des modifs non enregistrées -> on demande quoi
+    // faire, plutôt que de perdre la saisie en silence (Enregistrer / Quitter / Annuler).
+    const onLab = !$('view-lab').classList.contains('hidden');
+    if (onLab && name !== 'lab' && labDirty) {
+        const choice = await showChoice({
+            title: 'Modifications non enregistrées',
+            msg: 'Tu as des changements dans le Lab qui ne sont pas encore enregistrés.',
+            choices: [
+                { key: 'save', label: 'Enregistrer', kind: 'primary' },
+                { key: 'discard', label: 'Quitter sans enregistrer' },
+                { key: 'cancel', label: 'Annuler' },
+            ],
+        });
+        if (choice !== 'save' && choice !== 'discard') return; // annulé / fermé -> reste sur le Lab
+        if (choice === 'save') {
+            const ok = await submitLab();
+            if (!ok) return; // validation/erreur -> reste sur le Lab pour corriger
+        }
+        labDirty = false; // « quitter sans enregistrer », ou enregistrement réussi
+    }
     document.querySelectorAll('.nav').forEach((n) => n.classList.toggle('active', n.dataset.view === name));
     ['capture', 'store', 'lab', 'mine', 'connecteurs', 'settings'].forEach((v) =>
         $('view-' + v).classList.toggle('hidden', v !== name),
@@ -510,6 +530,10 @@ async function loadSettings() {
     } catch { /* noop */ }
 }
 document.querySelectorAll('.nav').forEach((n) => (n.onclick = () => switchView(n.dataset.view)));
+// Toute saisie utilisateur dans le Lab marque l'éditeur « sale » (modifs non enregistrées).
+// input/change ne sont PAS déclenchés par un set programmatique (.value=…) -> aucun faux positif
+// au chargement. Remis à false à l'entrée du Lab (loadLab) et après un enregistrement réussi.
+{ const lab = $('view-lab'); if (lab) { const mark = () => { labDirty = true; }; lab.addEventListener('input', mark); lab.addEventListener('change', mark); } }
 // Masque de l'identifiant unique (ex-« slug ») : minuscules, chiffres, tirets. Espaces/
 // underscores -> tiret, le reste retiré. Simplifie la saisie et évite les caractères
 // refusés par le serveur (plus de « création échouée » pour un identifiant invalide).
@@ -1219,6 +1243,10 @@ function gpSummary(e) {
 const GP_SHORT = { LT: 'ZL', RT: 'ZR', LB: 'L', RB: 'R', LS: 'L3', RS: 'R3', START: '+', BACK: '−', UP: '↑', DOWN: '↓', LEFT: '←', RIGHT: '→' };
 const gpLabelShort = (t) => GP_SHORT[t] || t;
 let labRules = [];
+// « Sale » = des modifs Lab non enregistrées. Mis à true par toute saisie utilisateur dans
+// la vue (listener délégué), remis à false à l'entrée du Lab et après un enregistrement réussi.
+// Sert à la garde anti-perte de switchView (modal « Enregistrer / Quitter / Annuler »).
+let labDirty = false;
 let labDragIndex = -1; // index de la règle en cours de glisser (échange de slot)
 let labCurrentSlug = null;
 let labLatestVersion = null;
@@ -2388,6 +2416,7 @@ async function enterEditMode(slug) {
 $('lab-new-btn').onclick = () => enterCreateMode();
 
 async function loadLab() {
+    labDirty = false; // on (re)charge le Lab -> repart d'un état « propre »
     // Édition demandée : on VIDE tout de suite l'éditeur (sinon, pendant le chargement
     // async ci-dessous, l'utilisateur voit encore le pack précédemment édité — d'où
     // « je tombe sur chaos au lieu de ferme »).
@@ -2490,14 +2519,18 @@ function saveVersionToast(version, visibility, inReview) {
         showToast('lab-save', { kind: 'ok', title: `Version ${version} enregistrée`, msg: 'Tes modifications sont enregistrées.' });
     }
 }
-$('lab-submit-btn').onclick = async () => {
+// Enregistre le pack (création ou nouvelle version). Retourne true si ENREGISTRÉ, false si
+// refusé (validation) ou en erreur -> la garde anti-perte s'en sert pour décider de naviguer.
+async function submitLab() {
     const btn = $('lab-submit-btn');
     const visibility = $('lab-vis').checked ? 'public' : 'private';
 
-    if (!labJsonMode && missingConnector())
-        return showToast('lab-save', { kind: 'warn', title: 'Connecteur manquant', msg: 'Chaque interaction réseau doit avoir un connecteur — choisis-en un ou crée-en un (+ Nouveau…).' });
-    if (!labJsonMode && missingCustomIcon())
-        return showToast('lab-save', { kind: 'warn', title: 'Icône manquante', msg: 'Chaque « cadeau personnalisé » doit avoir une icône avant l’enregistrement.' });
+    if (!labJsonMode && missingConnector()) {
+        showToast('lab-save', { kind: 'warn', title: 'Connecteur manquant', msg: 'Chaque interaction réseau doit avoir un connecteur — choisis-en un ou crée-en un (+ Nouveau…).' }); return false;
+    }
+    if (!labJsonMode && missingCustomIcon()) {
+        showToast('lab-save', { kind: 'warn', title: 'Icône manquante', msg: 'Chaque « cadeau personnalisé » doit avoir une icône avant l’enregistrement.' }); return false;
+    }
     if (!labJsonMode) {
         const bad = incompleteTrigger();
         if (bad) {
@@ -2505,7 +2538,7 @@ $('lab-submit-btn').onclick = async () => {
             const msg = t === 'viewer' ? 'Indique un nombre pour « tous les N nouveaux spectateurs ».'
                 : t === 'comment' ? 'Un message chat doit avoir un mot-clé, ou un nombre pour « tous les N messages ».'
                     : 'Un déclencheur Likes doit avoir un palier, ou un nombre pour « tous les N likes ».';
-            return showToast('lab-save', { kind: 'warn', title: 'Déclencheur incomplet', msg });
+            showToast('lab-save', { kind: 'warn', title: 'Déclencheur incomplet', msg }); return false;
         }
     }
 
@@ -2514,13 +2547,13 @@ $('lab-submit-btn').onclick = async () => {
     // bundle orphelin sans version = travail perdu à la réouverture.
     let manifest;
     try { manifest = labJsonMode ? JSON.parse($('lab-manifest').value) : buildManifest(); }
-    catch { return showToast('lab-save', { kind: 'error', title: 'JSON invalide', msg: "Le manifeste JSON n'est pas valide." }); }
+    catch { showToast('lab-save', { kind: 'error', title: 'JSON invalide', msg: "Le manifeste JSON n'est pas valide." }); return false; }
     const manifestProblem = validateManifestClient(manifest);
-    if (manifestProblem) return showToast('lab-save', { kind: 'warn', title: 'Interaction incomplète', msg: manifestProblem });
+    if (manifestProblem) { showToast('lab-save', { kind: 'warn', title: 'Interaction incomplète', msg: manifestProblem }); return false; }
 
     if (labMode === 'create') {
         const slug = $('lab-slug').value.trim(), title = $('lab-title').value.trim();
-        if (!slug || !title) return showToast('lab-save', { kind: 'warn', title: 'Champs requis', msg: 'Le slug et le titre sont obligatoires.' });
+        if (!slug || !title) { showToast('lab-save', { kind: 'warn', title: 'Champs requis', msg: 'Le slug et le titre sont obligatoires.' }); return false; }
         setBtnBusy(btn, true, 'Création…');
         try {
             // Tolérant à l'orphelin : si le slug est déjà à MOI sans version (création
@@ -2540,10 +2573,12 @@ $('lab-submit-btn').onclick = async () => {
             await api.lab.submitVersion(slug, { version: '1.0.0', manifest, visibility });
             await enterEditMode(slug);
             saveVersionToast('1.0.0', visibility, visibility === 'public' || manifestHasCustomIcons(manifest));
+            labDirty = false;
+            return true;
         } catch (e) {
             showToast('lab-save', { kind: 'error', title: 'Création échouée', msg: friendlyRejection(e) });
+            return false;
         } finally { setBtnBusy(btn, false); }
-        return;
     }
 
     // Édition : nouvelle version
@@ -2555,19 +2590,22 @@ $('lab-submit-btn').onclick = async () => {
         const changelog = ($('lab-changelog').value || '').trim() || undefined;
         // Le bouton principal enregistre AUSSI les métadonnées visibles (instructions,
         // titre, description, jeu, tags, commission) AVANT la version : sinon un créateur
-        // qui édite ces champs puis clique « Enregistrer la version » perd sa saisie
-        // (elle n'était sauvée que par « Enregistrer les infos », bouton séparé et non
-        // évident). Fait avant submitVersion pour que le snapshot serveur gèle la bonne valeur.
+        // qui édite ces champs puis clique « Enregistrer » perd sa saisie. Fait avant
+        // submitVersion pour que le snapshot serveur gèle la bonne valeur.
         await api.lab.update(labCurrentSlug, { title: $('lab-title').value.trim(), description: $('lab-desc').value.trim(), instructions: $('lab-instructions').value.trim(), game: $('lab-game').value.trim() || '', tags: labTags, creatorFeePercent: Math.max(0, Math.min(Number($('lab-fee').value) || 0, 15)) });
         await api.lab.submitVersion(labCurrentSlug, { version, manifest, visibility, changelog });
         saveVersionToast(version, visibility, visibility === 'public' || manifestHasCustomIcons(manifest));
         // Recharge depuis le serveur : la nouvelle version apparaît dans l'historique ET
         // l'éditeur ré-affiche l'état RÉELLEMENT enregistré (icônes comprises) = preuve visible.
         try { await enterEditMode(labCurrentSlug); } catch { labLatestVersion = version; }
+        labDirty = false;
+        return true;
     } catch (e) {
         showToast('lab-save', { kind: 'error', title: 'Enregistrement échoué', msg: friendlyRejection(e) });
+        return false;
     } finally { setBtnBusy(btn, false); }
-};
+}
+$('lab-submit-btn').onclick = submitLab;
 
 // Indicateur de croissance (étoiles 7j vs 7j précédents). Flèche = FORME (pas la
 // seule couleur, daltonien) + le pourcentage signé. null = activité toute neuve.

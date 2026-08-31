@@ -114,15 +114,12 @@ function setupAutoUpdate(): void {
     autoUpdater.on('error', (e: any) => {
         const raw = String(e?.message || e || '');
         console.error('[autoUpdate] error:', raw); // détail technique en console seulement
-        // Bénin -> on affiche « à jour » plutôt qu'une trace effrayante :
-        //  - 404 / latest.yml absent = pas encore de métadonnées pour cette plateforme ;
-        //  - « not signed / signature » = build non signé (ceinture-bretelles avec le skip
-        //    de verifyUpdateCodeSignature ci-dessus).
-        if (/latest\.yml|404|not found|ENOTFOUND|getaddrinfo|not signed|signature/i.test(raw)) {
-            send('onUpdate', { status: 'none' });
-        } else {
-            send('onUpdate', { status: 'error', message: 'Mise à jour automatique indisponible. Réessaie plus tard, ou télécharge la dernière version depuis hou.la.' });
-        }
+        // NE JAMAIS masquer une erreur en « à jour ». Un ancien code affichait « à jour » sur
+        // un 404/latest.yml absent -> l'utilisateur croyait avoir la dernière version alors que
+        // le CHECK avait ÉCHOUÉ (ex. une release « la plus récente » sans latest.yml Windows,
+        // le temps que son build se termine) et restait BLOQUÉ sur une vieille version. Seul
+        // l'event `update-not-available` dit « à jour ». Toute erreur = message honnête + lien.
+        send('onUpdate', { status: 'error', message: 'Vérification des mises à jour indisponible pour le moment. Télécharge la dernière version sur hou.la.' });
     });
 }
 
