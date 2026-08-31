@@ -1298,9 +1298,9 @@ function eventFieldHtml(r) {
             + `<span class="r-icon" title="icône du cadeau" style="${ic}"></span>`
             + `<button type="button" class="r-iconbtn">Icône…</button>`
             + `<button type="button" class="r-iconguide" title="Comment réaliser l'icône ?">i</button>`
-            + `<label class="r-accent-wrap" title="Bordure colorée du cadeau (halo). Décochée = auto selon la rareté (le prix).">`
-            + `<input type="checkbox" class="r-accent-on"${hasAccent ? ' checked' : ''}> bordure`
-            + `<input type="color" class="r-accent" value="${esc(accent)}"></label>`;
+            + `<span class="r-accent-wrap" title="Couleur de la bordure (halo) du cadeau. Par défaut : selon la rareté (le prix). Choisis une couleur, ou reviens à l'auto avec ↺.">`
+            + `<input type="color" class="r-accent" value="${esc(accent)}" title="Couleur de la bordure">`
+            + `<button type="button" class="r-accent-reset" title="Remettre la couleur automatique (selon la rareté)"${hasAccent ? '' : ' disabled'}>&#8635;</button></span>`;
     }
     if (r.event.type === 'comment') {
         const mode = r.event._cmode || (r.event.every != null ? 'every' : 'contains');
@@ -1363,9 +1363,9 @@ function readRule(el, r) {
     if (r.event.type === 'gift-custom') {
         // Nom affiché au viewer (le label de la règle). Sans ça -> « Interactif N ».
         if (q('.r-name')) r.label = q('.r-name').value;
-        // Bordure : cochée = couleur explicite (override), décochée = auto (rareté) => undefined.
-        const on = q('.r-accent-on');
-        r.event.accentColor = (on && on.checked && q('.r-accent')) ? q('.r-accent').value : undefined;
+        // accentColor (couleur de bordure PERSO, ou undefined = auto rareté) est géré EN DIRECT
+        // par les handlers du picker / du ↺ reset ci-dessous — rien à relire depuis le DOM ici
+        // (relire la valeur du picker la ferait passer pour « perso » même quand c'est l'auto).
     }
     if (r.event.type === 'comment') {
         // NON destructif : le mode décide ce qui part (buildRule), on garde les deux
@@ -1564,15 +1564,19 @@ function renderRules() {
         if (r.event.type === 'gift-custom' && q('.r-giftslug')) {
             q('.r-giftslug').addEventListener('change', () => { readRule(el, r); renderRules(); });
         }
-        // Bordure colorée : aperçu du halo en direct (case à cocher + sélecteur).
+        // Bordure colorée : le picker choisit une couleur PERSO, le ↺ remet l'AUTO (rareté).
+        // accentColor = hex perso OU undefined (= auto). Aperçu du halo mis à jour en direct.
         if (r.event.type === 'gift-custom') {
-            const ico = q('.r-icon'), onbox = q('.r-accent-on'), col = q('.r-accent');
-            const applyAccent = () => {
-                const c = (onbox && onbox.checked && col) ? col.value : slotRarityHex(r.event.giftSlug);
-                if (ico) ico.style.boxShadow = `0 0 0 2px ${c}, 0 0 8px ${c}`;
-            };
-            if (onbox) onbox.addEventListener('change', () => { readRule(el, r); applyAccent(); });
-            if (col) col.addEventListener('input', () => { if (onbox) onbox.checked = true; readRule(el, r); applyAccent(); });
+            const ico = q('.r-icon'), col = q('.r-accent'), reset = q('.r-accent-reset');
+            const paint = (c) => { if (ico) ico.style.boxShadow = `0 0 0 2px ${c}, 0 0 8px ${c}`; };
+            if (col) col.addEventListener('input', () => { r.event.accentColor = col.value; paint(col.value); if (reset) reset.disabled = false; });
+            if (reset) reset.addEventListener('click', () => {
+                r.event.accentColor = undefined;
+                const c = slotRarityHex(r.event.giftSlug);
+                if (col) col.value = c;
+                paint(c);
+                reset.disabled = true;
+            });
         }
         // Poignée à DROITE : glisser pour DÉPLACER l'interaction (réordonner la liste).
         // On lit d'abord la saisie DOM courante pour ne rien perdre au re-render.

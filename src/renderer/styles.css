@@ -380,12 +380,16 @@ input[readonly] { opacity: .6; cursor: not-allowed; }
 .r-iconbtn:hover { border-color: var(--accent); }
 /* Bordure colorée du cadeau : case (override) + sélecteur de couleur. */
 .r-accent-wrap { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
-    font-size: 11px; color: var(--text-2); white-space: nowrap; cursor: pointer; }
-.r-accent-wrap input[type="checkbox"] { width: auto; flex: 0 0 auto; margin: 0; accent-color: var(--accent); }
+    white-space: nowrap; }
 .r-accent { flex: 0 0 auto; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border);
     border-radius: 8px; background: none; cursor: pointer; }
 .r-accent::-webkit-color-swatch-wrapper { padding: 2px; }
 .r-accent::-webkit-color-swatch { border: none; border-radius: 6px; }
+/* ↺ remet la couleur AUTO (rareté) ; désactivé quand c'est déjà l'auto. */
+.r-accent-reset { flex: 0 0 auto; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--bg-3); color: var(--text); cursor: pointer; font-size: 15px; line-height: 1; }
+.r-accent-reset:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-2); }
+.r-accent-reset:disabled { opacity: .4; cursor: default; }
 /* « Mes bundles » : rangée de chips (commission + visibilité), gains généré/gagné. */
 .chips { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .badge--fee { background: rgba(47,142,239,.16); color: var(--accent); border: 1px solid rgba(47,142,239,.35); }
