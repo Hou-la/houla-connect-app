@@ -122,7 +122,16 @@ jobs:
           python-version: '3.12'
       - name: Freeze sidecar (PyInstaller) + bundle pilote ViGEmBus (Windows)
         if: matrix.os == 'windows-2022' && steps.sidecar-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 20   # filet anti-hang : si le freeze coince, il est TUÉ (pas 28 min)
+        continue-on-error: true   # ... et la release continue quand même (sans le moteur bas niveau)
         shell: bash
+        env:
+          # CAUSE du hang de 28 min : vgamepad/setup.py lance un `msiexec /i` INTERACTIF (sans
+          # /quiet) pendant pip -> en CI headless, la fenêtre attend une interaction et bloque
+          # POUR TOUJOURS. Cette variable saute cette install de pilote (qu'on ne veut pas en CI
+          # de toute façon : on livre le pilote nous-mêmes, MSI empaqueté + bouton in-app). La
+          # DLL et le MSI restent bien présents dans le package (donc bundlés par PyInstaller).
+          VGAMEPAD_SKIP_VIGEMBUS_INSTALL: 'true'
         run: |
           set +e
           python -m pip install --upgrade pip
