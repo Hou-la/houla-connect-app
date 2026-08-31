@@ -138,24 +138,25 @@ jobs:
           echo "VGAMEPAD_SKIP=[${VGAMEPAD_SKIP_VIGEMBUS_INSTALL:-UNSET}]"
           python -m pip install --upgrade pip pyinstaller
           if [ $? -ne 0 ]; then echo "::warning::pip/pyinstaller KO — build SANS moteur manette"; exit 0; fi
-          # vgamepad : son setup.py fait AU BUILD un `reg query ...\Uninstall /s` (+ un msiexec
-          # interactif) qui HANG en CI headless. VGAMEPAD_SKIP ne couvre QUE le msiexec, pas le
-          # reg query (prouvé : VGAMEPAD_SKIP=[true] et ça hangeait encore à "Preparing metadata").
-          # On télécharge la source, on NEUTRALISE le bloc Windows (if is_windows -> if False),
-          # puis on installe. Les DLL (données du package) sont copiées quand même -> vgamepad
-          # reste fonctionnel au runtime (le pilote ViGEmBus, lui, on l'installe in-app).
+          # vgamepad : son setup.py HANG au build en CI (bloc Windows : reg query /s + msiexec),
+          # et le sdist 0.1.0 diffère de la branche main (le sed ne matchait pas). On CONTOURNE
+          # setup.py ENTIÈREMENT : télécharger la source et COPIER le package `vgamepad/`
+          # directement dans site-packages. C'est du Python + des DLL (données) -> il s'importe
+          # tel quel, ZÉRO build, ZÉRO hang. Le pilote ViGEmBus, lui, on l'installe in-app.
           python -m pip download vgamepad==0.1.0 --no-deps --no-binary :all: -d vgsrc \
             || { echo "::warning::download vgamepad KO — build SANS moteur manette"; exit 0; }
           tar -xzf vgsrc/vgamepad-*.tar.gz -C vgsrc
           VGDIR=$(find vgsrc -maxdepth 1 -type d -name 'vgamepad-*' | head -1)
-          sed -i 's/^if is_windows:/if False:  # patch CI: reg query + msiexec bloquent le build/' "$VGDIR/setup.py"
-          grep -q '^if False:  # patch CI' "$VGDIR/setup.py" && echo "vgamepad setup.py PATCHE" || echo "::warning::motif 'if is_windows:' introuvable — vgamepad non patche"
-          python -m pip install "$VGDIR" \
-            || { echo "::warning::install vgamepad patche KO — build SANS moteur manette"; exit 0; }
-          # interception-python (clavier bas niveau) DESACTIVE pour l'instant : son install peut
-          # aussi hanger en CI, et la manette (le besoin réel) n'en dépend pas. PyInstaller bundle
-          # quand même l'exe (l'import interception n'échouera QUE si ce helper est appelé).
-          pyinstaller --onefile --name houla-sidecar --collect-all vgamepad resources/sidecar/houla_sidecar.py
+          SITE=$(python -c "import site; print(site.getsitepackages()[0])")
+          cp -r "$VGDIR/vgamepad" "$SITE/" || { echo "::warning::copie vgamepad KO — build SANS moteur manette"; exit 0; }
+          python -c "import vgamepad; print('vgamepad importe OK ->', vgamepad.__file__)" \
+            || { echo "::warning::import vgamepad KO apres copie — build SANS moteur manette"; exit 0; }
+          # --collect-submodules/data/binaries (PAS --collect-all) : une simple copie n'a pas de
+          # dist-info, et --collect-all EXIGE les métadonnées (il planterait). interception (clavier
+          # bas niveau) reste hors du freeze (la manette n'en dépend pas ; l'exe se bundle quand même).
+          pyinstaller --onefile --name houla-sidecar \
+            --collect-submodules vgamepad --collect-data vgamepad --collect-binaries vgamepad \
+            resources/sidecar/houla_sidecar.py
           if [ ! -f dist/houla-sidecar.exe ]; then echo "::warning::PyInstaller n'a pas produit houla-sidecar.exe — build SANS moteur bas niveau"; exit 0; fi
           cp dist/houla-sidecar.exe resources/sidecar/houla-sidecar.exe
           # Installeur du pilote ViGEmBus (manette virtuelle) : empaqueté pour l'install in-app (UAC).
