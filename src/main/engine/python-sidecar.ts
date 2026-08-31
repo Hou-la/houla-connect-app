@@ -30,9 +30,12 @@ export class PythonSidecar {
         if (this.running) return this.proc!;
         // .py (dev) -> lancé via python ; sinon l'exe figé directement.
         const isPy = this.sidecarPath.toLowerCase().endsWith('.py');
+        // windowsHide: l'exe figé (PyInstaller) est une app CONSOLE (obligatoire : le mode
+        // --windowed casse stdin/stdout, donc le JSON-RPC). Sans windowsHide, une fenêtre
+        // console noire clignoterait à chaque effet en live. On la cache.
         this.proc = isPy
-            ? spawn(process.platform === 'win32' ? 'python' : 'python3', [this.sidecarPath], { shell: false, stdio: ['pipe', 'pipe', 'pipe'] })
-            : spawn(this.sidecarPath, [], { shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
+            ? spawn(process.platform === 'win32' ? 'python' : 'python3', [this.sidecarPath], { shell: false, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+            : spawn(this.sidecarPath, [], { shell: false, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
         this.proc.on('exit', () => {
             this.proc = null;
             this.rl = null;

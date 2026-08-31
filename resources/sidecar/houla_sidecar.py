@@ -39,7 +39,14 @@ def _get_gamepad():
     global _pad
     if _pad is None:
         import vgamepad as vg
-        _pad = vg.VX360Gamepad()
+        try:
+            _pad = vg.VX360Gamepad()
+        except Exception as e:  # noqa: BLE001
+            # ViGEmBus (pilote noyau de la manette virtuelle Xbox) absent ou non chargé :
+            # vigem_connect() échoue. On TAGGE l'erreur (VIGEMBUS_MISSING) pour que l'app
+            # propose l'installation guidée du pilote (MSI fourni), au lieu d'un message
+            # technique opaque. La cause d'origine reste jointe pour le diagnostic.
+            raise RuntimeError("VIGEMBUS_MISSING: " + str(e))
     return _pad
 
 

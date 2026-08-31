@@ -45,6 +45,28 @@ function sidecar(): PythonSidecar {
     return sidecarInstance;
 }
 
+// Installeur du pilote ViGEmBus (manette virtuelle Xbox 360), empaqueté À CÔTÉ du sidecar
+// figé (même dossier). La manette virtuelle EXIGE ce pilote noyau ; il s'installe via UAC.
+function driverMsiPath(): string {
+    const dir = app.isPackaged
+        ? path.join(process.resourcesPath, 'sidecar')
+        : path.join(__dirname, '..', '..', 'resources', 'sidecar');
+    return path.join(dir, 'ViGEmBusSetup_x64.msi');
+}
+
+// Traduit un verdict de test en message ACTIONNABLE + un CODE que le renderer utilise pour
+// proposer l'installation du bon pilote, au lieu d'un message technique opaque.
+//  - 'vigembus' : manette virtuelle -> pilote ViGEmBus absent (installable in-app).
+//  - 'sidecar'  : moteur bas niveau introuvable (build sans exe figé / python absent en dev).
+function withDriverCode(res: { ok: boolean; reason?: string }): { ok: boolean; reason?: string; code?: string } {
+    if (res.ok || !res.reason) return res;
+    if (/VIGEMBUS_MISSING/i.test(res.reason))
+        return { ok: false, code: 'vigembus', reason: 'Le pilote de la manette virtuelle (ViGEmBus) n\'est pas installé.' };
+    if (/pilote\/sidecar non installé|moteur de pilotage bas niveau introuvable/i.test(res.reason))
+        return { ok: false, code: 'sidecar', reason: res.reason };
+    return res;
+}
+
 function send(channel: string, payload: unknown): void {
     win?.webContents.send(channel, payload);
 }
@@ -376,9 +398,9 @@ function registerIpc(): void {
                 ? rules.find((r) => r.id === ruleId)
                 : rules.find((r) => r.on?.type === 'gift') || rules[0];
             if (!rule) return { ok: false, reason: 'aucune interaction à tester dans ce pack' };
-            return engine.testFire({ id: rule.id, on: rule.on, effect: rule.effect }, slug);
+            return withDriverCode(await engine.testFire({ id: rule.id, on: rule.on, effect: rule.effect }, slug));
         } catch (e: any) {
-            return { ok: false, reason: e?.message || 'test impossible' };
+            return withDriverCode({ ok: false, reason: e?.message || 'test impossible' });
         }
     });
     ipcMain.handle('customize:save', (_e, slug: string, overlay: any) => {
@@ -488,9 +510,9 @@ function registerIpc(): void {
     });
     // Test manuel d'UNE règle depuis le Lab (déclaratif : trigger + effet, joué via
     // le pipeline sécurisé du moteur). Renvoie un verdict {ok, reason} pour l'UI.
-    ipcMain.handle('engine:testRule', (_e, rule: any, bundleSlug?: string) => {
+    ipcMain.handle('engine:testRule', async (_e, rule: any, bundleSlug?: string) => {
         if (!rule || typeof rule !== 'object' || !rule.effect) return { ok: false, reason: 'règle invalide' };
-        return engine.testFire({ id: rule.id || 'test', on: rule.on || { type: 'gift' }, effect: rule.effect }, bundleSlug);
+        return withDriverCode(await engine.testFire({ id: rule.id || 'test', on: rule.on || { type: 'gift' }, effect: rule.effect }, bundleSlug));
     });
     ipcMain.handle('engine:test', (_e, slug?: string) => {
         // Sans slug : simule la 1re interaction cadeau du pack actif (générique ou slot).
@@ -500,6 +522,44 @@ function registerIpc(): void {
         return { ok: true, slug: s };
     });
     ipcMain.handle('engine:status', () => ({ running: engineRunning, connected: conn.connected }));
+
+    // Installe le pilote ViGEmBus (manette virtuelle) depuis son MSI empaqueté, AVEC
+    // élévation UAC. Appelé quand un test manette signale le pilote manquant (code
+    // 'vigembus'), ou proactivement depuis les Réglages. Windows uniquement.
+    ipcMain.handle('driver:installGamepad', async () => {
+        if (process.platform !== 'win32') return { ok: false, reason: 'Le pilote manette n\'est nécessaire que sur Windows.' };
+        const msi = driverMsiPath();
+        if (!fs.existsSync(msi)) return { ok: false, reason: 'Installeur du pilote absent de cette version. Mets l\'app à jour puis réessaie.' };
+        return await new Promise<{ ok: boolean; reason?: string }>((resolve) => {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const { spawn } = require('child_process') as typeof import('child_process');
+            // Élévation via UAC (Start-Process -Verb RunAs). Deux pièges DÉJÀ vérifiés :
+            //  1) Le chemin du MSI est mis entre GUILLEMETS DOUBLES dans l'élément d'ArgumentList.
+            //     Start-Process réassemble les éléments séparés par des espaces SANS les re-quoter :
+            //     sans ces guillemets, « ...\Hou.la Connect\... » est coupé à l'espace (msiexec voit
+            //     « /i C:\Program ») et l'install échoue sur 100 % des machines.
+            //  2) -PassThru + exit $p.ExitCode : sinon Start-Process -Wait JETTE le code de msiexec,
+            //     PowerShell sort 0 et tout échec passerait pour un succès (« installé ✓ » mensonger).
+            // Script passé en -EncodedCommand (base64 UTF-16LE) : élimine toute couche de quoting
+            // entre Node et PowerShell (les guillemets ne sont pas remaniés).
+            const psScript =
+                `try { $p = Start-Process msiexec -ArgumentList '/i','"${msi}"','/qb','/norestart' -Verb RunAs -Wait -PassThru; exit $p.ExitCode } catch { exit 1 }`;
+            const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
+            const p = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], { windowsHide: true });
+            let err = '';
+            p.stderr?.on('data', (d: Buffer) => { err += String(d); });
+            p.on('error', (e: Error) => resolve({ ok: false, reason: e?.message || 'lancement de l\'installeur impossible' }));
+            p.on('exit', (code: number | null) => {
+                // Repart d'un sidecar NEUF : la prochaine tentative recharge vgamepad avec le
+                // pilote fraîchement installé (sinon l'ancienne instance garde son échec).
+                sidecarInstance?.kill();
+                sidecarInstance = null;
+                // 0 = OK ; 3010 = OK (redémarrage conseillé) ; 1638 = déjà installé.
+                if (code === 0 || code === 3010 || code === 1638) resolve({ ok: true });
+                else resolve({ ok: false, reason: err.trim() || `Installation non terminée (code ${code ?? '?'}). Autorise la fenêtre Windows (UAC) puis réessaie.` });
+            });
+        });
+    });
     ipcMain.handle('prefs:language', (_e, lang?: string) => {
         if (lang) store.setLanguage(lang);
         return store.getLanguage();

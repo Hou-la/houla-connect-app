@@ -67,7 +67,10 @@ function runEffectTest({ resEl, cls, needsFocus, btn, fire }) {
                 // On double donc par un TOAST, visible au retour dans Connect.
                 const r = (v && v.reason) || 'échec';
                 setRes('✗ ' + r, 'no');
-                showToast('effect-test', { kind: 'warn', title: 'Test non déclenché', msg: r });
+                // Manette virtuelle sans pilote ViGEmBus : au lieu d'un message opaque, on
+                // propose l'installation guidée (une seule fois, élévation UAC côté main).
+                if (v && v.code === 'vigembus') offerGamepadDriverInstall();
+                else showToast('effect-test', { kind: 'warn', title: 'Test non déclenché', msg: r });
             }
         } catch (e) {
             const r = friendlyError(e, 'test impossible');
@@ -88,6 +91,34 @@ function runEffectTest({ resEl, cls, needsFocus, btn, fire }) {
     };
     state.timer = setTimeout(tick, 1000);
     _testCountdown = state;
+}
+// Le test manette a échoué faute de pilote ViGEmBus (manette virtuelle Xbox) : toast
+// PERSISTANT avec un bouton d'installation. L'install passe par le MSI empaqueté + UAC
+// (côté main). Au succès, on invite à relancer le test. Une seule fois par machine.
+function offerGamepadDriverInstall() {
+    showToast('effect-test', {
+        kind: 'warn', persist: true,
+        title: 'Pilote manette à installer',
+        msg: 'La manette virtuelle a besoin du pilote ViGEmBus (une seule installation). Installe-le, puis relance le test.',
+        action: {
+            label: 'Installer le pilote',
+            onClick: async (b) => {
+                const prev = b.textContent; b.disabled = true; b.textContent = 'Installation…';
+                try {
+                    const res = await api.driver.installGamepad();
+                    if (res && res.ok) {
+                        showToast('effect-test', { kind: 'ok', title: 'Pilote installé', msg: 'Relance le test de la manette : le jeu devrait réagir maintenant.' });
+                    } else {
+                        b.disabled = false; b.textContent = prev;
+                        showToast('effect-test', { kind: 'error', persist: true, title: 'Installation non terminée', msg: (res && res.reason) || 'Autorise la fenêtre Windows (UAC) puis réessaie.' });
+                    }
+                } catch (e) {
+                    b.disabled = false; b.textContent = prev;
+                    showToast('effect-test', { kind: 'error', persist: true, title: 'Installation impossible', msg: friendlyError(e, 'Réessaie dans un instant.') });
+                }
+            },
+        },
+    });
 }
 // ── Toasts (notifications non bloquantes) ──────────────────────────
 // Le sens ne repose JAMAIS sur la seule couleur (propriétaire daltonien) : chaque
@@ -2732,6 +2763,23 @@ async function openCgu(gate) {
 }
 $('icon-guide-close').onclick = () => $('icon-guide-modal').classList.add('hidden');
 $('cgu-open').onclick = () => openCgu(false);
+// Installer le pilote de la manette virtuelle (ViGEmBus) de façon PROACTIVE, sans avoir à
+// échouer un test d'abord. L'install (MSI empaqueté + UAC) est gérée côté main.
+{ const b = $('driver-gamepad-install'); if (b) b.onclick = async () => {
+    const s = $('driver-gamepad-status');
+    setBtnBusy(b, true, 'Installation…');
+    try {
+        const res = await api.driver.installGamepad();
+        if (res && res.ok) {
+            if (s) s.textContent = 'Pilote installé ✓ — la manette virtuelle est prête. Teste une interaction « Manette ».';
+            showToast('driver', { kind: 'ok', title: 'Pilote installé', msg: 'La manette virtuelle est prête.' });
+        } else {
+            showToast('driver', { kind: 'error', title: 'Installation non terminée', msg: (res && res.reason) || 'Autorise la fenêtre Windows (UAC) puis réessaie.' });
+        }
+    } catch (e) {
+        showToast('driver', { kind: 'error', title: 'Installation impossible', msg: friendlyError(e, 'Réessaie dans un instant.') });
+    } finally { setBtnBusy(b, false); }
+}; }
 $('cgu-close').onclick = () => $('cgu-modal').classList.add('hidden');
 $('cgu-accept').onclick = async () => { await api.legal.accept(); $('cgu-modal').classList.add('hidden'); };
 async function checkLegalGate() {

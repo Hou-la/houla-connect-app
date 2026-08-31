@@ -84,6 +84,10 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         testInstalled: (slug: string, ruleId?: string) => invoke('engine:testInstalled', slug, ruleId),
         status: () => invoke('engine:status'),
     },
+    driver: {
+        // Installe le pilote de la manette virtuelle (ViGEmBus) via UAC. Windows uniquement.
+        installGamepad: () => invoke('driver:installGamepad'),
+    },
     language: (lang?: string) => invoke('prefs:language', lang),
     autoLaunch: (enabled?: boolean) => invoke('prefs:autolaunch', enabled),
     legal: {

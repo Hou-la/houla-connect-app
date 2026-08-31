@@ -5,9 +5,11 @@ out/
 *.log
 .DS_Store
 resources/sidecar/*.exe
+resources/sidecar/*.msi
 resources/sidecar/build/
 resources/sidecar/dist/
 resources/sidecar/__pycache__/
+/houla-sidecar.spec
 
 # Tests
 test-results/
