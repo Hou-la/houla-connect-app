@@ -487,11 +487,16 @@ button.is-busy::before {
    Un SEUL bouton enregistre TOUT (infos du pack + version) : fini les deux boutons.
    Déborde le padding de .content pour la pleine largeur ; l'ombre haute masque le
    contenu qui défile dessous. La barre reste dans la vue Lab (n'affecte pas les autres). */
-.lab-actionbar { position: sticky; bottom: 0; z-index: 20;
+/* position: FIXED = collée au VRAI bas de la fenêtre. En sticky, `bottom:0` s'alignait sur
+   le bord du padding-bottom de .content (22px) -> un vide où le contenu réapparaissait.
+   left = largeur de la sidebar (grille 210px) ; le contenu du Lab reçoit un padding-bas
+   pour pouvoir défiler AU-DESSUS de la barre au lieu d'être masqué derrière. */
+.lab-actionbar { position: fixed; left: 210px; right: 0; bottom: 0; z-index: 30;
     display: flex; align-items: center; gap: 14px;
-    margin: 18px -26px -22px; padding: 14px 26px calc(14px + 22px);
+    padding: 14px 26px;
     background: var(--bg); border-top: 1px solid var(--border);
     box-shadow: 0 -8px 20px rgba(0, 0, 0, .30); }
+#view-lab { padding-bottom: 92px; } /* dégage la place sous le dernier contenu pour la barre fixe */
 .lab-actionbar .switch { margin: 0; }
 .lab-actionbar #lab-bump { width: auto; margin: 0; }
 .lab-actionbar .lab-save { width: auto; margin-left: auto; font-weight: 600; padding: 11px 24px; }
