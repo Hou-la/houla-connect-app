@@ -10,6 +10,10 @@ resources/sidecar/build/
 resources/sidecar/dist/
 resources/sidecar/__pycache__/
 /houla-sidecar.spec
+build/houla-sidecar/
+build/*.spec
+ViGEmBusSetup_x64.msi
+.vscode/
 
 # Tests
 test-results/

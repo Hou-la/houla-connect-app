@@ -155,21 +155,51 @@ _XI_BUTTONS = [
 _pt_running = False
 _pt_thread = None
 _pt_index = None          # index XInput de la PHYSIQUE à recopier (None = juste les cadeaux)
+_virtual_index = None     # index XInput de NOTRE pad virtuel (identifié par signature)
 _pt_lock = threading.Lock()
 _ov_buttons = set()       # boutons/gâchettes forcés par les cadeaux (tokens majuscules)
 _ov_analog = None         # override sticks {lx,ly,rx,ry} en float, ou None
 
 
-def _find_physical_index(virtual_pad):
-    """Index XInput de la manette PHYSIQUE : la 1re connectée qui n'est PAS la virtuelle.
-    L'index ViGEm de la virtuelle (get_index(), base 1) == index XInput + 1."""
-    vidx = None
+def _identify_virtual_index(pad, vg):
+    """Index XInput RÉEL de notre pad virtuel.
+
+    ⚠️ `pad.get_index()` renvoie l'ordre ViGEm (ordre de branchement au bus), qui n'est
+    PAS l'index utilisateur XInput assigné par Windows. Se fier à `get_index()-1` fait lire
+    la MAUVAISE manette (bug réel : la physique n'était jamais recopiée). On imprime donc une
+    SIGNATURE inédite (LB+RB + 2 gâchettes à fond) sur le pad virtuel et on regarde quel slot
+    XInput la reflète : ce slot EST le nôtre. Combo volontairement improbable au repos d'une
+    vraie manette -> quasi zéro faux positif. Sonde ~50 ms puis on relâche."""
     try:
-        vidx = virtual_pad.get_index() - 1
+        for _ in range(8):  # le pad ViGEm peut mettre un instant à apparaître dans XInput
+            pad.reset()
+            pad.press_button(button=getattr(vg.XUSB_BUTTON, "XUSB_GAMEPAD_LEFT_SHOULDER"))
+            pad.press_button(button=getattr(vg.XUSB_BUTTON, "XUSB_GAMEPAD_RIGHT_SHOULDER"))
+            pad.left_trigger(value=255)
+            pad.right_trigger(value=255)
+            pad.update()
+            time.sleep(0.05)
+            for i in range(4):
+                gp = _xinput_read(i)
+                if gp is None:
+                    continue
+                if (gp.wButtons & 0x0300) == 0x0300 and gp.bLeftTrigger > 200 and gp.bRightTrigger > 200:
+                    pad.reset(); pad.update()
+                    return i
+        pad.reset(); pad.update()
     except Exception:  # noqa: BLE001
-        vidx = None
+        try:
+            pad.reset(); pad.update()
+        except Exception:  # noqa: BLE001
+            pass
+    return None
+
+
+def _find_physical_index(virtual_pad):
+    """Index XInput de la manette PHYSIQUE : la 1re manette connectée qui n'est PAS la nôtre.
+    `_virtual_index` est identifié une fois (par signature) à l'activation du passthrough."""
     for i in range(4):
-        if i == vidx:
+        if i == _virtual_index:
             continue
         if _xinput_read(i) is not None:
             return i
@@ -232,16 +262,17 @@ def _passthrough_loop(pad, vg):
 
 def helper_vigem_passthrough(args):
     """Démarre/arrête le mode « une seule manette » (mirroring physique -> virtuelle)."""
-    global _pt_running, _pt_thread, _pt_index
+    global _pt_running, _pt_thread, _pt_index, _virtual_index
     pad = _get_gamepad()
     vg = _vg
     if bool(args.get("enable")):
+        _virtual_index = _identify_virtual_index(pad, vg)  # notre slot XInput (fiable, pas get_index)
         _pt_index = _find_physical_index(pad)  # (re)détecte la physique (branchement à chaud)
         if not _pt_running:
             _pt_running = True
             _pt_thread = threading.Thread(target=_passthrough_loop, args=(pad, vg), daemon=True)
             _pt_thread.start()
-        return {"passthrough": True, "physicalIndex": _pt_index}
+        return {"passthrough": True, "physicalIndex": _pt_index, "virtualIndex": _virtual_index}
     # Désactivation : on stoppe le loop, on vide les overlays, on relâche le pad.
     _pt_running = False
     with _pt_lock:

@@ -482,8 +482,27 @@ function registerIpc(): void {
         // installé, l'appel échoue -> le 1er test manette guidera l'installation.
         const usesGamepad = activeManifest.rules.some((r) => (r.effect as { type?: string })?.type === 'gamepad');
         if (usesGamepad) {
-            try { await sidecar().call('vigem-passthrough', { enable: true }); }
-            catch (e) { console.error('[passthrough] start:', (e as Error)?.message || e); }
+            try {
+                const pt = await sidecar().call('vigem-passthrough', { enable: true }) as { physicalIndex?: number | null };
+                // Retour DISCRIMINANT (texte, pas couleur) : le joueur doit SAVOIR si sa manette
+                // physique est recopiée, ou si seuls les cadeaux piloteront la virtuelle (cas où
+                // il a démarré sans manette branchée -> le mirroring ne se fera pas).
+                const hasPhys = pt && typeof pt.physicalIndex === 'number';
+                send('onLog', {
+                    ts: Date.now(), ruleId: 'MANETTE', trigger: 'gamepad', sender: '', executor: 'gamepad',
+                    allowed: !!hasPhys,
+                    reason: hasPhys
+                        ? `Manette physique détectée (emplacement ${pt.physicalIndex}) : elle est recopiée dans la manette virtuelle, les cadeaux s'y ajoutent.`
+                        : "Aucune manette physique détectée : seuls les cadeaux piloteront la manette virtuelle. Branche ta manette AVANT de démarrer, puis relance le pack.",
+                });
+            } catch (e) {
+                console.error('[passthrough] start:', (e as Error)?.message || e);
+                send('onLog', {
+                    ts: Date.now(), ruleId: 'MANETTE', trigger: 'gamepad', sender: '', executor: 'gamepad',
+                    allowed: false,
+                    reason: "Pilote manette indisponible : installe-le depuis Connecteurs, puis relance le pack.",
+                });
+            }
         }
         const reactSlugs = activeManifest.rules.filter((r) => r.on.type === 'gift').map((r) => r.on.giftSlug ?? r.on.slot!);
         const events = ['gift', 'follow', 'comment', 'viewer', 'hearts'];
