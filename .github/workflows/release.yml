@@ -138,14 +138,15 @@ jobs:
           echo "VGAMEPAD_SKIP=[${VGAMEPAD_SKIP_VIGEMBUS_INSTALL:-UNSET}]"
           python -m pip install --upgrade pip pyinstaller
           if [ $? -ne 0 ]; then echo "::warning::pip/pyinstaller KO — build SANS moteur manette"; exit 0; fi
-          # vgamepad : son setup.py HANG au build en CI (bloc Windows : reg query /s + msiexec),
-          # et le sdist 0.1.0 diffère de la branche main (le sed ne matchait pas). On CONTOURNE
-          # setup.py ENTIÈREMENT : télécharger la source et COPIER le package `vgamepad/`
-          # directement dans site-packages. C'est du Python + des DLL (données) -> il s'importe
-          # tel quel, ZÉRO build, ZÉRO hang. Le pilote ViGEmBus, lui, on l'installe in-app.
-          python -m pip download vgamepad==0.1.0 --no-deps --no-binary :all: -d vgsrc \
-            || { echo "::warning::download vgamepad KO — build SANS moteur manette"; exit 0; }
-          tar -xzf vgsrc/vgamepad-*.tar.gz -C vgsrc
+          # vgamepad : son setup.py HANG au build en CI (bloc Windows : reg query /s + msiexec).
+          # MÊME `pip download` déclenche la prépa metadata (= setup.py = hang) ! On télécharge donc
+          # le sdist EN DIRECT (curl, AUCUN pip), on extrait, et on COPIE le package `vgamepad/`
+          # dans site-packages. C'est du Python + des DLL -> s'importe tel quel, ZÉRO build, ZÉRO hang.
+          URL=$(curl -sL --max-time 30 https://pypi.org/pypi/vgamepad/0.1.0/json | python -c "import json,sys; print([f['url'] for f in json.load(sys.stdin)['urls'] if f['filename'].endswith('.tar.gz')][0])")
+          [ -n "$URL" ] || { echo "::warning::URL sdist vgamepad introuvable — build SANS moteur manette"; exit 0; }
+          echo "sdist vgamepad: $URL"
+          curl -sL --max-time 60 "$URL" -o vgamepad.tar.gz || { echo "::warning::download sdist KO — build SANS moteur manette"; exit 0; }
+          mkdir -p vgsrc && tar -xzf vgamepad.tar.gz -C vgsrc
           VGDIR=$(find vgsrc -maxdepth 1 -type d -name 'vgamepad-*' | head -1)
           SITE=$(python -c "import site; print(site.getsitepackages()[0])")
           cp -r "$VGDIR/vgamepad" "$SITE/" || { echo "::warning::copie vgamepad KO — build SANS moteur manette"; exit 0; }
