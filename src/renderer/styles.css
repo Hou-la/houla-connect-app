@@ -558,6 +558,7 @@ button.is-busy::before {
 .md-code .c-ph { color: #ffcf6a; font-weight: 600; }
 .md-code .c-id { color: var(--accent-2); }
 .md-code .c-num { color: #f0a3b3; }
+.md-code .c-hex { color: #9fb0c9; } /* groupes hex (codes de triche) : ton calme, lisible en bloc */
 
 /* ── En-tête FIXE (Store / Mes bundles) : reste visible, seule la liste scrolle ──
    Sticky dans le conteneur .content (padding 22/26) : marges négatives pour couvrir

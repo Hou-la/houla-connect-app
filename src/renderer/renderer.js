@@ -165,11 +165,14 @@ function dismissToast(id) {
 // sont bornés à http(s)/mailto. La coloration de code opère sur le texte BRUT
 // (chaque jeton est ré-échappé), donc aucune balise ne peut naître du contenu.
 function mdHighlight(raw) {
-    const re = /(#[^\n]*|\/\/[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\{[a-zA-Z0-9_]+\})|(\b[a-z][a-z0-9_]*:[a-z0-9_/.:-]+\b)|(\b\d+(?:\.\d+)?\b)/g;
+    // Groupes HEX (ex. codes de triche « 80002000 00F53448 ») reconnus EN ENTIER et colorés
+    // d'un ton calme -> sinon le regex des nombres ne colorait que les runs de chiffres purs
+    // (rose vif) en laissant le reste en clair = pâté bariolé illisible.
+    const re = /(#[^\n]*|\/\/[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\{[a-zA-Z0-9_]+\})|(\b[0-9A-Fa-f]{4,}\b)|(\b[a-z][a-z0-9_]*:[a-z0-9_/.:-]+\b)|(\b\d+(?:\.\d+)?\b)/g;
     let out = '', last = 0, m;
     while ((m = re.exec(raw))) {
         out += esc(raw.slice(last, m.index));
-        const cls = m[1] ? 'c-com' : m[2] ? 'c-str' : m[3] ? 'c-ph' : m[4] ? 'c-id' : 'c-num';
+        const cls = m[1] ? 'c-com' : m[2] ? 'c-str' : m[3] ? 'c-ph' : m[4] ? 'c-hex' : m[5] ? 'c-id' : 'c-num';
         out += `<span class="${cls}">${esc(m[0])}</span>`;
         last = m.index + m[0].length;
     }
@@ -231,7 +234,10 @@ function mdToSafeHtml(src) {
         if (!line.trim()) { i++; continue; }
         const para = [];
         while (i < lines.length && lines[i].trim() && !/^(```|#{1,6}\s|\s*[-*]\s|\s*\d+\.\s|\s*>\s?)/.test(lines[i])) { para.push(lines[i]); i++; }
-        out.push(`<p>${mdInline(para.join(' '))}</p>`);
+        // Sauts de ligne SIMPLES préservés (mode « breaks », façon tutoriel) : chaque ligne reste
+        // sur sa ligne. Sans ça, des instructions ligne-à-ligne (étapes, codes) se collaient en un
+        // pâté illisible. La séparation en paragraphes (ligne vide) donne, elle, l'espace vertical.
+        out.push(`<p>${para.map((l) => mdInline(l)).join('<br>')}</p>`);
     }
     return out.join('');
 }
