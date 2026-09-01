@@ -107,6 +107,7 @@ function offerGamepadDriverInstall() {
                 try {
                     const res = await api.driver.installGamepad();
                     if (res && res.ok) {
+                        gamepadDriverInstalled = true; // la vue Connecteurs montrera « ✓ Pilote installé »
                         showToast('effect-test', { kind: 'ok', title: 'Pilote installé', msg: 'Relance le test de la manette : le jeu devrait réagir maintenant.' });
                     } else {
                         b.disabled = false; b.textContent = prev;
@@ -2748,6 +2749,10 @@ $('connector-save').onclick = async () => {
 
 // ── Vue Connecteurs ──
 function connectorTypeLabel(type) { return (CONNECTOR_TYPES[type] || {}).label || 'Local'; }
+// État du pilote manette (ViGEmBus) : null = pas encore vérifié, true/false = connu.
+// Renseigné à l'ouverture de la vue + mis à true après une install réussie, pour que le
+// bouton « Installer le pilote » laisse place à « ✓ Pilote installé ».
+let gamepadDriverInstalled = null;
 function renderConnectorsList() {
     const box = $('cx-list');
     if (!myConnectors.length) { box.innerHTML = '<p class="muted">Aucun connecteur.</p>'; return; }
@@ -2755,9 +2760,11 @@ function renderConnectorsList() {
         const isLocal = !CONNECTOR_TYPES[c.type];
         // La manette virtuelle exige le pilote ViGEmBus : bouton d'install DIRECTEMENT sur
         // sa ligne (là où on l'active), plutôt qu'enterré ailleurs.
-        const driverBtn = c.type === 'gamepad'
-            ? '<button class="cx-driver btn btn--ghost btn--mini" title="Installer le pilote de la manette virtuelle (ViGEmBus). Une seule fois, sous Windows. Une fenêtre UAC demandera l\'autorisation.">Installer le pilote</button>'
-            : '';
+        const driverBtn = c.type !== 'gamepad'
+            ? ''
+            : (gamepadDriverInstalled === true
+                ? '<span class="cx-driver-ok" title="Le pilote de la manette virtuelle (ViGEmBus) est installé sur ce PC.">✓ Pilote installé</span>'
+                : '<button class="cx-driver btn btn--ghost btn--mini" title="Installer le pilote de la manette virtuelle (ViGEmBus). Une seule fois, sous Windows. Une fenêtre UAC demandera l\'autorisation.">Installer le pilote</button>');
         return `<div class="cx-row" data-id="${esc(c.id)}">`
             + `<label class="switch" title="Activer / désactiver"><input type="checkbox" class="cx-enable"${c.enabled ? ' checked' : ''}/><span class="switch__track"><span class="switch__thumb"></span></span></label>`
             + `<span class="cx-type">${esc(connectorTypeLabel(c.type))}</span><b>${esc(c.name)}</b>`
@@ -2777,15 +2784,29 @@ function renderConnectorsList() {
             setBtnBusy(drv, true, 'Installation…');
             try {
                 const res = await api.driver.installGamepad();
-                if (res && res.ok) showToast('driver', { kind: 'ok', title: 'Pilote installé', msg: 'La manette virtuelle est prête. Teste une interaction « Manette ».' });
-                else showToast('driver', { kind: 'error', title: 'Installation non terminée', msg: (res && res.reason) || 'Autorise la fenêtre Windows (UAC) puis réessaie.' });
+                if (res && res.ok) {
+                    gamepadDriverInstalled = true;
+                    showToast('driver', { kind: 'ok', title: 'Pilote installé', msg: 'La manette virtuelle est prête. Teste une interaction « Manette ».' });
+                    renderConnectorsList(); // remplace le bouton par « ✓ Pilote installé »
+                } else {
+                    setBtnBusy(drv, false);
+                    showToast('driver', { kind: 'error', title: 'Installation non terminée', msg: (res && res.reason) || 'Autorise la fenêtre Windows (UAC) puis réessaie.' });
+                }
             } catch (e) {
+                setBtnBusy(drv, false);
                 showToast('driver', { kind: 'error', title: 'Installation impossible', msg: friendlyError(e, 'Réessaie dans un instant.') });
-            } finally { setBtnBusy(drv, false); }
+            }
         };
     });
 }
-async function loadConnectorsView() { $('cx-list').innerHTML = skeletonRowsHtml(3); await loadConnectors(); renderConnectorsList(); }
+async function loadConnectorsView() {
+    $('cx-list').innerHTML = skeletonRowsHtml(3);
+    await loadConnectors();
+    // État du pilote manette AVANT le rendu : décide « Installer le pilote » vs « ✓ installé ».
+    try { const s = await api.driver.isGamepadInstalled(); gamepadDriverInstalled = s ? !!s.installed : null; }
+    catch { gamepadDriverInstalled = null; }
+    renderConnectorsList();
+}
 $('cx-add').onclick = () => openConnectorModal(null, () => renderConnectorsList());
 $('cx-info').onclick = () => $('cx-info-modal').classList.remove('hidden');
 $('cx-info-close').onclick = () => $('cx-info-modal').classList.add('hidden');

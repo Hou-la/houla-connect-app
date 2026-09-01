@@ -69,7 +69,10 @@
             testInstalled: rec('testInstalled', () => R(cfg.testRuleResult || { ok: true })),
             status: () => R({ state: 'idle' }),
         },
-        driver: { installGamepad: rec('installGamepad', () => R(cfg.installGamepadResult || { ok: true })) },
+        driver: {
+            installGamepad: rec('installGamepad', () => R(cfg.installGamepadResult || { ok: true })),
+            isGamepadInstalled: () => R({ installed: !!cfg.gamepadDriverInstalled }),
+        },
         language: () => R(), autoLaunch: () => R(false),
         legal: { text: () => R(''), status: () => R({ accepted: true }), accept: () => R() },
         update: { check: () => R(), install: () => R() },

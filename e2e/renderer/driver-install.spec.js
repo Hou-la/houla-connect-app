@@ -23,6 +23,24 @@ test('Connecteurs : échec d\'install -> message actionnable (UAC), pas de faux 
     await expect(page.locator('[data-toast="driver"]')).toContainText(/UAC|non terminée|refusée/i);
 });
 
+test('Connecteurs : pilote DÉJÀ installé -> badge « ✓ Pilote installé », pas de bouton', async ({ page }) => {
+    await boot(page, { connectors: [GAMEPAD_CX], gamepadDriverInstalled: true });
+    await page.locator('.nav[data-view="connecteurs"]').click();
+    await expect(page.locator('#view-connecteurs')).toBeVisible();
+    await expect(page.locator('.cx-row .cx-driver-ok')).toContainText(/installé/i);
+    await expect(page.locator('.cx-row .cx-driver')).toHaveCount(0); // plus de bouton d'install
+});
+
+test('Connecteurs : après une install RÉUSSIE, le bouton devient « ✓ Pilote installé »', async ({ page }) => {
+    // Reproduit le bug signalé : le bouton restait « Installer le pilote » après succès.
+    await boot(page, { connectors: [GAMEPAD_CX], gamepadDriverInstalled: false });
+    await page.locator('.nav[data-view="connecteurs"]').click();
+    await expect(page.locator('.cx-row .cx-driver')).toBeVisible(); // bouton présent au départ
+    await page.locator('.cx-row .cx-driver').click();
+    await expect(page.locator('.cx-row .cx-driver-ok')).toContainText(/installé/i); // devient le badge
+    await expect(page.locator('.cx-row .cx-driver')).toHaveCount(0); // le bouton a disparu
+});
+
 test('Connecteurs : le bouton pilote n\'apparaît QUE sur la ligne Manette', async ({ page }) => {
     await boot(page, {
         connectors: [

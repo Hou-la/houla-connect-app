@@ -590,6 +590,24 @@ function registerIpc(): void {
             });
         });
     });
+    // Le pilote manette (ViGEmBus) est-il déjà installé sur ce PC ? Sert à la vue
+    // Connecteurs pour montrer « Pilote installé » au lieu du bouton d'installation. On
+    // interroge le SERVICE Windows du pilote : `sc query ViGEmBus` sort 0 s'il existe
+    // (donc installé), 1060 sinon. Léger, pas besoin du sidecar. Windows uniquement.
+    ipcMain.handle('driver:isGamepadInstalled', async () => {
+        if (process.platform !== 'win32') return { installed: false };
+        return await new Promise<{ installed: boolean }>((resolve) => {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const { spawn } = require('child_process') as typeof import('child_process');
+                const p = spawn('sc.exe', ['query', 'ViGEmBus'], { windowsHide: true });
+                p.on('error', () => resolve({ installed: false }));
+                p.on('exit', (code: number | null) => resolve({ installed: code === 0 }));
+            } catch {
+                resolve({ installed: false });
+            }
+        });
+    });
     ipcMain.handle('prefs:language', (_e, lang?: string) => {
         if (lang) store.setLanguage(lang);
         return store.getLanguage();

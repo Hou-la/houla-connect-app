@@ -352,6 +352,10 @@ input[readonly] { opacity: .6; cursor: not-allowed; }
     cursor: pointer; font-size: 12px; padding: 6px 10px; }
 .cx-edit:hover { border-color: var(--accent); }
 .cx-del { background: transparent; border: 0; color: var(--danger); cursor: pointer; font-size: 14px; padding: 4px 8px; }
+/* Pilote déjà installé : badge inactif. Signal NON coloré (proprio daltonien) : la coche
+   ✓ (forme) + le texte + l'opacité réduite portent le sens, jamais la couleur seule. */
+.cx-driver-ok { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 6px 10px;
+    color: var(--text); border: 1px solid var(--border); border-radius: 8px; white-space: nowrap; opacity: .72; }
 .r-connector { max-width: 180px; }
 
 /* Modale CGU */
