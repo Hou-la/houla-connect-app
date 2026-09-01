@@ -475,6 +475,16 @@ function registerIpc(): void {
         // override des cooldowns. N'altère jamais le manifeste signé sur le disque.
         activeManifest = applyPackOverlay(d.manifest as BundleManifest, store.getPackOverlay(slug));
         router.setManifest(activeManifest);
+        // Pack qui utilise la MANETTE -> mode « une seule manette » : le sidecar recopie EN
+        // CONTINU la manette PHYSIQUE du joueur dans la virtuelle et y superpose les cadeaux.
+        // Le joueur règle Joueur 1 = manette virtuelle UNE fois, conduit normalement, et les
+        // cadeaux s'ajoutent (résout « le jeu lit la physique, pas la virtuelle »). Sans pilote
+        // installé, l'appel échoue -> le 1er test manette guidera l'installation.
+        const usesGamepad = activeManifest.rules.some((r) => (r.effect as { type?: string })?.type === 'gamepad');
+        if (usesGamepad) {
+            try { await sidecar().call('vigem-passthrough', { enable: true }); }
+            catch (e) { console.error('[passthrough] start:', (e as Error)?.message || e); }
+        }
         const reactSlugs = activeManifest.rules.filter((r) => r.on.type === 'gift').map((r) => r.on.giftSlug ?? r.on.slot!);
         const events = ['gift', 'follow', 'comment', 'viewer', 'hearts'];
         const key = await api.ensureEventKey(events);
@@ -492,6 +502,9 @@ function registerIpc(): void {
         conn.disconnect();
         router.setManifest(null);
         engineRunning = false;
+        // Coupe le mode « une seule manette » (sinon le thread de mirroring tourne encore et
+        // garde la manette virtuelle active après l'arrêt du pack).
+        if (sidecarInstance) { try { await sidecar().call('vigem-passthrough', { enable: false }); } catch { /* noop */ } }
         // Retire le pack visuel côté viewer : plus de pack actif -> plus rien à montrer.
         await api.setActivePackBundle(null).catch(() => {});
         return { ok: true };
@@ -499,6 +512,7 @@ function registerIpc(): void {
     ipcMain.handle('engine:panic', async () => {
         conn.disconnect();
         await engine.panic();
+        if (sidecarInstance) { try { await sidecar().call('vigem-passthrough', { enable: false }); } catch { /* noop */ } }
         sidecarInstance?.kill();
         engineRunning = false;
         await api.setActivePackBundle(null).catch(() => {});
