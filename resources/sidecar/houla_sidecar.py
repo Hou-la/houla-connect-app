@@ -26,6 +26,8 @@ import json
 import time
 import ctypes
 import threading
+import atexit
+import gc
 
 # Imports paresseux + dégradation propre si un driver/lib manque.
 _kb = None
@@ -412,10 +414,48 @@ def helper_vigem_gamepad(args):
         raise
 
 
+def _cleanup_pad():
+    """Débranche PROPREMENT la manette virtuelle ViGEm à la sortie du sidecar.
+
+    Sans ça, chaque arrêt laisse une CIBLE ZOMBIE (« Contrôleur XBOX 360 » fantôme) :
+    accumulées, elles finissent par COINCER le bus ViGEmBus (écritures gelées, plus
+    aucun incrément de paquet XInput) jusqu'au REDÉMARRAGE de la machine. vgamepad ne
+    retire la cible que dans son __del__, qui ne tourne pas de façon fiable à la sortie
+    de l'interpréteur -> on le déclenche explicitement ici (couvre la fermeture normale
+    du sidecar quand l'app ferme stdin). Un kill Windows brutal (TerminateProcess) ne
+    l'exécutera pas : l'app doit d'abord fermer stdin pour laisser CE nettoyage tourner."""
+    global _pad, _pt_running
+    _pt_running = False
+    p = _pad
+    _pad = None
+    if p is None:
+        return
+    try:
+        p.reset(); p.update()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        del p
+        gc.collect()  # refcount 0 -> __del__ vgamepad = vigem_target_remove + free
+    except Exception:  # noqa: BLE001
+        pass
+
+
+atexit.register(_cleanup_pad)
+
+
+def helper_shutdown(args):
+    """Arrêt GRACIEUX demandé par l'app : débranche la manette AVANT que l'app ne ferme
+    stdin / ne tue le process (sinon la cible ViGEm fuit en zombie)."""
+    _cleanup_pad()
+    return {"shutdown": True}
+
+
 HELPERS = {
     "interception-keys": helper_interception_keys,
     "vigem-gamepad": helper_vigem_gamepad,
     "vigem-passthrough": helper_vigem_passthrough,
+    "shutdown": helper_shutdown,
 }
 
 

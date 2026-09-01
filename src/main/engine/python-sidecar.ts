@@ -7,7 +7,7 @@ import { createInterface, Interface } from 'readline';
 // C'est ce qui permet le pilotage bas niveau (Meccha) tout en gardant les bundles
 // comme donnée inerte.
 
-export type SidecarHelper = 'interception-keys' | 'vigem-gamepad' | 'vigem-passthrough';
+export type SidecarHelper = 'interception-keys' | 'vigem-gamepad' | 'vigem-passthrough' | 'shutdown';
 
 interface Pending {
     resolve: (v: any) => void;
@@ -106,11 +106,17 @@ export class PythonSidecar {
     }
 
     kill(): void {
-        try {
-            this.proc?.kill();
-        } catch {
-            /* noop */
-        }
+        const p = this.proc;
         this.proc = null;
+        if (!p) return;
+        // Arrêt GRACIEUX obligatoire : sur Windows, un kill() = TerminateProcess ABRUPT,
+        // qui n'exécute NI atexit NI __del__ vgamepad -> la manette virtuelle ViGEm reste
+        // en cible ZOMBIE. Accumulées, ces cibles coincent le bus ViGEmBus (écritures
+        // gelées) jusqu'au reboot. On demande donc au sidecar de débrancher sa manette
+        // (helper 'shutdown'), on ferme stdin (fin de sa boucle -> exit propre + atexit),
+        // puis on ne force le kill qu'en dernier recours après un court délai.
+        try { if (p.stdin && p.stdin.writable) p.stdin.write(JSON.stringify({ id: -1, method: 'shutdown', params: {} }) + '\n'); } catch { /* noop */ }
+        try { p.stdin?.end(); } catch { /* noop */ }
+        setTimeout(() => { try { if (!p.killed) p.kill(); } catch { /* noop */ } }, 500);
     }
 }
