@@ -98,82 +98,28 @@ jobs:
         run: npm ci
       - name: Build (main + preload + renderer)
         run: npm run build
-      # ── Sidecar Python figé (Windows) : sans cette étape, l'app cherche houla-sidecar.exe
-      #    qui n'existe dans aucun build -> la manette virtuelle / le clavier bas niveau
-      #    échouent avec « moteur introuvable ». On le fige avec PyInstaller et on empaquette
-      #    l'installeur du pilote ViGEmBus. NON bloquant : si le freeze rate, la release part
-      #    quand même (sans moteur bas niveau = comportement actuel), avec un ::warning::.
-      #    CACHÉ : vgamepad se COMPILE depuis les sources (pas de wheel py3.12) -> ~10-12 min.
-      #    On ne le refige QUE si houla_sidecar.py change (clé = son hash) ; sinon on restaure
-      #    l'exe + le MSI en quelques secondes. Bump « -vN » si on change la recette de freeze. ──
-      - name: Cache du sidecar figé (Windows)
+      # ── Sidecar manette (Windows) : vgamepad exige le pilote NOYAU ViGEmBus CHARGÉ pour
+      #    s'importer (VBUS = VBus() dès son __init__), ce qui demande un redémarrage impossible
+      #    sur un runner CI (5 approches de freeze essayées, toutes bloquées par ça). On ne le
+      #    build donc PAS ici : l'exe figé + le MSI du pilote sont CONSTRUITS UNE FOIS sur une
+      #    vraie machine Windows et publiés dans la release GitHub `sidecar-bin-v1`. Ici on les
+      #    TÉLÉCHARGE. NON bloquant : si la release n'existe pas encore, le build part sans le
+      #    moteur manette (tout le reste fonctionne), avec un ::warning::. ──
+      - name: Récupérer le sidecar manette pré-construit (Windows)
         if: matrix.os == 'windows-2022'
-        id: sidecar-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            resources/sidecar/houla-sidecar.exe
-            resources/sidecar/ViGEmBusSetup_x64.msi
-          key: sidecar-win-py312-${{ hashFiles('resources/sidecar/houla_sidecar.py') }}-v1
-      - name: Setup Python (sidecar figé, Windows)
-        if: matrix.os == 'windows-2022' && steps.sidecar-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Freeze sidecar (PyInstaller) + bundle pilote ViGEmBus (Windows)
-        if: matrix.os == 'windows-2022' && steps.sidecar-cache.outputs.cache-hit != 'true'
-        timeout-minutes: 8   # filet anti-hang COURT : si le freeze coince, il est tué à 8 min
-        continue-on-error: true   # ... et la release continue quand même (sans le moteur bas niveau)
+        continue-on-error: true
         shell: bash
         env:
-          # vgamepad/setup.py lance un `msiexec /i` INTERACTIF (sans /quiet) pendant pip -> en CI
-          # headless la fenêtre attend une interaction et bloque. Cette variable saute cette install
-          # (on livre le pilote nous-mêmes, MSI empaqueté + bouton in-app). La DLL/MSI restent bundlés.
-          VGAMEPAD_SKIP_VIGEMBUS_INSTALL: 'true'
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
-          # RE-export dans le shell : le `env:` du step ne semblait pas atteindre le sous-process
-          # de build de pip (d'où un hang persistant). L'export garantit l'héritage. L'echo trace.
-          export VGAMEPAD_SKIP_VIGEMBUS_INSTALL=true
-          echo "VGAMEPAD_SKIP=[${VGAMEPAD_SKIP_VIGEMBUS_INSTALL:-UNSET}]"
-          python -m pip install --upgrade pip pyinstaller
-          if [ $? -ne 0 ]; then echo "::warning::pip/pyinstaller KO — build SANS moteur manette"; exit 0; fi
-          # vgamepad : son setup.py HANG au build en CI (bloc Windows : reg query /s + msiexec).
-          # MÊME `pip download` déclenche la prépa metadata (= setup.py = hang) ! On télécharge donc
-          # le sdist EN DIRECT (curl, AUCUN pip), on extrait, et on COPIE le package `vgamepad/`
-          # dans site-packages. C'est du Python + des DLL -> s'importe tel quel, ZÉRO build, ZÉRO hang.
-          URL=$(curl -sL --max-time 30 https://pypi.org/pypi/vgamepad/0.1.0/json | python -c "import json,sys; print([f['url'] for f in json.load(sys.stdin)['urls'] if f['filename'].endswith('.tar.gz')][0])")
-          [ -n "$URL" ] || { echo "::warning::URL sdist vgamepad introuvable — build SANS moteur manette"; exit 0; }
-          echo "sdist vgamepad: $URL"
-          curl -sL --max-time 60 "$URL" -o vgamepad.tar.gz || { echo "::warning::download sdist KO — build SANS moteur manette"; exit 0; }
-          mkdir -p vgsrc && tar -xzf vgamepad.tar.gz -C vgsrc
-          VGDIR=$(find vgsrc -maxdepth 1 -type d -name 'vgamepad-*' | head -1)
-          SITE=$(python -c "import site; print(site.getsitepackages()[0])")
-          cp -r "$VGDIR/vgamepad" "$SITE/" || { echo "::warning::copie vgamepad KO — build SANS moteur manette"; exit 0; }
-          # vgamepad se CONNECTE au bus ViGEmBus au CHARGEMENT du module (VBUS = VBus() dans
-          # __init__) : sans le driver, MÊME l'import échoue (VIGEM_ERROR_BUS_NOT_FOUND), donc
-          # PyInstaller ne peut pas le bundler. Le runner est ADMIN -> on installe le MSI en
-          # SILENCIEUX (/quiet : ni UAC ni hang, contrairement au setup.py interactif).
-          MSI=$(find "$SITE/vgamepad" -name 'ViGEmBusSetup_x64.msi' | head -1)
-          if [ -n "$MSI" ]; then MSIWIN=$(cygpath -w "$MSI"); echo "install ViGEmBus: $MSIWIN"; \
-            cmd //c "msiexec /i \"$MSIWIN\" /quiet /norestart"; sleep 10; \
-            else echo "::warning::MSI ViGEmBus introuvable dans vgamepad — l'import va probablement échouer"; fi
-          python -c "import vgamepad; print('vgamepad importe OK ->', vgamepad.__file__)" \
-            || { echo "::warning::import vgamepad KO (ViGEmBus non chargé ?) — build SANS moteur manette"; exit 0; }
-          # --collect-submodules/data/binaries (PAS --collect-all) : une simple copie n'a pas de
-          # dist-info, et --collect-all EXIGE les métadonnées (il planterait). interception (clavier
-          # bas niveau) reste hors du freeze (la manette n'en dépend pas ; l'exe se bundle quand même).
-          pyinstaller --onefile --name houla-sidecar \
-            --collect-submodules vgamepad --collect-data vgamepad --collect-binaries vgamepad \
-            resources/sidecar/houla_sidecar.py
-          if [ ! -f dist/houla-sidecar.exe ]; then echo "::warning::PyInstaller n'a pas produit houla-sidecar.exe — build SANS moteur bas niveau"; exit 0; fi
-          cp dist/houla-sidecar.exe resources/sidecar/houla-sidecar.exe
-          # Installeur du pilote ViGEmBus (manette virtuelle) : empaqueté pour l'install in-app (UAC).
-          VG=$(python -c "import vgamepad, os; print(os.path.dirname(vgamepad.__file__))")
-          MSI=$(find "$VG" -name 'ViGEmBusSetup_x64.msi' 2>/dev/null | head -1)
-          if [ -n "$MSI" ] && [ -f "$MSI" ]; then cp "$MSI" resources/sidecar/ViGEmBusSetup_x64.msi; \
-            else echo "::warning::MSI ViGEmBus introuvable dans vgamepad — install pilote in-app indisponible"; fi
-          echo "Sidecar figé + pilote empaquetés :"; ls -la resources/sidecar/ || true
+          gh release download sidecar-bin-v1 --repo Hou-la/houla-connect-app \
+            --pattern 'houla-sidecar.exe' --dir resources/sidecar --clobber \
+            || { echo "::warning::sidecar-bin-v1/houla-sidecar.exe introuvable — build SANS moteur manette"; exit 0; }
+          gh release download sidecar-bin-v1 --repo Hou-la/houla-connect-app \
+            --pattern 'ViGEmBusSetup_x64.msi' --dir resources/sidecar --clobber \
+            || echo "::warning::MSI ViGEmBus introuvable dans sidecar-bin-v1 — install pilote in-app indisponible"
+          echo "Sidecar manette récupéré :"; ls -la resources/sidecar/ || true
       # Signature de code, UNIQUEMENT si les secrets sont configurés (sinon build non
       # signé, toujours téléchargeable ; SmartScreen/Gatekeeper alerteront) :
       #   - Windows : Azure Trusted Signing (secrets AZURE_*)
