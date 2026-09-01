@@ -177,10 +177,26 @@ def _find_physical_index(virtual_pad):
 
 
 def _passthrough_loop(pad, vg):
-    """~125 Hz : état virtuel = physique (si présente) + overlays des cadeaux."""
+    """~125 Hz : état virtuel = physique (si présente) + overlays des cadeaux.
+    RE-DÉTECTE la manette physique en continu : une manette Xbox sans fil DORT au repos
+    (disparaît de XInput) et se réveille au 1er appui ; un branchement à chaud arrive aussi.
+    Sans re-scan, une physique absente au démarrage ne serait JAMAIS reprise."""
+    global _pt_index
+    miss = 0
+    ticks = 0
     while _pt_running:
         try:
-            gp = _xinput_read(_pt_index)
+            if _pt_index is None and ticks % 30 == 0:  # ~0.25 s : cherche une physique (réveil/hot-plug)
+                _pt_index = _find_physical_index(pad)
+            ticks += 1
+            gp = _xinput_read(_pt_index) if _pt_index is not None else None
+            if _pt_index is not None and gp is None:
+                miss += 1
+                if miss > 60:  # ~0.5 s sans réponse -> débranchée/endormie : on re-détecte
+                    _pt_index = None
+                    miss = 0
+            else:
+                miss = 0
             pad.reset()
             lt = gp.bLeftTrigger if gp else 0
             rt = gp.bRightTrigger if gp else 0
