@@ -150,8 +150,16 @@ jobs:
           VGDIR=$(find vgsrc -maxdepth 1 -type d -name 'vgamepad-*' | head -1)
           SITE=$(python -c "import site; print(site.getsitepackages()[0])")
           cp -r "$VGDIR/vgamepad" "$SITE/" || { echo "::warning::copie vgamepad KO — build SANS moteur manette"; exit 0; }
+          # vgamepad se CONNECTE au bus ViGEmBus au CHARGEMENT du module (VBUS = VBus() dans
+          # __init__) : sans le driver, MÊME l'import échoue (VIGEM_ERROR_BUS_NOT_FOUND), donc
+          # PyInstaller ne peut pas le bundler. Le runner est ADMIN -> on installe le MSI en
+          # SILENCIEUX (/quiet : ni UAC ni hang, contrairement au setup.py interactif).
+          MSI=$(find "$SITE/vgamepad" -name 'ViGEmBusSetup_x64.msi' | head -1)
+          if [ -n "$MSI" ]; then MSIWIN=$(cygpath -w "$MSI"); echo "install ViGEmBus: $MSIWIN"; \
+            cmd //c "msiexec /i \"$MSIWIN\" /quiet /norestart"; sleep 10; \
+            else echo "::warning::MSI ViGEmBus introuvable dans vgamepad — l'import va probablement échouer"; fi
           python -c "import vgamepad; print('vgamepad importe OK ->', vgamepad.__file__)" \
-            || { echo "::warning::import vgamepad KO apres copie — build SANS moteur manette"; exit 0; }
+            || { echo "::warning::import vgamepad KO (ViGEmBus non chargé ?) — build SANS moteur manette"; exit 0; }
           # --collect-submodules/data/binaries (PAS --collect-all) : une simple copie n'a pas de
           # dist-info, et --collect-all EXIGE les métadonnées (il planterait). interception (clavier
           # bas niveau) reste hors du freeze (la manette n'en dépend pas ; l'exe se bundle quand même).

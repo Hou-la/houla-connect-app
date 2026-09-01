@@ -24,6 +24,7 @@ import time
 # Imports paresseux + dégradation propre si un driver/lib manque.
 _kb = None
 _pad = None
+_vg = None
 
 
 def _get_interception():
@@ -36,16 +37,18 @@ def _get_interception():
 
 
 def _get_gamepad():
-    global _pad
+    global _pad, _vg
     if _pad is None:
-        import vgamepad as vg
         try:
+            # ATTENTION : vgamepad se connecte au bus ViGEmBus dès l'IMPORT (VBUS = VBus()
+            # dans son __init__). Sans le driver, l'IMPORT LUI-MÊME lève
+            # (VIGEM_ERROR_BUS_NOT_FOUND) — pas seulement VX360Gamepad(). L'import est donc
+            # DANS le try, pour que TOUT échec (import + alloc) soit taggé VIGEMBUS_MISSING
+            # et que l'app propose l'installation guidée du pilote (MSI fourni).
+            import vgamepad as vg
+            _vg = vg
             _pad = vg.VX360Gamepad()
         except Exception as e:  # noqa: BLE001
-            # ViGEmBus (pilote noyau de la manette virtuelle Xbox) absent ou non chargé :
-            # vigem_connect() échoue. On TAGGE l'erreur (VIGEMBUS_MISSING) pour que l'app
-            # propose l'installation guidée du pilote (MSI fourni), au lieu d'un message
-            # technique opaque. La cause d'origine reste jointe pour le diagnostic.
             raise RuntimeError("VIGEMBUS_MISSING: " + str(e))
     return _pad
 
@@ -127,8 +130,8 @@ def _clamp_axis(v):
 
 
 def helper_vigem_gamepad(args):
-    import vgamepad as vg
-    pad = _get_gamepad()
+    pad = _get_gamepad()  # importe vgamepad de façon TAGGÉE (VIGEMBUS_MISSING si pilote absent)
+    vg = _vg
     if args.get("release"):
         pad.reset()
         pad.update()
