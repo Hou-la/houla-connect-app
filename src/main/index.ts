@@ -87,6 +87,14 @@ function stopFocusPoll(): void {
     gameFocused = true; // au repos, ne bloquer aucun effet
 }
 
+// Avant un TEST manette : activer le passthrough (crée la virtuelle + écrit sa config pour
+// la DLL proxy) afin que l'effet ATTEIGNE le jeu même sans pack démarré. Idempotent ; reste
+// actif ensuite (le jeu lit la virtuelle = état voulu), nettoyé à l'arrêt/fermeture.
+async function ensureGamepadRemap(effect: unknown): Promise<void> {
+    if ((effect as { type?: string })?.type !== 'gamepad') return;
+    try { await sidecar().call('vigem-passthrough', { enable: true }); } catch { /* le test remontera l'échec */ }
+}
+
 // Traduit un verdict de test en message ACTIONNABLE + un CODE que le renderer utilise pour
 // proposer l'installation du bon pilote, au lieu d'un message technique opaque.
 //  - 'vigembus' : manette virtuelle -> pilote ViGEmBus absent (installable in-app).
@@ -431,6 +439,7 @@ function registerIpc(): void {
                 ? rules.find((r) => r.id === ruleId)
                 : rules.find((r) => r.on?.type === 'gift') || rules[0];
             if (!rule) return { ok: false, reason: 'aucune interaction à tester dans ce pack' };
+            await ensureGamepadRemap(rule.effect); // manette : proxy actif pour que le test atteigne le jeu
             return withDriverCode(await engine.testFire({ id: rule.id, on: rule.on, effect: rule.effect }, slug));
         } catch (e: any) {
             return withDriverCode({ ok: false, reason: e?.message || 'test impossible' });
@@ -581,6 +590,7 @@ function registerIpc(): void {
     // le pipeline sécurisé du moteur). Renvoie un verdict {ok, reason} pour l'UI.
     ipcMain.handle('engine:testRule', async (_e, rule: any, bundleSlug?: string) => {
         if (!rule || typeof rule !== 'object' || !rule.effect) return { ok: false, reason: 'règle invalide' };
+        await ensureGamepadRemap(rule.effect); // manette : proxy actif pour que le test atteigne le jeu
         return withDriverCode(await engine.testFire({ id: rule.id || 'test', on: rule.on || { type: 'gift' }, effect: rule.effect }, bundleSlug));
     });
     ipcMain.handle('engine:test', (_e, slug?: string) => {

@@ -194,8 +194,9 @@ export class Engine {
         if (!executor) return { ok: false, reason: 'exécuteur inconnu' };
         if (executor.requiresCapability && !this.deps.hasEnabledConnector(executor.localConnectorType || ''))
             return { ok: false, reason: `connecteur « ${executor.localConnectorType} » désactivé — active-le dans Connecteurs` };
-        if ((effect.type === 'keyboard' || effect.type === 'gamepad') && !this.deps.isTargetFocused())
-            return { ok: false, reason: 'fenêtre cible pas au premier plan (focus le jeu avant de tester)' };
+        // PAS de focus-guard sur un TEST explicite : l'utilisateur clique « Tester » depuis
+        // Hou.la Connect (donc le jeu n'est pas au premier plan). Le focus-guard ne vaut que
+        // pour les cadeaux LIVE (voir dispatch()). Un test volontaire tire toujours.
         const ctx: FireContext = {
             ruleId: rule.id || 'test',
             senderName: 'Test',

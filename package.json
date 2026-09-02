@@ -45,6 +45,9 @@
     "appId": "com.houla.connect",
     "productName": "Hou.la Connect",
     "artifactName": "Houla-Connect-${version}.${ext}",
+    "directories": {
+      "output": "release"
+    },
     "protocols": [
       {
         "name": "Hou.la Connect",
