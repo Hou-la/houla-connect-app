@@ -33,7 +33,7 @@
             install: rec('install', (slug) => {
                 if (cfg.installError) return rej(cfg.installError);
                 if (!installedState.find((x) => x.slug === slug)) installedState.push({ slug, version: verOf(slug) });
-                return R({ ok: true, requiredConnectors: [] });
+                return R({ ok: true, requiredConnectors: cfg.requiredConnectors || [] });
             }),
             installed: () => R(installedState),
             uninstall: rec('uninstall', (slug) => {
@@ -74,9 +74,10 @@
             isGamepadInstalled: () => R({ installed: !!cfg.gamepadDriverInstalled }),
         },
         game: {
-            link: rec('gameLink', () => R(cfg.gameLinkResult || { ok: true, exe: 'C:/Games/Demo/game.exe', dir: 'C:/Games/Demo' })),
-            status: () => R(cfg.gameStatus || { exe: null, dir: null, placed: false }),
-            unlink: rec('gameUnlink', () => R({ ok: true })),
+            linkPack: rec('gameLinkPack', () => R(cfg.gameLinkResult || { ok: true, exe: 'C:/Games/Demo/game.exe', dir: 'C:/Games/Demo' })),
+            packStatus: () => R(cfg.gamePackStatus || { exe: null, dir: null, placed: false }),
+            listLinked: () => R(cfg.gameLinked || []),
+            unlinkPack: rec('gameUnlinkPack', () => R({ ok: true })),
         },
         language: () => R(), autoLaunch: () => R(false),
         legal: { text: () => R(''), status: () => R({ accepted: true }), accept: () => R() },

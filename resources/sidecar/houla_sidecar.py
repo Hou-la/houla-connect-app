@@ -168,13 +168,20 @@ _PROXY_CFG = os.path.join(
 )
 
 
-def _write_proxy_config(virtual_index):
-    """Écrit l'index réel de la virtuelle (ou -1 = transparent) pour la DLL proxy.
+def _write_proxy_config(virtual_index, target_exe=None):
+    """Écrit, pour la DLL proxy : l'index réel de la virtuelle (ou -1 = transparent) puis,
+    en 2e ligne, le NOM DE L'EXE DU JEU visé par le pack actif.
+
+    Le nom du jeu est essentiel : la DLL ne remappe QUE si elle tourne dans CE jeu. Plusieurs
+    jeux peuvent donc avoir la DLL posée sans jamais se gêner, et un jeu sans pack actif reste
+    un simple passe-plat (aucun verrou pour le joueur).
     Best-effort : jamais bloquant, jamais fatal (le proxy peut ne pas être posé)."""
     try:
         os.makedirs(os.path.dirname(_PROXY_CFG), exist_ok=True)
+        idx = virtual_index if virtual_index is not None else -1
+        name = os.path.basename(str(target_exe)) if target_exe else ""
         with open(_PROXY_CFG, "w") as f:
-            f.write(str(virtual_index if virtual_index is not None else -1))
+            f.write("%d\n%s\n" % (idx, name))
     except Exception:  # noqa: BLE001
         pass
 
@@ -301,9 +308,10 @@ def helper_vigem_passthrough(args):
             _pt_thread = threading.Thread(target=_passthrough_loop, args=(pad, vg), daemon=True)
             _pt_thread.start()
         # Dit à la DLL proxy (posée dans le dossier du jeu) de faire lire la VIRTUELLE comme
-        # Joueur 1 (index 0 du jeu -> index réel de la virtuelle). Le jeu voit ainsi la
-        # physique recopiée + les cadeaux. Best-effort : si le proxy n'est pas posé, sans effet.
-        _write_proxy_config(_virtual_index)
+        # Joueur 1 (index 0 du jeu -> index réel de la virtuelle), UNIQUEMENT dans le jeu visé
+        # par ce pack (targetExe). Le jeu voit ainsi la physique recopiée + les cadeaux, et
+        # aucun autre jeu n'est affecté. Best-effort : si le proxy n'est pas posé, sans effet.
+        _write_proxy_config(_virtual_index, args.get("targetExe"))
         return {"passthrough": True, "physicalIndex": _pt_index, "virtualIndex": _virtual_index}
     # Désactivation : proxy transparent (le jeu relit la manette normalement), on stoppe le
     # loop, on vide les overlays, on relâche le pad.

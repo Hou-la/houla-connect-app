@@ -22,7 +22,10 @@ interface Schema {
     workspaceName?: string;
     language?: string;
     autostart?: boolean;
-    focusTarget?: { exe?: string; title?: string; dir?: string }; // dir = dossier du jeu où est posé le proxy XInput
+    focusTarget?: { exe?: string; title?: string; dir?: string }; // jeu du pack ACTIF (focus-guard)
+    // Jeu piloté PAR PACK (le jeu appartient au pack, pas au connecteur : la manette sert à
+    // tous les jeux). Demandé UNE fois au 1er démarrage du pack, puis automatique.
+    gameByPack?: Record<string, { exe: string; dir: string }>;
     capabilities?: Record<string, boolean>; // par exécuteur
     hostAllowlist?: string[];
     secrets?: Record<string, string>; // valeurs chiffrées (rconHost, rconPassword, obsUrl, ...)
@@ -155,6 +158,29 @@ export class StoreService {
     }
     setFocusTarget(t: { exe?: string; title?: string; dir?: string }) {
         this.store.set('focusTarget', t);
+    }
+
+    // ── Jeu piloté PAR PACK ──
+    // Le jeu appartient au PACK, pas au connecteur manette (la manette sert à tous les jeux).
+    // Demandé une fois à l'installation du pack ; au démarrage c'est automatique.
+    private allGames(): Record<string, { exe: string; dir: string }> {
+        return this.store.get('gameByPack', {} as Record<string, { exe: string; dir: string }>);
+    }
+    getGameForPack(slug: string): { exe: string; dir: string } | null {
+        return this.allGames()[slug] || null;
+    }
+    setGameForPack(slug: string, g: { exe: string; dir: string }) {
+        const all = this.allGames();
+        all[slug] = g;
+        this.store.set('gameByPack', all);
+    }
+    removeGameForPack(slug: string) {
+        const all = this.allGames();
+        delete all[slug];
+        this.store.set('gameByPack', all);
+    }
+    getLinkedGames(): Record<string, { exe: string; dir: string }> {
+        return this.allGames();
     }
 
     // ── Capacités (toutes OFF par défaut) ──

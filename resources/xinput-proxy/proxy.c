@@ -48,6 +48,10 @@ static fnGetAudio rGetAudio = NULL;
 static char gCfgPath[MAX_PATH] = {0};
 static int  gVIdx = -1;
 static DWORD gLastCfg = 0;
+static char gSelfExe[MAX_PATH] = {0};  /* nom de NOTRE exe (minuscules), calcule une fois */
+static char gTarget[MAX_PATH] = {0};   /* jeu vise par le pack actif (minuscules), "" = tous */
+
+static void lowerStr(char* s) { for (; *s; ++s) if (*s >= 'A' && *s <= 'Z') *s += 32; }
 
 static void initReal(void) {
     if (gReal) return;
@@ -68,27 +72,45 @@ static void initReal(void) {
     rGetAudio   = (fnGetAudio)GetProcAddress(gReal, "XInputGetAudioDeviceIds");
     char* la = getenv("LOCALAPPDATA");
     if (la) snprintf(gCfgPath, MAX_PATH, "%s\\HoulaConnect\\xinput_proxy.cfg", la);
+    /* Nom de l'exe qui nous a chargees : sert a ne remapper QUE le jeu vise. */
+    char full[MAX_PATH];
+    if (GetModuleFileNameA(NULL, full, MAX_PATH)) {
+        char* base = strrchr(full, '\\');
+        strncpy(gSelfExe, base ? base + 1 : full, MAX_PATH - 1);
+        gSelfExe[MAX_PATH - 1] = 0;
+        lowerStr(gSelfExe);
+    }
 }
 
+/* Config ecrite par Hou.la Connect :
+ *   ligne 1 : index XInput REEL de la manette virtuelle, ou -1 (= ne rien remapper)
+ *   ligne 2 : nom de l'exe du jeu vise (optionnel ; vide = tout jeu)
+ * Relue a chaud (~400 ms) : quand le pack s'arrete, elle repasse a -1 et la DLL
+ * redevient un simple passe-plat -> le joueur joue normalement, aucun verrou. */
 static void refreshCfg(void) {
     DWORD now = GetTickCount();
     if (now - gLastCfg < 400 && gLastCfg != 0) return;
     gLastCfg = now;
     gVIdx = -1;
+    gTarget[0] = 0;
     if (!gCfgPath[0]) return;
     FILE* f = fopen(gCfgPath, "r");
     if (!f) return;
     int v = -1;
     if (fscanf(f, "%d", &v) == 1) gVIdx = v;
+    if (fscanf(f, "%259s", gTarget) == 1) lowerStr(gTarget); else gTarget[0] = 0;
     fclose(f);
 }
 
 /* Retourne 1 si l'index de jeu est connecte (et pose *realIdx), 0 pour le masquer. */
 static int mapIdx(DWORD gameIdx, DWORD* realIdx) {
     refreshCfg();
-    if (gVIdx < 0) { *realIdx = gameIdx; return 1; } /* pas de pack -> transparent */
+    if (gVIdx < 0) { *realIdx = gameIdx; return 1; } /* pas de pack actif -> transparent */
+    /* Un pack tourne, mais pour UN jeu precis : tout autre jeu reste transparent. Ainsi
+       plusieurs jeux peuvent avoir la DLL sans jamais se gener. */
+    if (gTarget[0] && gSelfExe[0] && strcmp(gTarget, gSelfExe) != 0) { *realIdx = gameIdx; return 1; }
     if (gameIdx == 0) { *realIdx = (DWORD)gVIdx; return 1; } /* Joueur 1 = virtuelle */
-    return 0; /* les autres index sont caches au jeu */
+    return 0; /* les autres index sont caches au jeu vise */
 }
 
 DWORD WINAPI XInputGetState(DWORD idx, XI_STATE* st) {

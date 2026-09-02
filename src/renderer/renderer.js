@@ -689,7 +689,20 @@ $('btn-start').onclick = async () => {
         }
     }, 12000);
     try {
-        await api.engine.start(slug);
+        let res = await api.engine.start(slug);
+        // Filet : pack manette dont le jeu n'est pas (ou plus) connu -> on le demande ici,
+        // puis on relance. Mieux que démarrer un pack qui n'agirait pas en jeu.
+        if (res && res.needGame) {
+            const linked = await promptPackGame(slug);
+            res = linked ? await api.engine.start(slug) : null;
+            if (!res || res.needGame) {
+                clearTimeout(connectWatchdog);
+                engineState = 'idle';
+                setBadge('off', 'Déconnecté');
+                setEngineButton();
+                logLine({ allowed: false, ruleId: 'start', reason: "Pack manette non démarré : le jeu qu'il pilote n'est pas encore indiqué." });
+            }
+        }
     } catch (e) {
         clearTimeout(connectWatchdog);
         engineState = 'idle';
@@ -804,11 +817,44 @@ document.addEventListener('click', (e) => {
     const slug = link.dataset.slug;
     if (slug) api.openExternal(`https://hou.la/@${encodeURIComponent(slug)}`);
 });
+// Un pack qui pilote la MANETTE doit savoir QUEL jeu il pilote : le jeu appartient au PACK
+// (la manette, elle, sert à tous les jeux). On le demande UNE fois — à l'installation, moment
+// naturel de configuration — puis chaque démarrage est automatique. La petite DLL posée dans
+// le dossier du jeu reste INERTE tant qu'aucun pack ne tourne, et ne s'applique qu'à CE jeu :
+// le joueur continue de jouer à ce jeu, et à tous les autres, sans rien changer.
+async function promptPackGame(slug) {
+    const go = await showChoice({
+        title: 'Quel jeu ce pack pilote-t-il ?',
+        msg: "Ce pack agit sur une manette. Pour que les cadeaux arrivent DANS ton jeu, indique son .exe une seule fois. Rien n'est bloqué : tu pourras jouer à ce jeu, et à tous les autres, tout à fait normalement.",
+        choices: [{ key: 'pick', label: 'Choisir mon jeu', kind: 'primary' }, { key: 'later', label: 'Plus tard' }],
+    });
+    if (go !== 'pick') return false;
+    try {
+        const r = await api.game.linkPack(slug);
+        if (r && r.ok) {
+            showToast('game', { kind: 'ok', title: 'Jeu lié', msg: "Relance le jeu une fois pour qu'il prenne le réglage en compte. Ensuite, chaque démarrage de ce pack est automatique." });
+            return true;
+        }
+        if (r && r.reason) showToast('game', { kind: 'error', title: 'Impossible de lier le jeu', msg: r.reason });
+    } catch (e) {
+        showToast('game', { kind: 'error', title: 'Erreur', msg: friendlyError(e, 'Réessaie.') });
+    }
+    return false;
+}
+async function ensurePackGame(slug, required) {
+    // `required` = liste d'objets { role, type } (cf. bindRequiredConnectors), pas de chaînes.
+    if (!(required || []).some((rc) => (rc && rc.type) === 'gamepad')) return; // pas de manette
+    let st = null;
+    try { st = await api.game.packStatus(slug); } catch { /* statut indispo -> on demande */ }
+    if (st && st.exe) return; // jeu déjà connu pour ce pack
+    await promptPackGame(slug);
+}
 async function installBundle(slug, btn) {
     if (btn) btn.textContent = '…';
     try {
         const res = await api.store.install(slug);
         await bindRequiredConnectors(slug, (res && res.requiredConnectors) || []);
+        await ensurePackGame(slug, (res && res.requiredConnectors) || []);
         if (btn) btn.textContent = 'Installé ✓';
         await loadInstalled(); // rafraîchit le menu Capture
         await loadStore(); // rafraîchit l'état installé/mise à jour des cartes
@@ -2754,9 +2800,9 @@ function gameBase(p) { return String(p || '').split(/[\\/]/).pop() || 'jeu'; }
 // Renseigné à l'ouverture de la vue + mis à true après une install réussie, pour que le
 // bouton « Installer le pilote » laisse place à « ✓ Pilote installé ».
 let gamepadDriverInstalled = null;
-// Jeu lié pour le proxy XInput (la DLL posée dans son dossier lui fait lire la virtuelle
-// comme Joueur 1). null = pas encore vérifié ; sinon { exe, dir, placed }.
-let gamepadGame = null;
+// Jeux liés à des packs manette (la DLL posée dans leur dossier leur fait lire la virtuelle
+// comme Joueur 1 pendant qu'un pack tourne). Liste de { slug, exe, dir, placed }.
+let gamepadGames = [];
 function renderConnectorsList() {
     const box = $('cx-list');
     if (!myConnectors.length) { box.innerHTML = '<p class="muted">Aucun connecteur.</p>'; return; }
@@ -2769,13 +2815,13 @@ function renderConnectorsList() {
             : (gamepadDriverInstalled === true
                 ? '<span class="cx-driver-ok" title="Le pilote de la manette virtuelle (ViGEmBus) est installé sur ce PC.">✓ Pilote installé</span>'
                 : '<button class="cx-driver btn btn--ghost btn--mini" title="Installer le pilote de la manette virtuelle (ViGEmBus). Une seule fois, sous Windows. Une fenêtre UAC demandera l\'autorisation.">Installer le pilote</button>');
-        // « Lier mon jeu » : pose le proxy XInput dans le dossier du jeu -> il lit la manette
-        // virtuelle (cadeaux + gestes recopiés) comme Joueur 1. Une fois par jeu.
+        // La manette sert à TOUS les jeux : on ne lie donc pas un jeu au connecteur. Le jeu
+        // appartient au PACK (demandé à son installation). Ici on montre juste les jeux liés,
+        // pour la visibilité et le ménage.
+        const n = gamepadGames.length;
         const gameBtn = c.type !== 'gamepad'
             ? ''
-            : (gamepadGame && gamepadGame.exe
-                ? `<span class="cx-game-ok" title="Jeu lié : ${esc(gamepadGame.exe)}. Il lira la manette virtuelle comme Joueur 1.">🎮 ${esc(gameBase(gamepadGame.exe))}</span><button class="cx-game-un btn btn--ghost btn--mini" title="Délier ce jeu (retire la DLL proxy de son dossier).">Délier</button>`
-                : '<button class="cx-game btn btn--ghost btn--mini" title="Choisis ton jeu : on pose une petite DLL dans son dossier pour qu\'il lise la manette virtuelle (cadeaux + tes gestes) comme Joueur 1.">Lier mon jeu</button>');
+            : `<button class="cx-games btn btn--ghost btn--mini" title="Jeux qu'un pack manette pilote. La DLL posée dans leur dossier est INERTE tant qu'aucun pack ne tourne : ces jeux (et tous les autres) restent jouables normalement.">🎮 ${n} jeu${n > 1 ? 'x' : ''} lié${n > 1 ? 's' : ''}</button>`;
         return `<div class="cx-row" data-id="${esc(c.id)}">`
             + `<label class="switch" title="Activer / désactiver"><input type="checkbox" class="cx-enable"${c.enabled ? ' checked' : ''}/><span class="switch__track"><span class="switch__thumb"></span></span></label>`
             + `<span class="cx-type">${esc(connectorTypeLabel(c.type))}</span><b>${esc(c.name)}</b>`
@@ -2808,39 +2854,38 @@ function renderConnectorsList() {
                 showToast('driver', { kind: 'error', title: 'Installation impossible', msg: friendlyError(e, 'Réessaie dans un instant.') });
             }
         };
-        const glink = row.querySelector('.cx-game');
-        if (glink) glink.onclick = async () => {
-            setBtnBusy(glink, true, 'Ouverture…');
-            try {
-                const res = await api.game.link();
-                if (res && res.ok) {
-                    gamepadGame = { exe: res.exe, dir: res.dir, placed: true };
-                    showToast('game', { kind: 'ok', title: 'Jeu lié', msg: 'Lance (ou relance) ton jeu : il lira la manette virtuelle comme Joueur 1. Les cadeaux et tes gestes y arrivent.' });
-                    renderConnectorsList();
-                } else if (res && res.reason) {
-                    setBtnBusy(glink, false);
-                    showToast('game', { kind: 'error', title: 'Impossible de lier le jeu', msg: res.reason });
-                } else {
-                    setBtnBusy(glink, false); // annulé
-                }
-            } catch (e) {
-                setBtnBusy(glink, false);
-                showToast('game', { kind: 'error', title: 'Erreur', msg: friendlyError(e, 'Réessaie.') });
+        const gbtn = row.querySelector('.cx-games');
+        if (gbtn) gbtn.onclick = async () => {
+            if (!gamepadGames.length) {
+                showToast('game', {
+                    kind: 'ok', title: 'Aucun jeu lié',
+                    msg: "Le jeu est demandé à l'installation d'un pack manette, une seule fois. Rien à régler ici.",
+                });
+                return;
             }
-        };
-        const gunlink = row.querySelector('.cx-game-un');
-        if (gunlink) gunlink.onclick = async () => {
-            await api.game.unlink().catch(() => {});
-            gamepadGame = null;
-            renderConnectorsList();
+            const choices = gamepadGames
+                .map((g, i) => ({ key: String(i), label: `Retirer ${gameBase(g.exe)}` }))
+                .concat([{ key: 'close', label: 'Fermer', kind: 'primary' }]);
+            const k = await showChoice({
+                title: 'Jeux liés',
+                msg: "Un pack manette pose une petite DLL dans le dossier de son jeu, pour que les cadeaux y arrivent. Elle est INERTE tant qu'aucun pack ne tourne, et ne s'applique qu'à ce jeu : tu joues normalement, ici comme ailleurs. Tu peux la retirer.",
+                choices,
+            });
+            if (k !== null && k !== 'close') {
+                const g = gamepadGames[Number(k)];
+                if (g) {
+                    await api.game.unlinkPack(g.slug).catch(() => {});
+                    await loadConnectorsView();
+                }
+            }
         };
     });
 }
 async function loadConnectorsView() {
     $('cx-list').innerHTML = skeletonRowsHtml(3);
     await loadConnectors();
-    // État du jeu lié (proxy XInput) pour la ligne manette.
-    try { const g = await api.game.status(); gamepadGame = (g && g.exe) ? g : null; } catch { gamepadGame = null; }
+    // Jeux liés à des packs manette (ligne manette : visibilité + ménage).
+    try { gamepadGames = (await api.game.listLinked()) || []; } catch { gamepadGames = []; }
     // État du pilote manette AVANT le rendu : décide « Installer le pilote » vs « ✓ installé ».
     try { const s = await api.driver.isGamepadInstalled(); gamepadDriverInstalled = s ? !!s.installed : null; }
     catch { gamepadDriverInstalled = null; }

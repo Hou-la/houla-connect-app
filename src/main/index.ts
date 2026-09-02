@@ -66,6 +66,40 @@ function proxyDllDir(): string {
         : path.join(__dirname, '..', '..', 'resources', 'xinput-proxy');
 }
 
+const filesEqual = (a: string, b: string): boolean => {
+    try { return fs.statSync(a).size === fs.statSync(b).size && fs.readFileSync(a).equals(fs.readFileSync(b)); }
+    catch { return false; }
+};
+/** Pose nos DLL proxy dans le dossier d'un jeu. Refuse d'écraser une DLL xinput ÉTRANGÈRE
+ *  (certains jeux livrent la leur) : on préfère renoncer et l'expliquer. */
+function placeProxyDlls(dir: string): { ok: boolean; reason?: string } {
+    const src = proxyDllDir();
+    const foreign = PROXY_DLL_NAMES.find((n) => {
+        const dst = path.join(dir, n);
+        return fs.existsSync(dst) && !filesEqual(dst, path.join(src, n));
+    });
+    if (foreign) return { ok: false, reason: `Une DLL « ${foreign} » est déjà présente dans le dossier du jeu et n’est pas la nôtre. Retire-la d’abord (ou ce jeu n’en a pas besoin).` };
+    try {
+        for (const n of PROXY_DLL_NAMES) {
+            const s = path.join(src, n);
+            if (fs.existsSync(s)) fs.copyFileSync(s, path.join(dir, n));
+        }
+    } catch (e) {
+        return { ok: false, reason: `Impossible d’écrire dans le dossier du jeu : ${(e as Error)?.message || ''}` };
+    }
+    return { ok: true };
+}
+/** Retire UNIQUEMENT nos DLL (byte-identiques), jamais celle du jeu. */
+function removeProxyDlls(dir: string): void {
+    const src = proxyDllDir();
+    for (const n of PROXY_DLL_NAMES) {
+        const dst = path.join(dir, n);
+        if (fs.existsSync(dst) && filesEqual(dst, path.join(src, n))) {
+            try { fs.unlinkSync(dst); } catch { /* déjà retirée */ }
+        }
+    }
+}
+
 // Poll du focus-guard : rafraîchit gameFocused = (fenêtre au 1er plan == exe du jeu lié).
 // Sans jeu lié, permissif (true) et AUCUN appel sidecar (self-guard). Démarré pendant un
 // pack, arrêté à l'arrêt/panic.
@@ -506,6 +540,15 @@ function registerIpc(): void {
     // Runtime
     ipcMain.handle('engine:start', async (_e, slug: string) => {
         const d = await api.fetchVerifiedManifest(slug); // re-vérifie signature avant exécution
+        // Pack MANETTE : le jeu piloté est une propriété du PACK (demandé à l'installation).
+        // Si l'info manque (pack installé avant cette version, ou jeu déplacé/désinstallé), on
+        // le redemande AVANT de rien démarrer — plutôt que de lancer un pack qui n'agirait pas
+        // en jeu, ce qui donnerait « ça ne marche pas » sans explication.
+        const rulesToCheck = ((d.manifest as BundleManifest)?.rules || []) as { effect?: { type?: string } }[];
+        if (rulesToCheck.some((r) => r.effect?.type === 'gamepad')) {
+            const g = store.getGameForPack(slug);
+            if (!g?.exe || !fs.existsSync(g.exe)) return { ok: false, needGame: true, slug };
+        }
         store.setActiveBundleSlug(slug); // seulement APRÈS un fetch réussi (pas de pack fantôme)
         // Le moteur tourne sur la DERNIÈRE version : on synchronise l'enregistrement
         // local (numéro + hash) pour que le menu Capture reflète ce qui tourne vraiment.
@@ -527,8 +570,14 @@ function registerIpc(): void {
         // installé, l'appel échoue -> le 1er test manette guidera l'installation.
         const usesGamepad = activeManifest.rules.some((r) => (r.effect as { type?: string })?.type === 'gamepad');
         if (usesGamepad) {
+            // Jeu de CE pack (garanti présent : vérifié en tête du handler).
+            const game = store.getGameForPack(slug)!;
+            // Re-pose la DLL si elle a disparu (une mise à jour du jeu peut nettoyer son dossier).
+            if (!fs.existsSync(path.join(game.dir, 'xinput1_4.dll'))) placeProxyDlls(game.dir);
+            store.setFocusTarget({ exe: game.exe, dir: game.dir }); // focus-guard sur CE jeu
             try {
-                const pt = await sidecar().call('vigem-passthrough', { enable: true }) as { physicalIndex?: number | null };
+                // targetExe : la DLL ne remappera QUE dans ce jeu (les autres restent intacts).
+                const pt = await sidecar().call('vigem-passthrough', { enable: true, targetExe: game.exe }) as { physicalIndex?: number | null };
                 // Retour DISCRIMINANT (texte, pas couleur) : le joueur doit SAVOIR si sa manette
                 // physique est recopiée, ou si seuls les cadeaux piloteront la virtuelle (cas où
                 // il a démarré sans manette branchée -> le mirroring ne se fera pas).
@@ -657,61 +706,43 @@ function registerIpc(): void {
             }
         });
     });
-    // ── Lier le JEU (proxy XInput) ──
-    // Pour qu'un cadeau agisse en jeu, le jeu doit LIRE notre manette virtuelle comme
-    // Joueur 1. On y arrive en posant une DLL proxy `xinput1_4.dll` dans le dossier de son
-    // exe (voir resources/xinput-proxy). L'utilisateur choisit son jeu une fois ; on retient
-    // aussi l'exe pour le focus-guard.
-    const filesEqual = (a: string, b: string): boolean => {
-        try { return fs.statSync(a).size === fs.statSync(b).size && fs.readFileSync(a).equals(fs.readFileSync(b)); }
-        catch { return false; }
-    };
-    ipcMain.handle('game:link', async () => {
+    // ── Jeu piloté par un PACK (proxy XInput) ──
+    // Pour qu'un cadeau agisse en jeu, le jeu doit LIRE notre manette virtuelle comme Joueur 1 :
+    // on pose une DLL proxy dans le dossier de son exe (resources/xinput-proxy). Le jeu est une
+    // propriété du PACK (la manette, elle, sert à tous les jeux) : demandé UNE fois à
+    // l'installation d'un pack manette, automatique ensuite. La DLL posée reste INERTE tant
+    // qu'aucun pack ne tourne (config -1) et ne remappe que le jeu visé -> aucun verrou, aucun
+    // autre jeu impacté.
+    ipcMain.handle('game:linkPack', async (_e, slug: string) => {
         const r = await dialog.showOpenDialog({
-            title: 'Choisis l’exécutable de ton jeu (le .exe que tu lances)',
+            title: 'Choisis l’exécutable du jeu que ce pack pilote (le .exe que tu lances)',
             properties: ['openFile'],
             filters: [{ name: 'Jeu', extensions: ['exe'] }],
         });
         if (r.canceled || !r.filePaths[0]) return { ok: false };
         const exe = r.filePaths[0];
         const dir = path.dirname(exe);
-        const src = proxyDllDir();
-        // Garde-fou : ne JAMAIS écraser une DLL xinput qui ne serait pas la nôtre (le jeu
-        // pourrait livrer la sienne). On refuse et on explique.
-        const foreign = PROXY_DLL_NAMES.find((n) => {
-            const dst = path.join(dir, n);
-            return fs.existsSync(dst) && !filesEqual(dst, path.join(src, n));
-        });
-        if (foreign) return { ok: false, reason: `Une DLL « ${foreign} » est déjà présente dans le dossier du jeu et n’est pas la nôtre. Retire-la d’abord (ou ce jeu n’en a pas besoin).` };
-        try {
-            for (const n of PROXY_DLL_NAMES) {
-                const s = path.join(src, n);
-                if (fs.existsSync(s)) fs.copyFileSync(s, path.join(dir, n));
-            }
-        } catch (e) {
-            return { ok: false, reason: `Impossible d’écrire dans le dossier du jeu : ${(e as Error)?.message || ''}` };
-        }
-        store.setFocusTarget({ exe, dir });
+        const placed = placeProxyDlls(dir);
+        if (!placed.ok) return placed;
+        if (slug) store.setGameForPack(slug, { exe, dir });
         return { ok: true, exe, dir };
     });
-    ipcMain.handle('game:status', () => {
-        const t = store.getFocusTarget();
-        const placed = !!(t?.dir && fs.existsSync(path.join(t.dir, 'xinput1_4.dll')));
-        return { exe: t?.exe || null, dir: t?.dir || null, placed };
+    ipcMain.handle('game:packStatus', (_e, slug: string) => {
+        const g = slug ? store.getGameForPack(slug) : null;
+        const placed = !!(g?.dir && fs.existsSync(path.join(g.dir, 'xinput1_4.dll')));
+        return { exe: g?.exe || null, dir: g?.dir || null, placed };
     });
-    ipcMain.handle('game:unlink', async () => {
-        const t = store.getFocusTarget();
-        const src = proxyDllDir();
-        if (t?.dir) {
-            // Ne supprimer QUE nos propres DLL (byte-identiques), jamais celle du jeu.
-            for (const n of PROXY_DLL_NAMES) {
-                const dst = path.join(t.dir, n);
-                if (fs.existsSync(dst) && filesEqual(dst, path.join(src, n))) {
-                    try { fs.unlinkSync(dst); } catch { /* déjà retirée */ }
-                }
-            }
-        }
-        store.setFocusTarget({});
+    ipcMain.handle('game:listLinked', () => {
+        const all = store.getLinkedGames();
+        return Object.entries(all).map(([slug, g]) => ({
+            slug, exe: g.exe, dir: g.dir,
+            placed: fs.existsSync(path.join(g.dir, 'xinput1_4.dll')),
+        }));
+    });
+    ipcMain.handle('game:unlinkPack', async (_e, slug: string) => {
+        const g = slug ? store.getGameForPack(slug) : null;
+        if (g?.dir) removeProxyDlls(g.dir);
+        if (slug) store.removeGameForPack(slug);
         return { ok: true };
     });
     ipcMain.handle('prefs:language', (_e, lang?: string) => {
