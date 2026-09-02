@@ -197,13 +197,20 @@ async function ensureGamepadRemap(effect: unknown): Promise<void> {
         const already = gamepadSessionOn;
         await sidecar().call('vigem-passthrough', { enable: true });
         gamepadSessionOn = true;
-        // ⚠️ Beaucoup de jeux CONSOMMENT la première entrée d'une manette qui vient
-        // d'apparaître pour rebasculer leur affichage clavier -> manette, SANS exécuter
-        // l'action. Le premier test semblait alors « ne rien faire », et seul un second
-        // marchait. On laisse donc la manette virtuelle se signaler au repos un court
-        // instant avant d'envoyer l'effet : le jeu a le temps de basculer, et l'action
-        // part vraiment. Inutile si la session manette tournait déjà.
-        if (!already) await new Promise((r) => setTimeout(r, 500));
+        // Laisser le jeu VOIR la manette qui vient d'apparaître avant de lui parler.
+        if (!already) await new Promise((r) => setTimeout(r, 400));
+        // ⚠️ « Le premier test ne fait rien, le second marche ».
+        // Pour tester, le joueur quitte le jeu (souris/clavier) puis y revient : le jeu a
+        // basculé son affichage en mode CLAVIER entre-temps. La première entrée manette qui
+        // arrive est alors CONSOMMÉE pour rebasculer en mode manette, sans exécuter l'action.
+        // Une simple attente au repos n'y change rien : ces jeux réagissent à une ACTIVITÉ,
+        // pas à la présence du périphérique. On envoie donc d'abord une activité de réveil
+        // inoffensive — une brève poussée du stick DROIT (caméra), qui ne déclenche aucune
+        // action de jeu — puis l'effet réel, qui n'est plus le premier et part vraiment.
+        // NB : réservé aux TESTS. En live, le joueur a sa manette en main, le jeu est déjà en
+        // mode manette : y ajouter un réveil à chaque cadeau bougerait la caméra pour rien.
+        await sidecar().call('vigem-gamepad', { analog: { rx: 0.25 }, holdMs: 80 }, 80);
+        await new Promise((r) => setTimeout(r, 250));
     } catch { /* le test remontera l'échec */ }
 }
 /** Après un test manette HORS pack : débrancher la manette virtuelle.
