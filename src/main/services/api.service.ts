@@ -33,6 +33,32 @@ export class ApiService {
         }
     }
 
+    // ── Modération des packs (ADMIN) ────────────────────────────────
+    // L'IA ne peut que REFUSER, jamais approuver : l'approbation humaine est le SEUL
+    // chemin vers la publication. Sans écran pour trancher, la file ne se vide jamais
+    // (constat prod 2026-09-03 : 13 versions bloquées, dont 10 d'un créateur tiers).
+    // Les routes existent depuis toujours côté serveur — c'est l'opérateur qui manquait.
+    async moderationQueue(): Promise<any[]> {
+        const res = await this.authFetch('/api/admin/bundles/moderation/queue');
+        if (!res.ok) throw new Error(`File de modération indisponible (${res.status}).`);
+        return (await res.json()) as any[];
+    }
+    async moderationApprove(versionId: string): Promise<void> {
+        const res = await this.authFetch(`/api/admin/bundles/moderation/${encodeURIComponent(versionId)}/approve`, { method: 'PATCH' });
+        if (!res.ok) throw new Error(`Approbation refusée (${res.status}).`);
+    }
+    async moderationReject(versionId: string, reason: string): Promise<void> {
+        const res = await this.authFetch(`/api/admin/bundles/moderation/${encodeURIComponent(versionId)}/reject`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            // Le DTO serveur attend `reason` (RejectBundleVersionDto). Un autre nom passerait
+            // la validation (@IsOptional) et le motif serait perdu EN SILENCE : le créateur
+            // recevrait un refus sans explication.
+            body: JSON.stringify({ reason }),
+        });
+        if (!res.ok) throw new Error(`Refus non enregistré (${res.status}).`);
+    }
+
     private async authFetch(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
         const token = this.store.getAccessToken();
         const headers: Record<string, string> = {
@@ -186,6 +212,25 @@ export class ApiService {
                 body: JSON.stringify({ bundleId }),
             });
         } catch { /* best-effort */ }
+    }
+
+    /**
+     * Signale une installation de pack à l'API (compteur `installCount` du store).
+     *
+     * ⚠️ CONSTAT PROD (2026-09-03) : `install_count` valait **0 sur les 8 packs**, alors que
+     * des installations avaient bien eu lieu. La route existait côté serveur
+     * (`POST /api/manager/bundles/:slug/install`, bundle-store.controller.ts) mais **l'app ne
+     * l'appelait jamais** : aucune statistique d'installation n'a donc jamais été collectée,
+     * ni pour la plateforme, ni pour les créateurs.
+     * Re-vérification : `SELECT slug, install_count FROM store_bundle;` doit cesser d'être à 0
+     * après une installation.
+     *
+     * Best-effort : une statistique ne doit JAMAIS faire échouer une installation.
+     */
+    async reportInstall(slug: string): Promise<void> {
+        try {
+            await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}/install`, { method: 'POST' });
+        } catch { /* best-effort : l'install reste valide même si le compteur rate */ }
     }
 
     // ── Catalogue de cadeaux (public, évolue -> l'app le rafraîchit toute seule) ──

@@ -14,6 +14,12 @@ contextBridge.exposeInMainWorld('houlaConnect', {
     logout: () => invoke('auth:logout'),
     authStatus: () => invoke('auth:status'),
     isAdmin: () => invoke('auth:isAdmin'),
+    // Modération des packs (ADMIN) : la file, et les deux décisions possibles.
+    moderation: {
+        queue: () => invoke('moderation:queue'),
+        approve: (versionId: string) => invoke('moderation:approve', versionId),
+        reject: (versionId: string, reason: string) => invoke('moderation:reject', versionId, reason),
+    },
     env: {
         get: () => invoke('env:get'),
         set: (env: string) => invoke('env:set', env),

@@ -18,7 +18,12 @@
     window.houlaConnect = {
         login: () => R(), logout: () => R(),
         authStatus: () => R({ authenticated: cfg.authenticated !== false }),
-        isAdmin: () => R(false),
+        isAdmin: () => R(!!cfg.isAdmin),
+        moderation: {
+            queue: () => R(cfg.moderationQueue || { ok: true, items: [] }),
+            approve: rec('modApprove', () => R(cfg.moderationApproveResult || { ok: true })),
+            reject: rec('modReject', () => R({ ok: true })),
+        },
         env: { get: () => R('prod'), set: () => R() },
         listWorkspaces: () => R(cfg.workspaces || [{ id: 'ws1', name: 'Test Studio', slug: 'test', avatarUrl: null }]),
         currentWorkspace: () => R(cfg.currentWorkspace || { id: 'ws1', name: 'Test Studio' }),

@@ -492,6 +492,7 @@ async function showApp() {
     try {
         await loadWorkspaces();
         await loadInstalled();
+        void revealAdminNav(); // onglet Modération : admin uniquement, sans bloquer l'affichage
         switchView('capture');
     } catch (e) {
         // API injoignable au démarrage : on garde l'app ouverte mais on NE laisse PAS
@@ -526,13 +527,17 @@ async function switchView(name) {
         labDirty = false; // « quitter sans enregistrer », ou enregistrement réussi
     }
     document.querySelectorAll('.nav').forEach((n) => n.classList.toggle('active', n.dataset.view === name));
-    ['capture', 'store', 'lab', 'mine', 'connecteurs', 'settings'].forEach((v) =>
+    ['capture', 'store', 'lab', 'mine', 'connecteurs', 'moderation', 'settings'].forEach((v) =>
         $('view-' + v).classList.toggle('hidden', v !== name),
     );
     if (name === 'store') loadStore();
     if (name === 'mine') loadMyBundles();
-    if (name === 'lab') loadLab();
+    // `reentry` = on ARRIVE sur le Lab depuis une autre vue (et non un re-clic sur l'onglet
+    // alors qu'on y est déjà). C'est ce qui distingue « je viens créer un pack » de « je suis
+    // en train d'en éditer un » : sans ça, recliquer sur Lab effacerait l'édition en cours.
+    if (name === 'lab') loadLab({ reentry: !onLab });
     if (name === 'connecteurs') loadConnectorsView();
+    if (name === 'moderation') loadModerationQueue();
     if (name === 'settings') loadSettings();
 }
 // Réglages : l'encart Environnement n'apparaît que pour un compte ADMIN.
@@ -2805,7 +2810,8 @@ async function enterEditMode(slug) {
 }
 $('lab-new-btn').onclick = () => enterCreateMode();
 
-async function loadLab() {
+async function loadLab(opts) {
+    const reentry = !opts || opts.reentry !== false; // défaut prudent : traiter comme une arrivée
     labDirty = false; // on (re)charge le Lab -> repart d'un état « propre »
     // Édition demandée : on VIDE tout de suite l'éditeur (sinon, pendant le chargement
     // async ci-dessous, l'utilisateur voit encore le pack précédemment édité — d'où
@@ -2819,7 +2825,13 @@ async function loadLab() {
     }
     await Promise.all([loadGiftCatalog(), loadDictionaries(), loadConnectors()]);
     if (pendingEditSlug) { const s = pendingEditSlug; pendingEditSlug = null; await enterEditMode(s); }
-    else if (!(labMode === 'edit' && labCurrentSlug)) enterCreateMode();
+    // ⚠️ BUG VÉCU : on restait collé au pack précédemment édité, et il devenait IMPOSSIBLE
+    // d'en créer un nouveau depuis l'onglet Lab. La condition d'avant (« garder l'édition en
+    // cours ») ne protégeait RIEN : `labDirty` vient d'être remis à false trois lignes plus
+    // haut, et la garde de switchView a déjà fait enregistrer ou abandonner en quittant.
+    // Règle claire : l'onglet « Lab » sert à CRÉER ; on édite en passant par « Mes bundles ».
+    // On ne réinitialise pas si on est déjà dans le Lab (re-clic sur l'onglet).
+    else if (reentry) enterCreateMode();
 }
 
 $('lab-banner-btn').onclick = async () => {
@@ -3218,6 +3230,90 @@ function renderConnectorsList() {
         };
     });
 }
+// ── Modération des packs (ADMIN) ──────────────────────────────────────────
+// L'IA de modération ne peut que REFUSER, jamais approuver : l'approbation humaine est le
+// SEUL chemin vers la publication. Faute d'un endroit où trancher, la file n'a JAMAIS été
+// vidée — constat prod du 2026-09-03 : 13 versions bloquées, dont 10 d'un créateur tiers
+// qui a réessayé dix fois en trois jours sans jamais recevoir de réponse.
+function moderationRowHtml(item) {
+    const v = (item && item.version) || {};
+    const b = (item && item.bundle) || {};
+    const jours = v.createdAt ? Math.floor((Date.now() - new Date(v.createdAt).getTime()) / 86400000) : null;
+    // ⚠️ Le retard est signalé par le TEXTE et un symbole, jamais par la seule couleur.
+    const retard = jours == null ? '' : jours >= 2 ? `⏰ en attente depuis ${jours} j` : jours === 1 ? 'en attente depuis 1 j' : 'arrivée aujourd’hui';
+    return `<div class="mod-row" data-id="${esc(v.id || '')}">
+        <div class="mod-row__info">
+            <b>${esc(b.title || b.slug || 'Pack')}</b>
+            <span class="badge badge--off">v${esc(v.version || '?')}</span>
+            <span class="badge badge--off">${esc(moderationLabel(v.moderationStatus))}</span>
+            <div class="muted small"><code>${esc(b.slug || '')}</code> · ${esc(v.visibility || '')} · ${esc(retard)}</div>
+        </div>
+        <span class="mod-row__res"></span>
+        <button class="btn btn--ghost mod-reject" title="Refuser cette version, avec un motif envoyé au créateur">✖ Refuser</button>
+        <button class="btn btn--primary mod-approve" title="Approuver : la version devient publiable et installable">✔ Approuver</button>
+    </div>`;
+}
+async function loadModerationQueue() {
+    const box = $('mod-list');
+    $('mod-msg').textContent = '';
+    box.innerHTML = skeletonRowsHtml(3);
+    let res;
+    try { res = await api.moderation.queue(); }
+    catch (e) { box.innerHTML = `<p class="no">${esc(friendlyError(e, 'File indisponible.'))}</p>`; return; }
+    if (!res || !res.ok) { box.innerHTML = `<p class="no">${esc((res && res.reason) || 'File indisponible.')}</p>`; return; }
+    const items = res.items || [];
+    if (!items.length) {
+        // Contre-témoin : on distingue « file vide » de « la file n'a pas chargé ».
+        box.innerHTML = '<p class="muted">✔ Aucune version en attente. La file est à jour.</p>';
+        return;
+    }
+    box.innerHTML = items.map(moderationRowHtml).join('');
+    box.querySelectorAll('.mod-row').forEach((row) => {
+        const id = row.dataset.id;
+        const resEl = row.querySelector('.mod-row__res');
+        const decide = async (btn, label, run) => {
+            setBtnBusy(btn, true, label);
+            try {
+                const r = await run();
+                if (!r || !r.ok) { resEl.textContent = '✗ ' + ((r && r.reason) || 'échec'); resEl.className = 'mod-row__res no'; setBtnBusy(btn, false); return; }
+                resEl.textContent = '✓ enregistré';
+                resEl.className = 'mod-row__res ok';
+                row.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+                setTimeout(() => loadModerationQueue(), 600); // la file se met à jour
+            } catch (e) {
+                resEl.textContent = '✗ ' + friendlyError(e, 'échec');
+                resEl.className = 'mod-row__res no';
+                setBtnBusy(btn, false);
+            }
+        };
+        row.querySelector('.mod-approve').onclick = (ev) =>
+            decide(ev.currentTarget, 'Approbation…', () => api.moderation.approve(id));
+        row.querySelector('.mod-reject').onclick = async (ev) => {
+            const btn = ev.currentTarget;
+            // Un refus SANS motif laisse le créateur sans rien pour corriger : c'est
+            // exactement ce qui a fait réessayer dix fois le créateur du pack Mario Kart.
+            const motif = await showChoice({
+                title: 'Refuser cette version',
+                msg: 'Le motif est envoyé au créateur : sans lui, il ne peut que deviner et re-soumettre à l’aveugle.',
+                choices: [
+                    { key: 'Le pack ne fonctionne pas comme décrit.', label: 'Ne fonctionne pas comme décrit', kind: 'primary' },
+                    { key: 'Contenu ou visuel non conforme.', label: 'Contenu non conforme' },
+                    { key: 'Instructions insuffisantes pour un joueur.', label: 'Instructions insuffisantes' },
+                ],
+            });
+            if (!motif) return; // fermé : on ne refuse pas par accident
+            await decide(btn, 'Refus…', () => api.moderation.reject(id, motif));
+        };
+    });
+}
+$('mod-refresh').onclick = () => loadModerationQueue();
+/** Révèle l'onglet Modération pour un compte admin (le serveur reste seul juge). */
+async function revealAdminNav() {
+    try {
+        if (await api.isAdmin()) $('nav-moderation').classList.remove('hidden');
+    } catch { /* non admin, ou hors ligne : l'onglet reste caché */ }
+}
+
 async function loadConnectorsView() {
     $('cx-list').innerHTML = skeletonRowsHtml(3);
     await loadConnectors();

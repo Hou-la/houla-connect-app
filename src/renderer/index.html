@@ -44,6 +44,8 @@
                 <button class="nav" data-view="lab">Lab</button>
                 <button class="nav" data-view="mine">Mes bundles</button>
                 <button class="nav" data-view="connecteurs">Connecteurs</button>
+                <!-- Révélé au démarrage uniquement pour un compte ADMIN (voir revealAdminNav). -->
+                <button class="nav hidden" id="nav-moderation" data-view="moderation">Modération</button>
                 <button class="nav" data-view="settings">Réglages</button>
                 <div class="sidebar__foot">
                     <div class="ws-switch">
@@ -241,6 +243,20 @@
                     <p class="muted">Active le clavier / la manette / le pilotage, et ajoute tes connexions (serveur de jeu RCON, OBS, MQTT…). Chaque connecteur a un interrupteur.</p>
                     <div id="cx-list"></div>
                     <p id="cx-msg" class="hint"></p>
+                </section>
+
+                <!-- MODÉRATION (admin uniquement) -->
+                <!-- L'IA de modération ne peut que REFUSER, jamais approuver : sans un endroit
+                     où trancher, AUCUNE version n'est jamais publiée. Constaté en prod le
+                     2026-09-03 : 13 versions bloquées, dont 10 d'un créateur tiers. -->
+                <section id="view-moderation" class="view hidden">
+                    <div class="view-head">
+                        <h2>Modération des packs</h2>
+                        <button id="mod-refresh" class="btn btn--ghost btn--refresh" title="Rafraîchir la file">⟳ Rafraîchir</button>
+                    </div>
+                    <p class="muted">Versions en attente d'une décision humaine. Tant qu'une version n'est pas approuvée, son créateur ne peut pas la publier et personne d'autre ne peut l'installer.</p>
+                    <div id="mod-list"></div>
+                    <p id="mod-msg" class="hint"></p>
                 </section>
 
                 <!-- REGLAGES -->

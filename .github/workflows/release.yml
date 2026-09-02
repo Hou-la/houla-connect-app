@@ -105,28 +105,50 @@ jobs:
       #    vraie machine Windows et publiés dans la release GitHub `sidecar-bin-v1`. Ici on les
       #    TÉLÉCHARGE. NON bloquant : si la release n'existe pas encore, le build part sans le
       #    moteur manette (tout le reste fonctionne), avec un ::warning::. ──
+      # ⚠️ CE PAS EST BLOQUANT, ET IL DOIT LE RESTER.
+      # Il ne l'était pas, et ça a coûté très cher : les DLL proxy XInput n'ont JAMAIS été
+      # téléversées dans `sidecar-bin-v1`. Le téléchargement échouait donc à chaque build,
+      # avec un simple `::warning::` que personne ne lit — et TOUTES les versions publiées
+      # (jusqu'à la 0.1.61) sont parties SANS ces DLL. « Lier mon jeu », et donc tout le
+      # pilotage manette en jeu, était inopérant pour quiconque téléchargeait l'app : ça
+      # n'a jamais marché que sur le poste de dev, où les fichiers existent en local
+      # (ils sont dans .gitignore). Constaté et corrigé le 2026-09-03.
+      #
+      # Un artefact manquant doit CASSER LE BUILD, pas produire un avertissement : une
+      # release amputée d'une fonction annoncée est pire qu'une release absente.
+      # Re-vérification :
+      #   gh release view sidecar-bin-v1 --repo Hou-la/houla-connect-app --json assets
+      #   -> doit lister houla-sidecar.exe, ViGEmBusSetup_x64.msi ET les 3 xinput*.dll
       - name: Récupérer le sidecar manette pré-construit (Windows)
         if: matrix.os == 'windows-2022'
-        continue-on-error: true
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set +e
+          set -euo pipefail
           gh release download sidecar-bin-v1 --repo Hou-la/houla-connect-app \
-            --pattern 'houla-sidecar.exe' --dir resources/sidecar --clobber \
-            || { echo "::warning::sidecar-bin-v1/houla-sidecar.exe introuvable — build SANS moteur manette"; exit 0; }
+            --pattern 'houla-sidecar.exe' --dir resources/sidecar --clobber
           gh release download sidecar-bin-v1 --repo Hou-la/houla-connect-app \
-            --pattern 'ViGEmBusSetup_x64.msi' --dir resources/sidecar --clobber \
-            || echo "::warning::MSI ViGEmBus introuvable dans sidecar-bin-v1 — install pilote in-app indisponible"
-          echo "Sidecar manette récupéré :"; ls -la resources/sidecar/ || true
+            --pattern 'ViGEmBusSetup_x64.msi' --dir resources/sidecar --clobber
           # DLL proxy XInput (font lire la virtuelle comme Joueur 1 quand posées dans le
           # dossier d'un jeu — cf resources/xinput-proxy/proxy.c, « Lier mon jeu »).
           mkdir -p resources/xinput-proxy
           gh release download sidecar-bin-v1 --repo Hou-la/houla-connect-app \
-            --pattern 'xinput*.dll' --dir resources/xinput-proxy --clobber \
-            || echo "::warning::DLL proxy XInput introuvables dans sidecar-bin-v1 — « Lier mon jeu » indisponible"
-          echo "Proxy XInput récupéré :"; ls -la resources/xinput-proxy/ || true
+            --pattern 'xinput*.dll' --dir resources/xinput-proxy --clobber
+          # Vérification EXPLICITE : un `gh release download` qui ne ramène rien peut
+          # réussir. On exige donc de VOIR les fichiers, un par un.
+          for f in resources/sidecar/houla-sidecar.exe \
+                   resources/sidecar/ViGEmBusSetup_x64.msi \
+                   resources/xinput-proxy/xinput1_4.dll \
+                   resources/xinput-proxy/xinput1_3.dll \
+                   resources/xinput-proxy/xinput9_1_0.dll; do
+            if [ ! -s "$f" ]; then
+              echo "::error::Artefact manquant : $f — absent de la release sidecar-bin-v1."
+              echo "::error::Ce build produirait une app SANS pilotage manette. Arrêt."
+              exit 1
+            fi
+            echo "OK  $f  ($(wc -c < "$f") octets)"
+          done
       # Signature de code, UNIQUEMENT si les secrets sont configurés (sinon build non
       # signé, toujours téléchargeable ; SmartScreen/Gatekeeper alerteront) :
       #   - Windows : Azure Trusted Signing (secrets AZURE_*)

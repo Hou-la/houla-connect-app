@@ -445,6 +445,22 @@ function registerIpc(): void {
     });
     ipcMain.handle('auth:status', () => ({ authenticated: auth.isAuthenticated() }));
     ipcMain.handle('auth:isAdmin', () => api.isAdmin());
+    // ── Modération des packs (ADMIN) ──
+    // La garde AdminGuard côté API fait foi : ces canaux ne donnent aucun pouvoir à un
+    // non-admin, le serveur répond 401/403. On renvoie un verdict lisible plutôt qu'une
+    // exception brute, pour ne jamais laisser l'écran muet sur un échec.
+    ipcMain.handle('moderation:queue', async () => {
+        try { return { ok: true, items: await api.moderationQueue() }; }
+        catch (e: any) { return { ok: false, reason: e?.message || 'File indisponible.' }; }
+    });
+    ipcMain.handle('moderation:approve', async (_e, versionId: string) => {
+        try { await api.moderationApprove(versionId); return { ok: true }; }
+        catch (e: any) { return { ok: false, reason: e?.message || 'Approbation impossible.' }; }
+    });
+    ipcMain.handle('moderation:reject', async (_e, versionId: string, reason: string) => {
+        try { await api.moderationReject(versionId, String(reason || '').slice(0, 500)); return { ok: true }; }
+        catch (e: any) { return { ok: false, reason: e?.message || 'Refus impossible.' }; }
+    });
     ipcMain.handle('app:isDevBuild', () => IS_DEV_BUILD);
     // Build distribué = verrouillé prod : on n'expose ni ne change l'environnement.
     ipcMain.handle('env:get', () => (IS_DEV_BUILD ? store.getEnvironment() || 'prod' : 'prod'));
@@ -483,9 +499,14 @@ function registerIpc(): void {
     ipcMain.handle('store:preview', (_e, slug: string) => api.previewBundle(slug));
     ipcMain.handle('store:install', async (_e, slug: string, version?: string) => {
         const d = await api.fetchVerifiedManifest(slug, version); // vérifie signature
+        const wasInstalled = store.getInstalled().some((b) => b.slug === slug);
         const list = store.getInstalled().filter((b) => b.slug !== slug);
         list.push({ slug, version: d.version, contentHash: d.contentHash });
         store.setInstalled(list);
+        // Compteur d'installations du store. Uniquement à la PREMIÈRE install : une mise à
+        // jour de version repasse par ici, et la compter gonflerait le chiffre sans qu'un
+        // nouvel utilisateur soit arrivé. Best-effort, jamais bloquant.
+        if (!wasInstalled) void api.reportInstall(slug);
         // Connecteurs requis (rôle + type) à lier : protocoles réseau du manifeste.
         const NET = ['rcon', 'obs', 'mqtt', 'ws', 'http', 'osc'];
         const req = new Map<string, { role: string; type: string }>();
