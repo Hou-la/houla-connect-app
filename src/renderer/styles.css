@@ -244,6 +244,10 @@ textarea { font-family: ui-monospace, monospace; resize: vertical; line-height: 
 
 /* Modal détail : bannière (haut fixe) + corps qui défile + pied fixe (boutons). */
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.65); display: grid; place-items: center; z-index: 50; }
+/* La modale de CHOIX s'ouvre par-dessus une autre modale (ex. « changer de jeu » depuis la
+   personnalisation d'un pack) : elle doit TOUJOURS passer au-dessus, sinon elle s'ouvre
+   invisible derrière et l'utilisateur croit que son clic n'a rien fait. */
+#choice-modal { z-index: 60; }
 .modal__box { width: 520px; max-width: 92vw; max-height: 88vh; background: var(--bg-2);
     border: 1px solid var(--border); border-radius: 14px; position: relative;
     display: flex; flex-direction: column; overflow: hidden; }

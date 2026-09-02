@@ -23,6 +23,19 @@ function friendlyError(e, fallback) {
     }
     return m;
 }
+// ── Filet : aucune panne d'interface ne doit être MUETTE ────────────
+// Sans ça, une erreur JS non rattrapée (ex. un querySelector sur un élément absent) fait
+// simplement « rien » : le bouton ne répond pas, et en build packagé — console fermée — il
+// n'en reste AUCUNE trace. C'est exactement ce qui a rendu invisible la panne du bouton
+// « Enregistrer ». On rend désormais tout échec visible, sans jargon.
+window.addEventListener('unhandledrejection', (ev) => {
+    console.error('[unhandled]', ev && ev.reason);
+    try { showToast('app-error', { kind: 'error', title: 'Action interrompue', msg: friendlyError(ev && ev.reason, "Cette action n'a pas abouti. Réessaie.") }); } catch { /* toast indispo */ }
+});
+window.addEventListener('error', (ev) => {
+    console.error('[error]', ev && ev.error);
+    try { showToast('app-error', { kind: 'error', title: 'Action interrompue', msg: friendlyError(ev && ev.error, "Cette action n'a pas abouti. Réessaie.") }); } catch { /* toast indispo */ }
+});
 // ── Test d'effet avec décompte ─────────────────────────────────────
 // Un test clavier/manette/driver ENVOIE de vraies touches à la fenêtre au premier
 // plan. Un décompte visible (« Test dans 3… ») laisse le temps de basculer sur le
@@ -825,8 +838,15 @@ document.addEventListener('click', (e) => {
 async function promptPackGame(slug) {
     // On RECONNAÎT d'abord le jeu qui tourne : un clic sur son nom, pas d'explorateur de
     // fichiers. Chercher un .exe soi-même est réservé au cas où rien n'est détecté.
+    // Détection bornée dans le temps : si l'inspection des processus traîne, on n'immobilise
+    // pas l'interface — on retombe simplement sur le choix manuel du fichier.
     let found = [];
-    try { found = (await api.game.detect()) || []; } catch { found = []; }
+    try {
+        found = (await Promise.race([
+            api.game.detect(),
+            new Promise((r) => setTimeout(() => r([]), 5000)),
+        ])) || [];
+    } catch { found = []; }
     const choices = found.slice(0, 3).map((g, i) => ({
         key: 'd' + i, label: g.name, kind: i === 0 ? 'primary' : undefined,
     }));
@@ -1151,7 +1171,7 @@ $('modal').onclick = (e) => { if (e.target.id === 'modal') $('modal').classList.
 async function openCustomize(slug, title) {
     cancelTestCountdown(); // on va vider la liste des règles (rows détachées)
     $('cx-title').textContent = title || slug;
-    $('cx-msg').textContent = '';
+    $('cx-save-msg').textContent = '';
     $('cx-modal').dataset.slug = slug;
     const box = $('cx-rules');
     box.innerHTML = skeletonRowsHtml(6);
@@ -1174,9 +1194,15 @@ async function openCustomize(slug, title) {
         grow.innerHTML =
             `<div class="cx-rule__info"><b>🎮 Jeu piloté</b> <span class="muted">${st && st.exe ? esc(gameBase(st.exe)) : 'pas encore choisi — les cadeaux n’agiront pas en jeu'}</span></div>`
             + `<button class="btn btn--ghost cx-gamechange">${st && st.exe ? 'Changer de jeu' : 'Choisir le jeu'}</button>`;
-        grow.querySelector('.cx-gamechange').onclick = async () => {
-            const ok = await promptPackGame(slug);
-            if (ok) openCustomize(slug, title); // recharge pour afficher le nouveau jeu
+        const gch = grow.querySelector('.cx-gamechange');
+        gch.onclick = async () => {
+            // La détection interroge les processus en cours : sans retour visuel, le clic
+            // paraît mort, l'utilisateur referme la fenêtre… et la modale s'ouvre après coup.
+            setBtnBusy(gch, true, 'Recherche du jeu…');
+            try {
+                const ok = await promptPackGame(slug);
+                if (ok) { openCustomize(slug, title); return; } // recharge : affiche le nouveau jeu
+            } finally { setBtnBusy(gch, false); }
         };
         box.appendChild(grow);
     }
@@ -1208,20 +1234,34 @@ async function openCustomize(slug, title) {
 const cxCloseModal = () => { cancelTestCountdown(); $('cx-modal').classList.add('hidden'); };
 $('cx-close').onclick = cxCloseModal;
 $('cx-modal').onclick = (e) => { if (e.target.id === 'cx-modal') cxCloseModal(); };
-$('cx-save').onclick = async () => {
-    const slug = $('cx-modal').dataset.slug;
-    const disabled = [];
-    const cooldownMs = {};
-    $('cx-rules').querySelectorAll('.cx-rule').forEach((row) => {
-        const id = row.dataset.id;
-        if (!row.querySelector('.cx-en').checked) disabled.push(id);
-        const v = row.querySelector('.cx-cd-in').value;
-        if (v !== '' && Number.isFinite(Number(v))) cooldownMs[id] = Math.max(0, Math.round(Number(v)));
-    });
+$('cx-save').onclick = async (ev) => {
+    const btn = ev.currentTarget;
+    $('cx-save-msg').textContent = ''; // sinon un 2e clic ne produit aucun changement visible
+    setBtnBusy(btn, true, 'Enregistrement…');
     try {
+        const slug = $('cx-modal').dataset.slug;
+        const disabled = [];
+        const cooldownMs = {};
+        // `[data-id]` est OBLIGATOIRE : seules les vraies interactions en portent un. La ligne
+        // « Jeu piloté » partage la classe `cx-rule` sans case à cocher — sans ce filtre, la
+        // boucle plantait dessus et l'enregistrement échouait EN SILENCE.
+        $('cx-rules').querySelectorAll('.cx-rule[data-id]').forEach((row) => {
+            const id = row.dataset.id;
+            const en = row.querySelector('.cx-en');
+            if (en && !en.checked) disabled.push(id);
+            const cd = row.querySelector('.cx-cd-in');
+            const v = cd ? cd.value : '';
+            if (v !== '' && Number.isFinite(Number(v))) cooldownMs[id] = Math.max(0, Math.round(Number(v)));
+        });
         await api.customize.save(slug, { disabled, cooldownMs });
-        $('cx-msg').textContent = 'Enregistré ✓ — appliqué au prochain Démarrer.';
-    } catch (e) { $('cx-msg').textContent = friendlyError(e, "L'enregistrement a échoué."); }
+        $('cx-save-msg').textContent = 'Enregistré ✓ — appliqué au prochain Démarrer.';
+        showToast('customize', { kind: 'ok', title: 'Réglages enregistrés', msg: 'Ils seront appliqués au prochain démarrage du pack.' });
+    } catch (e) {
+        $('cx-save-msg').textContent = friendlyError(e, "L'enregistrement a échoué.");
+        showToast('customize', { kind: 'error', title: 'Enregistrement échoué', msg: friendlyError(e, 'Réessaie.') });
+    } finally {
+        setBtnBusy(btn, false);
+    }
 };
 
 // ── Stats créateur d'un pack (revenus + graphe) ──

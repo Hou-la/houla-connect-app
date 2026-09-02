@@ -136,7 +136,10 @@ async function detectRunningGames(exeName?: string): Promise<{ name: string; exe
         try {
             // eslint-disable-next-line @typescript-eslint/no-var-requires
             const { spawn } = require('child_process') as typeof import('child_process');
-            const script = "Get-Process | Where-Object { $_.Path } | ForEach-Object { $x=0; try { if ($_.Modules | Where-Object { $_.ModuleName -like 'xinput*' }) { $x=1 } } catch {}; \"$x|$($_.Path)\" }";
+            // On FILTRE D'ABORD sur l'emplacement (quelques process), et on n'inspecte les
+            // modules que de ceux-là : inspecter les modules de TOUS les process prenait
+            // plusieurs secondes, pendant lesquelles l'interface semblait ne rien faire.
+            const script = "Get-Process | Where-Object { $_.Path -and ($_.Path -match 'steamapps\\\\common|Epic Games|GOG Games|Origin Games|XboxGames|Ubisoft') } | ForEach-Object { $x=0; try { if ($_.Modules | Where-Object { $_.ModuleName -like 'xinput*' }) { $x=1 } } catch {}; \"$x|$($_.Path)\" }";
             const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true });
             let out = '';
             ps.stdout?.on('data', (d: Buffer) => { out += String(d); });

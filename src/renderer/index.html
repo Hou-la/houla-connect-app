@@ -326,7 +326,10 @@
                 <div id="cx-rules"></div>
                 <div class="row gap" style="margin-top:16px">
                     <button id="cx-save" class="btn btn--primary">Enregistrer</button>
-                    <span id="cx-msg" class="muted"></span>
+                    <!-- id DISTINCT de celui de la vue Connecteurs : deux éléments partageant
+                         « cx-msg » faisaient que getElementById renvoyait le PREMIER de la page,
+                         donc le message « Enregistré ✓ » s'écrivait hors de cette modale. -->
+                    <span id="cx-save-msg" class="muted"></span>
                 </div>
             </div>
         </div>
