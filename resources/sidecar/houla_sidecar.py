@@ -313,18 +313,14 @@ def helper_vigem_passthrough(args):
         # aucun autre jeu n'est affecté. Best-effort : si le proxy n'est pas posé, sans effet.
         _write_proxy_config(_virtual_index, args.get("targetExe"))
         return {"passthrough": True, "physicalIndex": _pt_index, "virtualIndex": _virtual_index}
-    # Désactivation : proxy transparent (le jeu relit la manette normalement), on stoppe le
-    # loop, on vide les overlays, on relâche le pad.
-    _write_proxy_config(-1)
+    # Désactivation : on vide les overlays PUIS on DÉBRANCHE le pad virtuel. Le débrancher est
+    # essentiel : un pad qui reste occupe un emplacement XInput, et s'il tient le 0 le jeu lit
+    # une manette inerte -> « ma manette ne marche plus ». Proxy remis transparent au passage.
     _pt_running = False
     with _pt_lock:
         _ov_buttons.clear()
     globals()["_ov_analog"] = None
-    try:
-        pad.reset()
-        pad.update()
-    except Exception:  # noqa: BLE001
-        pass
+    _release_pad()
     return {"passthrough": False}
 
 
@@ -497,6 +493,37 @@ def helper_shutdown(args):
     return {"shutdown": True}
 
 
+def _release_pad():
+    """DÉBRANCHE la manette virtuelle sans arrêter le sidecar.
+
+    ⚠️ CRUCIAL : tant qu'un pad virtuel existe, il OCCUPE un emplacement XInput. S'il prend
+    l'emplacement 0 (celui que les jeux lisent), le jeu lit une manette qui ne bouge pas et
+    la manette du joueur semble « ne plus marcher ». Un simple TEST ne doit donc jamais
+    laisser de pad derrière lui : on le relâche dès qu'aucun pack ne tourne."""
+    global _pad, _pt_running
+    _pt_running = False
+    p = _pad
+    _pad = None
+    _write_proxy_config(-1)
+    if p is None:
+        return
+    try:
+        p.reset(); p.update()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        del p
+        gc.collect()  # refcount 0 -> __del__ vgamepad = vigem_target_remove + free
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def helper_release_pad(args):
+    """Appelé par l'app après un test manette hors pack : libère l'emplacement XInput."""
+    _release_pad()
+    return {"released": True}
+
+
 def helper_foreground(args):
     """Chemin de l'exe de la fenêtre au PREMIER PLAN (pour le focus-guard de l'app : ne
     déclencher les effets manette/clavier que si le JEU cible est actif). Windows only."""
@@ -532,6 +559,7 @@ HELPERS = {
     "interception-keys": helper_interception_keys,
     "vigem-gamepad": helper_vigem_gamepad,
     "vigem-passthrough": helper_vigem_passthrough,
+    "release-pad": helper_release_pad,
     "foreground": helper_foreground,
     "shutdown": helper_shutdown,
 }

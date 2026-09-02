@@ -21,11 +21,30 @@ test('install d’un pack MANETTE : on demande le jeu et « Choisir mon jeu » a
     // La modale explique et propose de choisir le jeu
     await expect(page.locator('#choice-modal')).toBeVisible();
     await expect(page.locator('#choice-title')).toContainText(/quel jeu/i);
-    await page.locator('#choice-actions button', { hasText: 'Choisir mon jeu' }).click();
+    // Aucun jeu detecte -> repli sur l'explorateur
+    await page.locator('#choice-actions button', { hasText: 'Choisir le fichier du jeu' }).click();
 
     await expect
         .poll(() => page.evaluate(() => (window.__E2E_CALLS__.gameLinkPack || []).map((a) => a[0])))
         .toContain('demo-pack'); // lié AU PACK, pas au connecteur
+});
+
+test('install d’un pack MANETTE : le jeu LANCÉ est propose en 1 clic (sans explorateur)', async ({ page }) => {
+    await boot(page, {
+        store: [PACK],
+        connectors: [GAMEPAD_CX],
+        usesGamepad: true,
+        gamePackStatus: { exe: null, dir: null, placed: false },
+        // L'app reconnait le jeu qui tourne : on doit pouvoir cliquer son NOM directement.
+        gameDetected: [{ name: 'MECCHA CHAMELEON', exe: 'E:/steam/steamapps/common/MECCHA CHAMELEON/g.exe', dir: 'E:/steam/steamapps/common/MECCHA CHAMELEON' }],
+    });
+    await page.locator('.nav[data-view="store"]').click();
+    await page.locator('.bundle-card', { hasText: 'Pack Démo' }).locator('.install').click();
+    await expect(page.locator('#choice-modal')).toBeVisible();
+    await page.locator('#choice-actions button', { hasText: 'MECCHA CHAMELEON' }).click();
+    await expect
+        .poll(() => page.evaluate(() => (window.__E2E_CALLS__.gameLinkPackTo || []).map((a) => a[0])))
+        .toContain('demo-pack'); // lié sans passer par l'explorateur
 });
 
 test('install d’un pack SANS manette : aucune demande de jeu', async ({ page }) => {

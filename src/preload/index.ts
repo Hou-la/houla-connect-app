@@ -93,6 +93,8 @@ contextBridge.exposeInMainWorld('houlaConnect', {
     // Jeu piloté PAR PACK : pose la DLL proxy XInput dans le dossier du jeu (le jeu lit la
     // manette virtuelle comme Joueur 1). Le jeu appartient au pack, pas au connecteur manette.
     game: {
+        detect: (exeName?: string) => invoke('game:detect', exeName),
+        linkPackTo: (slug: string, exe: string) => invoke('game:linkPackTo', slug, exe),
         linkPack: (slug: string) => invoke('game:linkPack', slug),
         packStatus: (slug: string) => invoke('game:packStatus', slug),
         listLinked: () => invoke('game:listLinked'),

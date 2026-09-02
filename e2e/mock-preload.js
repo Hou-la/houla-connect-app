@@ -74,6 +74,8 @@
             isGamepadInstalled: () => R({ installed: !!cfg.gamepadDriverInstalled }),
         },
         game: {
+            detect: () => R(cfg.gameDetected || []),
+            linkPackTo: rec('gameLinkPackTo', () => R({ ok: true, exe: 'C:/Games/Demo/game.exe', dir: 'C:/Games/Demo' })),
             linkPack: rec('gameLinkPack', () => R(cfg.gameLinkResult || { ok: true, exe: 'C:/Games/Demo/game.exe', dir: 'C:/Games/Demo' })),
             packStatus: () => R(cfg.gamePackStatus || { exe: null, dir: null, placed: false }),
             listLinked: () => R(cfg.gameLinked || []),

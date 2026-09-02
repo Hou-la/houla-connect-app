@@ -7,7 +7,7 @@ import { createInterface, Interface } from 'readline';
 // C'est ce qui permet le pilotage bas niveau (Meccha) tout en gardant les bundles
 // comme donnée inerte.
 
-export type SidecarHelper = 'interception-keys' | 'vigem-gamepad' | 'vigem-passthrough' | 'foreground' | 'shutdown';
+export type SidecarHelper = 'interception-keys' | 'vigem-gamepad' | 'vigem-passthrough' | 'release-pad' | 'foreground' | 'shutdown';
 
 interface Pending {
     resolve: (v: any) => void;

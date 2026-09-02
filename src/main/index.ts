@@ -103,6 +103,43 @@ function removeProxyDlls(dir: string): void {
     }
 }
 
+// ── Détection automatique du JEU ──
+// L'utilisateur ne doit jamais avoir à chercher un .exe dans l'explorateur. On repère les
+// jeux EN COURS d'exécution à leur emplacement (bibliothèques de jeux connues) et on les
+// propose en un clic. Le pack pourra en plus déclarer son jeu (nom d'exe / dossier Steam) :
+// on filtrera alors sur lui, et il n'y aura plus rien à demander.
+const GAME_LIB_RX = /(steamapps[\\/]common|Epic Games|GOG Galaxy[\\/]Games|GOG Games|Origin Games|Ubisoft[\\/]Ubisoft Game Launcher|XboxGames)/i;
+/** Nom lisible d'un jeu depuis le chemin de son exe (dossier de la bibliothèque). */
+function gameNameFromPath(exe: string): string {
+    const m = exe.match(/(?:steamapps[\\/]common|Epic Games|GOG Games|Origin Games|XboxGames)[\\/]([^\\/]+)/i);
+    return (m && m[1]) || path.basename(exe, path.extname(exe));
+}
+/** Jeux actuellement lancés, repérés à leur emplacement. `exeName` filtre si le pack le déclare. */
+async function detectRunningGames(exeName?: string): Promise<{ name: string; exe: string; dir: string }[]> {
+    if (process.platform !== 'win32') return [];
+    return await new Promise((resolve) => {
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const { spawn } = require('child_process') as typeof import('child_process');
+            const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+                'Get-Process | Where-Object { $_.Path } | Select-Object -ExpandProperty Path'],
+                { windowsHide: true });
+            let out = '';
+            ps.stdout?.on('data', (d: Buffer) => { out += String(d); });
+            ps.on('error', () => resolve([]));
+            ps.on('exit', () => {
+                const want = exeName ? exeName.toLowerCase() : null;
+                const seen = new Set<string>();
+                const games = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+                    .filter((p) => (want ? path.basename(p).toLowerCase() === want : GAME_LIB_RX.test(p)))
+                    .filter((p) => { const k = p.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
+                    .map((p) => ({ name: gameNameFromPath(p), exe: p, dir: path.dirname(p) }));
+                resolve(games);
+            });
+        } catch { resolve([]); }
+    });
+}
+
 // Poll du focus-guard : rafraîchit gameFocused = (fenêtre au 1er plan == exe du jeu lié).
 // Sans jeu lié, permissif (true) et AUCUN appel sidecar (self-guard). Démarré pendant un
 // pack, arrêté à l'arrêt/panic.
@@ -130,6 +167,14 @@ function stopFocusPoll(): void {
 async function ensureGamepadRemap(effect: unknown): Promise<void> {
     if ((effect as { type?: string })?.type !== 'gamepad') return;
     try { await sidecar().call('vigem-passthrough', { enable: true }); } catch { /* le test remontera l'échec */ }
+}
+/** Après un test manette HORS pack : débrancher la manette virtuelle.
+ *  Sinon elle reste et OCCUPE un emplacement XInput — si c'est le 0, le jeu lit une manette
+ *  inerte et celle du joueur « ne marche plus ». Un test ne doit rien laisser derrière lui. */
+async function releaseGamepadAfterTest(effect: unknown): Promise<void> {
+    if ((effect as { type?: string })?.type !== 'gamepad') return;
+    if (engineRunning) return; // un pack tourne : la virtuelle doit rester en place
+    try { await sidecar().call('release-pad', {}); } catch { /* noop */ }
 }
 
 // Traduit un verdict de test en message ACTIONNABLE + un CODE que le renderer utilise pour
@@ -481,7 +526,9 @@ function registerIpc(): void {
                 : rules.find((r) => r.on?.type === 'gift') || rules[0];
             if (!rule) return { ok: false, reason: 'aucune interaction à tester dans ce pack' };
             await ensureGamepadRemap(rule.effect); // manette : proxy actif pour que le test atteigne le jeu
-            return withDriverCode(await engine.testFire({ id: rule.id, on: rule.on, effect: rule.effect }, slug));
+            const v = withDriverCode(await engine.testFire({ id: rule.id, on: rule.on, effect: rule.effect }, slug));
+            await releaseGamepadAfterTest(rule.effect); // ne rien laisser squatter l'emplacement 0
+            return v;
         } catch (e: any) {
             return withDriverCode({ ok: false, reason: e?.message || 'test impossible' });
         }
@@ -647,7 +694,9 @@ function registerIpc(): void {
     ipcMain.handle('engine:testRule', async (_e, rule: any, bundleSlug?: string) => {
         if (!rule || typeof rule !== 'object' || !rule.effect) return { ok: false, reason: 'règle invalide' };
         await ensureGamepadRemap(rule.effect); // manette : proxy actif pour que le test atteigne le jeu
-        return withDriverCode(await engine.testFire({ id: rule.id || 'test', on: rule.on || { type: 'gift' }, effect: rule.effect }, bundleSlug));
+        const v = withDriverCode(await engine.testFire({ id: rule.id || 'test', on: rule.on || { type: 'gift' }, effect: rule.effect }, bundleSlug));
+        await releaseGamepadAfterTest(rule.effect); // ne rien laisser squatter l'emplacement 0
+        return v;
     });
     ipcMain.handle('engine:test', (_e, slug?: string) => {
         // Sans slug : simule la 1re interaction cadeau du pack actif (générique ou slot).
@@ -732,6 +781,17 @@ function registerIpc(): void {
         const placed = placeProxyDlls(dir);
         if (!placed.ok) return placed;
         if (slug) store.setGameForPack(slug, { exe, dir });
+        return { ok: true, exe, dir };
+    });
+    // Jeux détectés en cours d'exécution (pour proposer en 1 clic, sans explorateur).
+    ipcMain.handle('game:detect', async (_e, exeName?: string) => detectRunningGames(exeName));
+    // Lier un pack à un jeu DÉJÀ identifié (issu de la détection) : aucun explorateur.
+    ipcMain.handle('game:linkPackTo', async (_e, slug: string, exe: string) => {
+        if (!slug || !exe || !fs.existsSync(exe)) return { ok: false, reason: 'Jeu introuvable.' };
+        const dir = path.dirname(exe);
+        const placed = placeProxyDlls(dir);
+        if (!placed.ok) return placed;
+        store.setGameForPack(slug, { exe, dir });
         return { ok: true, exe, dir };
     });
     ipcMain.handle('game:packStatus', (_e, slug: string) => {

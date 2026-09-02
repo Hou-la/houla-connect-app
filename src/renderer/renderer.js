@@ -823,19 +823,35 @@ document.addEventListener('click', (e) => {
 // le dossier du jeu reste INERTE tant qu'aucun pack ne tourne, et ne s'applique qu'à CE jeu :
 // le joueur continue de jouer à ce jeu, et à tous les autres, sans rien changer.
 async function promptPackGame(slug) {
-    const go = await showChoice({
+    // On RECONNAÎT d'abord le jeu qui tourne : un clic sur son nom, pas d'explorateur de
+    // fichiers. Chercher un .exe soi-même est réservé au cas où rien n'est détecté.
+    let found = [];
+    try { found = (await api.game.detect()) || []; } catch { found = []; }
+    const choices = found.slice(0, 3).map((g, i) => ({
+        key: 'd' + i, label: g.name, kind: i === 0 ? 'primary' : undefined,
+    }));
+    choices.push({ key: 'pick', label: found.length ? 'Un autre jeu…' : 'Choisir le fichier du jeu…' });
+    choices.push({ key: 'later', label: 'Plus tard' });
+    const k = await showChoice({
         title: 'Quel jeu ce pack pilote-t-il ?',
-        msg: "Ce pack agit sur une manette. Pour que les cadeaux arrivent DANS ton jeu, indique son .exe une seule fois. Rien n'est bloqué : tu pourras jouer à ce jeu, et à tous les autres, tout à fait normalement.",
-        choices: [{ key: 'pick', label: 'Choisir mon jeu', kind: 'primary' }, { key: 'later', label: 'Plus tard' }],
+        msg: found.length
+            ? "Les cadeaux doivent agir DANS ton jeu : je prépare son dossier, une seule fois. Voici ce que je reconnais comme lancé :"
+            : "Les cadeaux doivent agir DANS ton jeu : je prépare son dossier, une seule fois. Le plus simple : lance ton jeu, je le reconnaîtrai tout seul. Tu joues normalement ensuite, ici comme ailleurs.",
+        choices,
     });
-    if (go !== 'pick') return false;
+    if (!k || k === 'later') return false;
     try {
-        const r = await api.game.linkPack(slug);
+        const r = k.startsWith('d')
+            ? await api.game.linkPackTo(slug, found[Number(k.slice(1))].exe)
+            : await api.game.linkPack(slug);
         if (r && r.ok) {
-            showToast('game', { kind: 'ok', title: 'Jeu lié', msg: "Relance le jeu une fois pour qu'il prenne le réglage en compte. Ensuite, chaque démarrage de ce pack est automatique." });
+            showToast('game', {
+                kind: 'ok', title: 'Jeu prêt',
+                msg: "Relance le jeu une fois pour qu'il prenne le réglage en compte. Ensuite, à chaque démarrage de ce pack, c'est automatique.",
+            });
             return true;
         }
-        if (r && r.reason) showToast('game', { kind: 'error', title: 'Impossible de lier le jeu', msg: r.reason });
+        if (r && r.reason) showToast('game', { kind: 'error', title: 'Impossible de préparer le jeu', msg: r.reason });
     } catch (e) {
         showToast('game', { kind: 'error', title: 'Erreur', msg: friendlyError(e, 'Réessaie.') });
     }
@@ -1001,23 +1017,25 @@ function buildStoreCard(b, inst) {
     card.querySelector('.more').onclick = () => openModal(b, !!inst);
     if (inst) {
         const ub = card.querySelector('.uninstall');
-        const ubIcon = ub ? ub.innerHTML : ''; // 🗑 à restaurer après « Confirmer ? »
-        // Deux temps (🗑 -> « Confirmer ? ») : évite un retrait accidentel, sans modale.
+        // Confirmation dans une VRAIE modale. Un bouton qui se change en « Confirmer ? » est
+        // ambigu et bâclé, alors qu'on s'apprête à retirer un pack et ses réglages.
         if (ub) ub.onclick = async () => {
-            if (ub.dataset.armed !== '1') {
-                ub.dataset.armed = '1'; ub.textContent = 'Confirmer ?'; ub.classList.add('is-confirm');
-                setTimeout(() => { if (ub.isConnected && ub.dataset.armed === '1') { ub.dataset.armed = ''; ub.innerHTML = ubIcon; ub.classList.remove('is-confirm'); } }, 3000);
-                return;
-            }
+            const k = await showChoice({
+                title: 'Supprimer ce pack ?',
+                msg: `« ${b.title || b.slug} » sera retiré de Hou.la Connect, avec les réglages que tu as faits dessus. Tu pourras le réinstaller depuis le Store quand tu veux.`,
+                choices: [{ key: 'del', label: 'Supprimer', kind: 'primary' }, { key: 'no', label: 'Annuler' }],
+            });
+            if (k !== 'del') return;
+            const icon = ub.innerHTML;
             ub.disabled = true; ub.textContent = '…';
             try {
                 await api.store.uninstall(b.slug);
-                showToast('uninstall', { kind: 'ok', title: 'Pack désinstallé', msg: `${b.title || b.slug} a été retiré.` });
+                showToast('uninstall', { kind: 'ok', title: 'Pack supprimé', msg: `${b.title || b.slug} a été retiré.` });
                 await loadInstalled(); // rafraîchit le menu Capture
                 await loadStore();     // la carte repasse à « Installer »
             } catch (e) {
-                ub.disabled = false; ub.dataset.armed = ''; ub.innerHTML = ubIcon; ub.classList.remove('is-confirm');
-                showToast('uninstall', { kind: 'error', title: 'Désinstallation échouée', msg: friendlyError(e, 'Réessaie dans un instant.') });
+                ub.disabled = false; ub.innerHTML = icon;
+                showToast('uninstall', { kind: 'error', title: 'Suppression échouée', msg: friendlyError(e, 'Réessaie dans un instant.') });
             }
         };
     }
@@ -1146,6 +1164,22 @@ async function openCustomize(slug, title) {
     const rules = (data && data.rules) || [];
     if (!rules.length) { box.innerHTML = '<p class="muted">Ce pack n\'a pas d\'interaction personnalisable.</p>'; return; }
     box.innerHTML = '';
+    // Pack MANETTE : le jeu piloté se voit et se change ICI, dans les réglages du pack — pas
+    // dans les Connecteurs (la manette sert à tous les jeux, le jeu appartient au pack).
+    if (rules.some((r) => r.effectType === 'gamepad')) {
+        let st = null;
+        try { st = await api.game.packStatus(slug); } catch { /* statut indisponible */ }
+        const grow = document.createElement('div');
+        grow.className = 'cx-rule';
+        grow.innerHTML =
+            `<div class="cx-rule__info"><b>🎮 Jeu piloté</b> <span class="muted">${st && st.exe ? esc(gameBase(st.exe)) : 'pas encore choisi — les cadeaux n’agiront pas en jeu'}</span></div>`
+            + `<button class="btn btn--ghost cx-gamechange">${st && st.exe ? 'Changer de jeu' : 'Choisir le jeu'}</button>`;
+        grow.querySelector('.cx-gamechange').onclick = async () => {
+            const ok = await promptPackGame(slug);
+            if (ok) openCustomize(slug, title); // recharge pour afficher le nouveau jeu
+        };
+        box.appendChild(grow);
+    }
     rules.forEach((r) => {
         const row = document.createElement('div');
         row.className = 'cx-rule';

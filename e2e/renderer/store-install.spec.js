@@ -27,9 +27,10 @@ test('désinstall : clic Désinstaller (2 temps) -> api.store.uninstall(slug) ->
     await page.locator('.nav[data-view="store"]').click();
     const card = page.locator('.bundle-card', { hasText: 'Pack Démo' });
     await expect(card.locator('.install')).toContainText(/Installé/i);
-    // Désinstaller = 2 temps ("Désinstaller" -> "Confirmer ?")
+    // Désinstaller = confirmation dans une vraie modale
     await card.locator('.uninstall').click();
-    await card.locator('.uninstall').click();
+    await expect(page.locator('#choice-modal')).toBeVisible();
+    await page.locator('#choice-actions button', { hasText: 'Supprimer' }).click();
     await expect
         .poll(() => page.evaluate(() => (window.__E2E_CALLS__.uninstall || []).map((a) => a[0])))
         .toContain('demo-pack');
