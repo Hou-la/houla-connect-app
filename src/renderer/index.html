@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta http-equiv="Content-Security-Policy"
           content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'none';" />
-    <title>Hou.la Connect</title>
+    <title data-i18n="hou-la-connect">Hou.la Connect</title>
     <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-theme="dark">
@@ -12,14 +12,14 @@
     <header class="titlebar">
         <div class="titlebar__brand">
             <img src="logo.png" class="logo-ic" alt="" />
-            <span class="logo">Hou.la <b>Connect</b></span>
+            <span class="logo">Hou.la <b data-i18n="connect">Connect</b></span>
             <span class="ver" id="app-ver"></span>
         </div>
         <div class="titlebar__drag"></div>
         <div class="titlebar__controls">
-            <button id="win-min" title="Réduire">&#8211;</button>
-            <button id="win-max" title="Agrandir">&#9633;</button>
-            <button id="win-close" class="close" title="Fermer">&#10005;</button>
+            <button id="win-min" data-i18n-title="reduire" title="Réduire">&#8211;</button>
+            <button id="win-max" data-i18n-title="agrandir" title="Agrandir">&#9633;</button>
+            <button id="win-close" class="close" data-i18n-title="fermer" title="Fermer">&#10005;</button>
         </div>
     </header>
 
@@ -28,28 +28,28 @@
         <section id="view-auth" class="view auth">
             <div class="auth__card">
                 <img src="logo.png" class="auth__logo" alt="Hou.la Connect" />
-                <h1>Hou.la <b>Connect</b></h1>
-                <p id="auth-lead">Transforme les cadeaux, messages et follows de ton live en actions réelles.</p>
-                <button id="btn-login" class="btn btn--primary">Se connecter avec Hou.la</button>
+                <h1>Hou.la <b data-i18n="connect">Connect</b></h1>
+                <p id="auth-lead" data-i18n="transforme-les-cadeaux-messages-et-follows-de-to">Transforme les cadeaux, messages et follows de ton live en actions réelles.</p>
+                <button id="btn-login" class="btn btn--primary" data-i18n="se-connecter-avec-hou-la">Se connecter avec Hou.la</button>
                 <p id="auth-error" class="hint hidden" style="color: var(--danger)"></p>
-                <p id="auth-env" class="hint hidden">Environnement : <b id="auth-env-name"></b> · <a href="#" id="auth-env-reset" class="link">revenir en Production</a></p>
+                <p id="auth-env" class="hint hidden">Environnement : <b id="auth-env-name"></b> · <a href="#" id="auth-env-reset" class="link" data-i18n="revenir-en-production">revenir en Production</a></p>
             </div>
         </section>
 
         <!-- App connectée -->
         <div id="app-main" class="hidden">
             <nav class="sidebar">
-                <button class="nav" data-view="capture">Capture</button>
-                <button class="nav" data-view="store">Store</button>
-                <button class="nav" data-view="lab">Lab</button>
-                <button class="nav" data-view="mine">Mes bundles</button>
-                <button class="nav" data-view="connecteurs">Connecteurs</button>
+                <button class="nav" data-view="capture" data-i18n="capture">Capture</button>
+                <button class="nav" data-view="store" data-i18n="store">Store</button>
+                <button class="nav" data-view="lab" data-i18n="lab">Lab</button>
+                <button class="nav" data-view="mine" data-i18n="mes-bundles">Mes bundles</button>
+                <button class="nav" data-view="connecteurs" data-i18n="connecteurs">Connecteurs</button>
                 <!-- Révélé au démarrage uniquement pour un compte ADMIN (voir revealAdminNav). -->
-                <button class="nav hidden" id="nav-moderation" data-view="moderation">Modération</button>
-                <button class="nav" data-view="settings">Réglages</button>
+                <button class="nav hidden" id="nav-moderation" data-view="moderation" data-i18n="moderation">Modération</button>
+                <button class="nav" data-view="settings" data-i18n="reglages">Réglages</button>
                 <div class="sidebar__foot">
                     <div class="ws-switch">
-                        <label>Identité active</label>
+                        <label data-i18n="identite-active">Identité active</label>
                         <button id="ws-current" class="ws-current">
                             <img id="ws-current-av" class="av" alt="" />
                             <span id="ws-current-name">…</span>
@@ -57,7 +57,7 @@
                         </button>
                         <div id="ws-menu" class="ws-menu hidden"></div>
                     </div>
-                    <button id="btn-logout" class="btn btn--ghost">Déconnexion</button>
+                    <button id="btn-logout" class="btn btn--ghost" data-i18n="deconnexion">Déconnexion</button>
                 </div>
             </nav>
 
@@ -65,29 +65,29 @@
                 <!-- CAPTURE -->
                 <section id="view-capture" class="view">
                     <div class="row between">
-                        <h2>Capture</h2>
-                        <span id="conn-badge" class="badge badge--off">Déconnecté</span>
+                        <h2 data-i18n="capture">Capture</h2>
+                        <span id="conn-badge" class="badge badge--off" data-i18n="deconnecte">Déconnecté</span>
                     </div>
                     <div class="card">
-                        <label>Pack actif</label>
+                        <label data-i18n="pack-actif">Pack actif</label>
                         <div id="no-pack" class="empty hidden">
                             Aucun pack actif. Installe un pack depuis le
-                            <b>Store</b> pour commencer.
+                            <b data-i18n="store">Store</b> pour commencer.
                         </div>
                         <select id="active-bundle"></select>
                         <div class="row gap wrap">
-                            <button id="btn-start" class="btn btn--primary">Démarrer</button>
-                            <button id="btn-test" class="btn btn--ghost">Tester la 1ʳᵉ interaction</button>
-                            <button id="btn-panic" class="btn btn--panic" title="Arrêt d'urgence">PANIC</button>
+                            <button id="btn-start" class="btn btn--primary" data-i18n="demarrer">Démarrer</button>
+                            <button id="btn-test" class="btn btn--ghost" data-i18n="tester-la-1-interaction">Tester la 1ʳᵉ interaction</button>
+                            <button id="btn-panic" class="btn btn--panic" data-i18n-title="arret-d-urgence" title="Arrêt d'urgence" data-i18n="panic">PANIC</button>
                         </div>
-                        <p class="hint">
+                        <p class="hint" data-i18n="panic-arret-d-urgence-relache-toutes-les-touches">
                             PANIC = arrêt d'urgence : relâche toutes les touches /
                             boutons maintenus et coupe la connexion. Raccourci
                             global : Ctrl+Alt+Pause.
                         </p>
                     </div>
                     <div class="card">
-                        <label>Journal en direct</label>
+                        <label data-i18n="journal-en-direct">Journal en direct</label>
                         <div id="log" class="log"></div>
                     </div>
                 </section>
@@ -95,12 +95,12 @@
                 <!-- STORE -->
                 <section id="view-store" class="view hidden">
                     <div class="list-head">
-                        <div class="view-head"><h2>Store</h2><button id="store-refresh" class="btn btn--ghost btn--refresh" title="Rafraîchir le store">⟳ Rafraîchir</button></div>
+                        <div class="view-head"><h2 data-i18n="store">Store</h2><button id="store-refresh" class="btn btn--ghost btn--refresh" data-i18n-title="rafraichir-le-store" title="Rafraîchir le store" data-i18n="rafraichir">⟳ Rafraîchir</button></div>
                         <div class="store-toolbar">
-                            <input id="store-search" type="search" class="store-search" placeholder="Rechercher un pack (nom)…" autocomplete="off" />
+                            <input id="store-search" type="search" class="store-search" data-i18n-ph="rechercher-un-pack-nom" placeholder="Rechercher un pack (nom)…" autocomplete="off" />
                             <div class="seg store-filter">
-                                <button type="button" class="seg__btn is-active" data-store-filter="all">Tous</button>
-                                <button type="button" class="seg__btn" data-store-filter="installed">Installés</button>
+                                <button type="button" class="seg__btn is-active" data-store-filter="all" data-i18n="tous">Tous</button>
+                                <button type="button" class="seg__btn" data-store-filter="installed" data-i18n="installes">Installés</button>
                             </div>
                         </div>
                     </div>
@@ -111,45 +111,45 @@
                 <!-- LAB -->
                 <section id="view-lab" class="view hidden">
                     <div class="row between">
-                        <h2 id="lab-mode-title">Créer un pack</h2>
-                        <button id="lab-new-btn" class="btn btn--ghost hidden">+ Nouveau pack</button>
+                        <h2 id="lab-mode-title" data-i18n="creer-un-pack">Créer un pack</h2>
+                        <button id="lab-new-btn" class="btn btn--ghost hidden" data-i18n="nouveau-pack">+ Nouveau pack</button>
                     </div>
-                    <p class="muted" id="lab-intro">Renseigne les infos, ajoute des interactions, puis enregistre en privé (pour toi) ou publie en public (modéré). Pour éditer un pack existant, ouvre-le depuis « Mes bundles ».</p>
+                    <p class="muted" id="lab-intro" data-i18n="renseigne-les-infos-ajoute-des-interactions-puis">Renseigne les infos, ajoute des interactions, puis enregistre en privé (pour toi) ou publie en public (modéré). Pour éditer un pack existant, ouvre-le depuis « Mes bundles ».</p>
 
                     <div class="card">
-                        <label>Infos du pack</label>
+                        <label data-i18n="infos-du-pack">Infos du pack</label>
                         <label for="lab-slug" class="field-lbl">Identifiant unique
                             <span class="field-help" tabindex="0" role="img" aria-label="Aide"
-                                title="Un identifiant court et unique pour ton pack, comme une adresse web (ex. mon-pack-minecraft). Minuscules, chiffres et tirets uniquement. Il apparaît dans les liens et NE peut PAS être changé après la création.">&#9432;</span>
+                                data-i18n-title="un-identifiant-court-et-unique-pour-ton-pack-com" title="Un identifiant court et unique pour ton pack, comme une adresse web (ex. mon-pack-minecraft). Minuscules, chiffres et tirets uniquement. Il apparaît dans les liens et NE peut PAS être changé après la création.">&#9432;</span>
                         </label>
-                        <input id="lab-slug" placeholder="ex. mon-pack-minecraft" maxlength="80" autocomplete="off" spellcheck="false" />
-                        <input id="lab-title" placeholder="Titre (anglais)" />
-                        <textarea id="lab-desc" rows="4" maxlength="2000" placeholder="Description courte : à quoi sert le pack, en une ou deux phrases. Les détails/prérequis vont dans « Instructions » ci-dessous."></textarea>
+                        <input id="lab-slug" data-i18n-ph="ex-mon-pack-minecraft" placeholder="ex. mon-pack-minecraft" maxlength="80" autocomplete="off" spellcheck="false" />
+                        <input id="lab-title" data-i18n-ph="titre-anglais" placeholder="Titre (anglais)" />
+                        <textarea id="lab-desc" rows="4" maxlength="2000" data-i18n-ph="description-courte-a-quoi-sert-le-pack-en-une-ou" placeholder="Description courte : à quoi sert le pack, en une ou deux phrases. Les détails/prérequis vont dans « Instructions » ci-dessous."></textarea>
                         <div class="char-counter"><span id="lab-desc-count">0</span> / 2000</div>
 
-                        <span class="lab-sub">Instructions / prérequis <span class="muted">(Markdown, optionnel)</span></span>
+                        <span class="lab-sub">Instructions / prérequis <span class="muted" data-i18n="markdown-optionnel">(Markdown, optionnel)</span></span>
                         <div class="md-editor">
                             <div class="md-editor__tabs">
-                                <button type="button" id="lab-instr-edit-tab" class="md-tab is-active">Éditer</button>
-                                <button type="button" id="lab-instr-preview-tab" class="md-tab">Aperçu</button>
+                                <button type="button" id="lab-instr-edit-tab" class="md-tab is-active" data-i18n="editer">Éditer</button>
+                                <button type="button" id="lab-instr-preview-tab" class="md-tab" data-i18n="apercu">Aperçu</button>
                                 <span class="char-counter md-editor__count"><span id="lab-instr-count">0</span> / 50000</span>
                             </div>
                             <div id="lab-instr-toolbar" class="md-toolbar" role="toolbar" aria-label="Mise en forme">
-                                <button type="button" class="md-tool" data-md="title" title="Titre">H</button>
-                                <button type="button" class="md-tool" data-md="bold" title="Gras (Ctrl+B)"><b>B</b></button>
-                                <button type="button" class="md-tool" data-md="italic" title="Italique (Ctrl+I)"><i>I</i></button>
-                                <button type="button" class="md-tool" data-md="code" title="Code en ligne">&lt;&gt;</button>
-                                <button type="button" class="md-tool" data-md="codeblock" title="Bloc de code">{ }</button>
-                                <button type="button" class="md-tool" data-md="list" title="Liste à puces">&#8226; Liste</button>
-                                <button type="button" class="md-tool" data-md="link" title="Lien">🔗</button>
+                                <button type="button" class="md-tool" data-md="title" data-i18n-title="titre" title="Titre">H</button>
+                                <button type="button" class="md-tool" data-md="bold" data-i18n-title="gras-ctrl-b" title="Gras (Ctrl+B)"><b>B</b></button>
+                                <button type="button" class="md-tool" data-md="italic" data-i18n-title="italique-ctrl-i" title="Italique (Ctrl+I)"><i>I</i></button>
+                                <button type="button" class="md-tool" data-md="code" data-i18n-title="code-en-ligne" title="Code en ligne" data-i18n="lt-gt">&lt;&gt;</button>
+                                <button type="button" class="md-tool" data-md="codeblock" data-i18n-title="bloc-de-code" title="Bloc de code">{ }</button>
+                                <button type="button" class="md-tool" data-md="list" data-i18n-title="liste-a-puces" title="Liste à puces" data-i18n="8226-liste">&#8226; Liste</button>
+                                <button type="button" class="md-tool" data-md="link" data-i18n-title="lien" title="Lien">🔗</button>
                             </div>
-                            <textarea id="lab-instructions" rows="8" maxlength="50000" spellcheck="false" placeholder="# Prérequis&#10;- Minecraft Java 1.20+, serveur multijoueur avec RCON activé&#10;&#10;## Codes de triche / commandes&#10;```&#10;/give {player} minecraft:diamond 1&#10;/effect give {player} minecraft:speed 30 2&#10;```&#10;&#10;Titres (#), listes (-), **gras**, `code`, et blocs de code ``` (copiables) sont supportés."></textarea>
+                            <textarea id="lab-instructions" rows="8" maxlength="50000" spellcheck="false" data-i18n-ph="prerequis-10-minecraft-java-1-20-serveur-multijo" placeholder="# Prérequis&#10;- Minecraft Java 1.20+, serveur multijoueur avec RCON activé&#10;&#10;## Codes de triche / commandes&#10;```&#10;/give {player} minecraft:diamond 1&#10;/effect give {player} minecraft:speed 30 2&#10;```&#10;&#10;Titres (#), listes (-), **gras**, `code`, et blocs de code ``` (copiables) sont supportés."></textarea>
                             <div id="lab-instr-preview" class="md-instructions md-editor__preview hidden"></div>
                         </div>
-                        <p class="hint">Pour un pack public, les instructions ne deviennent visibles par les autres qu'à la <b>prochaine version approuvée</b> (elles sont modérées avec la version). Ton brouillon reste éditable ici à tout moment.</p>
-                        <input id="lab-game" list="lab-game-list" placeholder="jeu (ex. minecraft) — optionnel" />
+                        <p class="hint">Pour un pack public, les instructions ne deviennent visibles par les autres qu'à la <b data-i18n="prochaine-version-approuvee">prochaine version approuvée</b> (elles sont modérées avec la version). Ton brouillon reste éditable ici à tout moment.</p>
+                        <input id="lab-game" list="lab-game-list" data-i18n-ph="jeu-ex-minecraft-optionnel" placeholder="jeu (ex. minecraft), optionnel" />
                         <datalist id="lab-game-list"></datalist>
-                        <span class="lab-sub">Commission créateur</span>
+                        <span class="lab-sub" data-i18n="commission-createur">Commission créateur</span>
                         <div class="lab-fee-row">
                             <input id="lab-fee" type="hidden" value="0" />
                             <div id="lab-fee-slider" class="fee-slider" tabindex="0" role="slider" aria-label="Commission créateur" aria-valuemin="0" aria-valuemax="15" aria-valuenow="0">
@@ -157,17 +157,17 @@
                                 <div class="fee-slider__fill"></div>
                                 <div class="fee-slider__thumb"></div>
                             </div>
-                            <output id="lab-fee-val" class="lab-fee-val">0&nbsp;% · gratuit</output>
+                            <output id="lab-fee-val" class="lab-fee-val" data-i18n="0-nbsp-gratuit">0&nbsp;% · gratuit</output>
                         </div>
-                        <p class="hint">Part des étoiles reversée au créateur du pack. Glisse de 0&nbsp;% (gratuit) à 15&nbsp;% max. Prélevé sur le broadcaster (le viewer paie pareil), affiché à l'installation.</p>
-                        <span class="lab-sub">Types (tags)</span>
+                        <p class="hint" data-i18n="part-des-etoiles-reversee-au-createur-du-pack-gl">Part des étoiles reversée au créateur du pack. Glisse de 0&nbsp;% (gratuit) à 15&nbsp;% max. Prélevé sur le broadcaster (le viewer paie pareil), affiché à l'installation.</p>
+                        <span class="lab-sub" data-i18n="types-tags">Types (tags)</span>
                         <div id="lab-tags" class="tagbox"></div>
-                        <input id="lab-tag-input" list="lab-tag-list" placeholder="ajouter un type puis Entrée (ex. gaming, domotique, asmr)…" />
+                        <input id="lab-tag-input" list="lab-tag-list" data-i18n-ph="ajouter-un-type-puis-entree-ex-gaming-domotique-" placeholder="ajouter un type puis Entrée (ex. gaming, domotique, asmr)…" />
                         <datalist id="lab-tag-list"></datalist>
-                        <span class="lab-sub">Bannière</span>
+                        <span class="lab-sub" data-i18n="banniere">Bannière</span>
                         <div class="lab-banner-row">
                             <div id="lab-banner-preview" class="lab-banner"></div>
-                            <button id="lab-banner-btn" class="btn btn--ghost">Choisir une bannière (1600×900)</button>
+                            <button id="lab-banner-btn" class="btn btn--ghost" data-i18n="choisir-une-banniere-1600-900">Choisir une bannière (1600×900)</button>
                         </div>
                         <p id="lab-msg" class="hint"></p>
                         <div id="lab-versions" class="lab-versions"></div>
@@ -175,11 +175,11 @@
 
                     <div class="card">
                         <div class="row between">
-                            <label>Interactions</label>
+                            <label data-i18n="interactions">Interactions</label>
                             <label class="switch">
                                 <input type="checkbox" id="lab-mode" />
                                 <span class="switch__track"><span class="switch__thumb"></span></span>
-                                <span id="lab-mode-label">Mode avancé (JSON)</span>
+                                <span id="lab-mode-label" data-i18n="mode-avance-json">Mode avancé (JSON)</span>
                             </label>
                         </div>
 
@@ -189,17 +189,17 @@
                                  le joueur choisit la sienne à l'installation. -->
                             <div id="lab-profiles" class="lab-profiles"></div>
                             <div id="lab-rules"></div>
-                            <button id="lab-add-rule" class="btn btn--ghost">+ Ajouter une interaction</button>
+                            <button id="lab-add-rule" class="btn btn--ghost" data-i18n="ajouter-une-interaction">+ Ajouter une interaction</button>
                         </div>
 
                         <div id="lab-json-mode" class="hidden">
                             <textarea id="lab-manifest" rows="12" spellcheck="false"></textarea>
-                            <p class="hint">Format : { "schema": 2, "rules": [ … ] }. Événements : gift(giftSlug — n'importe quel cadeau, ex. "licorne", ou un slot ix_slot_01..30), follow, comment(contains OU every), hearts(milestone OU every), share(every optionnel), viewer(every). « every » = tous les N (ex. tous les 100 likes/messages/partages/spectateurs). Effets : keyboard(keys, backend), gamepad(button/buttons/sequence/randomFrom/steps/analog), rcon(command), obs(request), http(method,url), mqtt(topic,payload), osc(address,args), ws(url,message).</p>
+                            <p class="hint" data-i18n="format-schema-2-rules-evenements-gift-giftslug-n">Format : { "schema": 2, "rules": [ … ] }. Événements : gift(giftSlug, n'importe quel cadeau, ex. "licorne", ou un slot ix_slot_01..30), follow, comment(contains OU every), hearts(milestone OU every), share(every optionnel), viewer(every). « every » = tous les N (ex. tous les 100 likes/messages/partages/spectateurs). Effets : keyboard(keys, backend), gamepad(button/buttons/sequence/randomFrom/steps/analog), rcon(command), obs(request), http(method,url), mqtt(topic,payload), osc(address,args), ws(url,message).</p>
                         </div>
 
                         <div id="lab-changelog-field" class="hidden" style="margin-top: 14px">
-                            <span class="lab-sub">Nouveautés de cette version</span>
-                            <textarea id="lab-changelog" rows="3" placeholder="Décris ce qui change dans cette version (nouveaux cadeaux, corrections…). Affiché dans le store et l'historique."></textarea>
+                            <span class="lab-sub" data-i18n="nouveautes-de-cette-version">Nouveautés de cette version</span>
+                            <textarea id="lab-changelog" rows="3" data-i18n-ph="decris-ce-qui-change-dans-cette-version-nouveaux" placeholder="Décris ce qui change dans cette version (nouveaux cadeaux, corrections…). Affiché dans le store et l'historique."></textarea>
                         </div>
                         <p id="lab-msg2" class="hint"></p>
                     </div>
@@ -208,26 +208,26 @@
                          scroll : il enregistre TOUT (infos du pack + version). Fini les deux
                          boutons séparés qui faisaient perdre la saisie des instructions. -->
                     <div id="lab-actionbar" class="lab-actionbar">
-                        <select id="lab-bump" class="hidden" title="Type de changement pour la nouvelle version">
-                            <option value="patch">Correction</option>
-                            <option value="minor">Amélioration</option>
-                            <option value="major">Gros changement</option>
+                        <select id="lab-bump" class="hidden" data-i18n-title="type-de-changement-pour-la-nouvelle-version" title="Type de changement pour la nouvelle version">
+                            <option value="patch" data-i18n="correction">Correction</option>
+                            <option value="minor" data-i18n="amelioration">Amélioration</option>
+                            <option value="major" data-i18n="gros-changement">Gros changement</option>
                         </select>
-                        <label class="switch" title="Visibilité de cette version">
+                        <label class="switch" data-i18n-title="visibilite-de-cette-version" title="Visibilité de cette version">
                             <input type="checkbox" id="lab-vis" />
                             <span class="switch__track"><span class="switch__thumb"></span></span>
-                            <span id="lab-vis-label">Privé</span>
+                            <span id="lab-vis-label" data-i18n="prive">Privé</span>
                         </label>
-                        <button id="lab-submit-btn" class="btn btn--primary lab-save">Créer le pack</button>
+                        <button id="lab-submit-btn" class="btn btn--primary lab-save" data-i18n="creer-le-pack">Créer le pack</button>
                     </div>
                 </section>
 
                 <!-- MES BUNDLES -->
                 <section id="view-mine" class="view hidden">
                     <div class="list-head">
-                        <div class="view-head"><h2>Mes bundles</h2><button id="mine-refresh" class="btn btn--ghost btn--refresh" title="Rafraîchir mes bundles">⟳ Rafraîchir</button></div>
+                        <div class="view-head"><h2 data-i18n="mes-bundles">Mes bundles</h2><button id="mine-refresh" class="btn btn--ghost btn--refresh" data-i18n-title="rafraichir-mes-bundles" title="Rafraîchir mes bundles" data-i18n="rafraichir">⟳ Rafraîchir</button></div>
                         <div class="store-toolbar">
-                            <input id="mine-search" type="search" class="store-search" placeholder="Rechercher dans mes bundles (nom)…" autocomplete="off" />
+                            <input id="mine-search" type="search" class="store-search" data-i18n-ph="rechercher-dans-mes-bundles-nom" placeholder="Rechercher dans mes bundles (nom)…" autocomplete="off" />
                         </div>
                     </div>
                     <div id="mine-list" class="grid"></div>
@@ -237,10 +237,10 @@
                 <!-- CONNECTEURS -->
                 <section id="view-connecteurs" class="view hidden">
                     <div class="row between">
-                        <h2 class="row" style="gap:8px">Connecteurs <button id="cx-info" class="r-iconguide" title="C'est quoi un connecteur ?">i</button></h2>
-                        <button id="cx-add" class="btn btn--primary">+ Nouveau connecteur</button>
+                        <h2 class="row" style="gap:8px">Connecteurs <button id="cx-info" class="r-iconguide" data-i18n-title="c-est-quoi-un-connecteur" title="C'est quoi un connecteur ?">i</button></h2>
+                        <button id="cx-add" class="btn btn--primary" data-i18n="nouveau-connecteur">+ Nouveau connecteur</button>
                     </div>
-                    <p class="muted">Active le clavier / la manette / le pilotage, et ajoute tes connexions (serveur de jeu RCON, OBS, MQTT…). Chaque connecteur a un interrupteur.</p>
+                    <p class="muted" data-i18n="active-le-clavier-la-manette-le-pilotage-et-ajou">Active le clavier / la manette / le pilotage, et ajoute tes connexions (serveur de jeu RCON, OBS, MQTT…). Chaque connecteur a un interrupteur.</p>
                     <div id="cx-list"></div>
                     <p id="cx-msg" class="hint"></p>
                 </section>
@@ -251,58 +251,58 @@
                      2026-09-03 : 13 versions bloquées, dont 10 d'un créateur tiers. -->
                 <section id="view-moderation" class="view hidden">
                     <div class="view-head">
-                        <h2>Modération des packs</h2>
-                        <button id="mod-refresh" class="btn btn--ghost btn--refresh" title="Rafraîchir la file">⟳ Rafraîchir</button>
+                        <h2 data-i18n="moderation-des-packs">Modération des packs</h2>
+                        <button id="mod-refresh" class="btn btn--ghost btn--refresh" data-i18n-title="rafraichir-la-file" title="Rafraîchir la file" data-i18n="rafraichir">⟳ Rafraîchir</button>
                     </div>
-                    <p class="muted">Versions en attente d'une décision humaine. Tant qu'une version n'est pas approuvée, son créateur ne peut pas la publier et personne d'autre ne peut l'installer.</p>
+                    <p class="muted" data-i18n="versions-en-attente-d-une-decision-humaine-tant-">Versions en attente d'une décision humaine. Tant qu'une version n'est pas approuvée, son créateur ne peut pas la publier et personne d'autre ne peut l'installer.</p>
                     <div id="mod-list"></div>
                     <p id="mod-msg" class="hint"></p>
                 </section>
 
                 <!-- REGLAGES -->
                 <section id="view-settings" class="view hidden">
-                    <h2>Réglages</h2>
+                    <h2 data-i18n="reglages">Réglages</h2>
                     <div id="env-card" class="card hidden">
-                        <label>Environnement (admin)</label>
+                        <label data-i18n="environnement-admin">Environnement (admin)</label>
                         <select id="env-select">
-                            <option value="prod">Production</option>
-                            <option value="staging">Staging</option>
-                            <option value="dev">Dev (localhost:53001)</option>
+                            <option value="prod" data-i18n="production">Production</option>
+                            <option value="staging" data-i18n="staging">Staging</option>
+                            <option value="dev" data-i18n="dev-localhost-53001">Dev (localhost:53001)</option>
                         </select>
-                        <p class="hint">Change l'API ciblée. Te déconnecte (reconnecte-toi sur le nouvel environnement).</p>
+                        <p class="hint" data-i18n="change-l-api-ciblee-te-deconnecte-reconnecte-toi">Change l'API ciblée. Te déconnecte (reconnecte-toi sur le nouvel environnement).</p>
                     </div>
                     <div class="card">
-                        <label>Langue</label>
+                        <label data-i18n="langue">Langue</label>
                         <select id="lang">
-                            <option value="fr">Français</option>
-                            <option value="en">English</option>
-                            <option value="it">Italiano</option>
-                            <option value="es">Español</option>
-                            <option value="pt">Português</option>
+                            <option value="fr" data-i18n="francais">Français</option>
+                            <option value="en" data-i18n="english">English</option>
+                            <option value="it" data-i18n="italiano">Italiano</option>
+                            <option value="es" data-i18n="espanol">Español</option>
+                            <option value="pt" data-i18n="portugues">Português</option>
                         </select>
                     </div>
                     <div class="card">
-                        <label>Démarrage</label>
+                        <label data-i18n="demarrage">Démarrage</label>
                         <div class="row between">
-                            <span class="muted">Lancer Hou.la Connect au démarrage (en arrière-plan)</span>
+                            <span class="muted" data-i18n="lancer-hou-la-connect-au-demarrage-en-arriere-pl">Lancer Hou.la Connect au démarrage (en arrière-plan)</span>
                             <label class="switch">
                                 <input type="checkbox" id="autolaunch" />
                                 <span class="switch__track"><span class="switch__thumb"></span></span>
                             </label>
                         </div>
-                        <p class="hint">Fermer la fenêtre réduit l'app dans la zone de notification (elle continue de tourner). « Quitter » depuis l'icône du tray l'arrête vraiment.</p>
+                        <p class="hint" data-i18n="fermer-la-fenetre-reduit-l-app-dans-la-zone-de-n">Fermer la fenêtre réduit l'app dans la zone de notification (elle continue de tourner). « Quitter » depuis l'icône du tray l'arrête vraiment.</p>
                     </div>
                     <div class="card">
-                        <label>Légal</label>
-                        <button id="cgu-open" class="btn btn--ghost">Conditions d'utilisation</button>
+                        <label data-i18n="legal">Légal</label>
+                        <button id="cgu-open" class="btn btn--ghost" data-i18n="conditions-d-utilisation">Conditions d'utilisation</button>
                     </div>
                     <div class="card">
-                        <label>Mises à jour</label>
+                        <label data-i18n="mises-a-jour">Mises à jour</label>
                         <div class="row between">
-                            <span id="update-status" class="muted">—</span>
+                            <span id="update-status" class="muted">-</span>
                             <div class="row gap">
-                                <button id="update-check" class="btn btn--ghost">Vérifier</button>
-                                <button id="update-install" class="btn btn--primary hidden">Redémarrer pour installer</button>
+                                <button id="update-check" class="btn btn--ghost" data-i18n="verifier">Vérifier</button>
+                                <button id="update-install" class="btn btn--primary hidden" data-i18n="redemarrer-pour-installer">Redémarrer pour installer</button>
                             </div>
                         </div>
                     </div>
@@ -324,13 +324,13 @@
                 <div id="modal-version" class="muted small"></div>
                 <div id="modal-fee" class="muted small"></div>
                 <div id="modal-changelog-wrap" class="hidden">
-                    <div class="modal__seclabel">Nouveautés de cette version</div>
+                    <div class="modal__seclabel" data-i18n="nouveautes-de-cette-version">Nouveautés de cette version</div>
                     <div id="modal-changelog" class="changelog"></div>
                 </div>
                 <div id="modal-instructions" class="md-instructions hidden"></div>
             </div>
             <div class="modal__footer">
-                <button id="modal-install" class="btn btn--primary">Installer</button>
+                <button id="modal-install" class="btn btn--primary" data-i18n="installer">Installer</button>
             </div>
         </div>
     </div>
@@ -341,11 +341,11 @@
             <button id="cx-close" class="modal__close">&#10005;</button>
             <div class="modal__body">
                 <h2>Personnaliser <span id="cx-title"></span></h2>
-                <p class="muted">Tes réglages restent <b>locaux</b> et survivent aux mises à jour du créateur. Les commandes du pack ne sont pas modifiables (pack signé).</p>
+                <p class="muted">Tes réglages restent <b data-i18n="locaux">locaux</b> et survivent aux mises à jour du créateur. Les commandes du pack ne sont pas modifiables (pack signé).</p>
                 <div id="cx-instructions" class="md-instructions hidden"></div>
                 <div id="cx-rules"></div>
                 <div class="row gap" style="margin-top:16px">
-                    <button id="cx-save" class="btn btn--primary">Enregistrer</button>
+                    <button id="cx-save" class="btn btn--primary" data-i18n="enregistrer">Enregistrer</button>
                     <!-- id DISTINCT de celui de la vue Connecteurs : deux éléments partageant
                          « cx-msg » faisaient que getElementById renvoyait le PREMIER de la page,
                          donc le message « Enregistré ✓ » s'écrivait hors de cette modale. -->
@@ -360,10 +360,10 @@
         <div class="modal__box cgu__box">
             <button id="stats-close" class="modal__close">&#10005;</button>
             <div class="modal__body">
-                <h2>Stats — <span id="stats-title"></span></h2>
+                <h2>Stats, <span id="stats-title"></span></h2>
                 <div id="stats-totals" class="stats-totals"></div>
                 <div id="stats-graph"></div>
-                <p class="muted small">Étoiles générées par ce pack (les étoiles gagnées = ta commission, cashables).</p>
+                <p class="muted small" data-i18n="etoiles-generees-par-ce-pack-les-etoiles-gagnees">Étoiles générées par ce pack (les étoiles gagnées = ta commission, cashables).</p>
                 <div id="stats-top"></div>
             </div>
         </div>
@@ -375,16 +375,16 @@
             <button id="cx-info-close" class="modal__close">&#10005;</button>
             <div class="modal__body">
                 <div class="cgu__content">
-                    <h1>C'est quoi un connecteur ?</h1>
-                    <p>Un <strong>connecteur</strong> est un pont entre Hou.la Connect et quelque chose que tu veux piloter quand un événement arrive en live.</p>
-                    <h2>Deux familles</h2>
+                    <h1 data-i18n="c-est-quoi-un-connecteur">C'est quoi un connecteur ?</h1>
+                    <p>Un <strong data-i18n="connecteur">connecteur</strong> est un pont entre Hou.la Connect et quelque chose que tu veux piloter quand un événement arrive en live.</p>
+                    <h2 data-i18n="deux-familles">Deux familles</h2>
                     <ul>
-                        <li><strong>Locaux</strong> : le <strong>Clavier</strong>, la <strong>Manette virtuelle</strong> et le <strong>Pilotage bas niveau</strong> (pour les jeux qui ignorent le clavier normal). Rien à configurer : tu les <strong>actives</strong> avec l'interrupteur. Ils sont désactivés par défaut, par sécurité.</li>
-                        <li><strong>Réseau</strong> : une <strong>adresse + des identifiants</strong> vers un service — serveur de jeu <strong>RCON</strong> (Minecraft…), <strong>OBS</strong>, <strong>MQTT</strong> (domotique), <strong>WebSocket</strong>, <strong>HTTP/API</strong>, <strong>OSC</strong> (VRChat…). Tu peux en avoir <strong>plusieurs par type</strong> (ex. deux brokers MQTT, plusieurs serveurs).</li>
+                        <li><strong data-i18n="locaux-2">Locaux</strong> : le <strong data-i18n="clavier">Clavier</strong>, la <strong data-i18n="manette-virtuelle">Manette virtuelle</strong> et le <strong data-i18n="pilotage-bas-niveau">Pilotage bas niveau</strong> (pour les jeux qui ignorent le clavier normal). Rien à configurer : tu les <strong data-i18n="actives">actives</strong> avec l'interrupteur. Ils sont désactivés par défaut, par sécurité.</li>
+                        <li><strong data-i18n="reseau">Réseau</strong> : une <strong data-i18n="adresse-des-identifiants">adresse + des identifiants</strong> vers un service, serveur de jeu <strong data-i18n="rcon">RCON</strong> (Minecraft…), <strong data-i18n="obs">OBS</strong>, <strong data-i18n="mqtt">MQTT</strong> (domotique), <strong data-i18n="websocket">WebSocket</strong>, <strong data-i18n="http-api">HTTP/API</strong>, <strong data-i18n="osc">OSC</strong> (VRChat…). Tu peux en avoir <strong data-i18n="plusieurs-par-type">plusieurs par type</strong> (ex. deux brokers MQTT, plusieurs serveurs).</li>
                     </ul>
-                    <h2>Comment ça sert</h2>
-                    <p>Dans le <strong>Lab</strong>, chaque interaction choisit son connecteur (« quand on m'envoie une rose → commande RCON <em>sur ce serveur</em> »). Quand tu <strong>installes</strong> un pack, l'app te demande de relier ses connecteurs aux tiens.</p>
-                    <p class="muted">Tout est stocké <strong>en local</strong>, chiffré, et <strong>jamais envoyé à Hou.la</strong>.</p>
+                    <h2 data-i18n="comment-ca-sert">Comment ça sert</h2>
+                    <p>Dans le <strong data-i18n="lab">Lab</strong>, chaque interaction choisit son connecteur (« quand on m'envoie une rose → commande RCON <em data-i18n="sur-ce-serveur">sur ce serveur</em> »). Quand tu <strong data-i18n="installes-2">installes</strong> un pack, l'app te demande de relier ses connecteurs aux tiens.</p>
+                    <p class="muted">Tout est stocké <strong data-i18n="en-local">en local</strong>, chiffré, et <strong data-i18n="jamais-envoye-a-hou-la">jamais envoyé à Hou.la</strong>.</p>
                 </div>
             </div>
         </div>
@@ -395,11 +395,11 @@
         <div class="modal__box">
             <button id="connector-close" class="modal__close">&#10005;</button>
             <div class="modal__body">
-                <h2 id="connector-modal-title">Nouveau connecteur</h2>
+                <h2 id="connector-modal-title" data-i18n="nouveau-connecteur-2">Nouveau connecteur</h2>
                 <div id="connector-form"></div>
                 <div class="row gap" style="margin-top:12px">
-                    <button id="connector-save" class="btn btn--primary">Enregistrer</button>
-                    <button id="connector-cancel" class="btn btn--ghost">Annuler</button>
+                    <button id="connector-save" class="btn btn--primary" data-i18n="enregistrer">Enregistrer</button>
+                    <button id="connector-cancel" class="btn btn--ghost" data-i18n="annuler">Annuler</button>
                 </div>
                 <p id="connector-msg" class="hint"></p>
             </div>
@@ -411,35 +411,35 @@
         <div class="modal__box cgu__box">
             <button id="gp-close" class="modal__close">&#10005;</button>
             <div class="modal__body">
-                <h2>Action manette</h2>
-                <p class="muted small">Configure ce que la manette virtuelle fait quand l'interaction se déclenche. « Capturer » lit la vraie manette (ou le clavier) branché sur ce PC.</p>
+                <h2 data-i18n="action-manette">Action manette</h2>
+                <p class="muted small" data-i18n="configure-ce-que-la-manette-virtuelle-fait-quand">Configure ce que la manette virtuelle fait quand l'interaction se déclenche. « Capturer » lit la vraie manette (ou le clavier) branché sur ce PC.</p>
                 <div class="gp-modes seg">
-                    <button type="button" class="seg__btn is-active" data-mode="single">Bouton</button>
-                    <button type="button" class="seg__btn" data-mode="chord">Combo simultané</button>
-                    <button type="button" class="seg__btn" data-mode="sequence">Séquence</button>
-                    <button type="button" class="seg__btn" data-mode="random">Aléatoire</button>
-                    <button type="button" class="seg__btn" data-mode="timeline">Chronologie</button>
-                    <button type="button" class="seg__btn" data-mode="analog">Analogique</button>
+                    <button type="button" class="seg__btn is-active" data-mode="single" data-i18n="bouton">Bouton</button>
+                    <button type="button" class="seg__btn" data-mode="chord" data-i18n="combo-simultane">Combo simultané</button>
+                    <button type="button" class="seg__btn" data-mode="sequence" data-i18n="sequence">Séquence</button>
+                    <button type="button" class="seg__btn" data-mode="random" data-i18n="aleatoire">Aléatoire</button>
+                    <button type="button" class="seg__btn" data-mode="timeline" data-i18n="chronologie">Chronologie</button>
+                    <button type="button" class="seg__btn" data-mode="analog" data-i18n="analogique">Analogique</button>
                 </div>
                 <div id="gp-mode-help" class="hint"></div>
                 <div id="gp-body" class="gp-body"></div>
                 <div class="gp-common">
-                    <label class="gp-field" title="Durée d'appui de chaque bouton (ms)">Appui (ms)
+                    <label class="gp-field" data-i18n-title="duree-d-appui-de-chaque-bouton-ms" title="Durée d'appui de chaque bouton (ms)">Appui (ms)
                         <input type="number" id="gp-hold" min="0" max="10000" step="10" value="120" />
                     </label>
-                    <label class="gp-field" title="Répéter l'action X fois">Répéter ×
+                    <label class="gp-field" data-i18n-title="repeter-l-action-x-fois" title="Répéter l'action X fois">Répéter ×
                         <input type="number" id="gp-repeat" min="1" max="20" step="1" value="1" />
                     </label>
-                    <label class="gp-field" title="Intervalle entre deux répétitions (ms)">Intervalle (ms)
+                    <label class="gp-field" data-i18n-title="intervalle-entre-deux-repetitions-ms" title="Intervalle entre deux répétitions (ms)">Intervalle (ms)
                         <input type="number" id="gp-repeatgap" min="0" max="30000" step="50" value="0" />
                     </label>
                 </div>
                 <div class="row gap" style="margin-top:14px">
-                    <button id="gp-test" class="btn btn--ghost" title="Tester MAINTENANT, sans être en live">&#9654; Tester</button>
+                    <button id="gp-test" class="btn btn--ghost" data-i18n-title="tester-maintenant-sans-etre-en-live" title="Tester MAINTENANT, sans être en live" data-i18n="9654-tester">&#9654; Tester</button>
                     <span id="gp-test-res" class="cx-test-res"></span>
                     <span style="flex:1"></span>
-                    <button id="gp-save" class="btn btn--primary">Valider</button>
-                    <button id="gp-cancel" class="btn btn--ghost">Annuler</button>
+                    <button id="gp-save" class="btn btn--primary" data-i18n="valider">Valider</button>
+                    <button id="gp-cancel" class="btn btn--ghost" data-i18n="annuler">Annuler</button>
                 </div>
             </div>
         </div>
@@ -450,24 +450,24 @@
         <div class="modal__box cgu__box">
             <button id="kb-close" class="modal__close">&#10005;</button>
             <div class="modal__body">
-                <h2>Action clavier</h2>
-                <p class="muted small">Ce que le clavier fait quand l'interaction se déclenche. « Capturer » lit ton VRAI clavier : appuie, ça s'écrit tout seul.</p>
+                <h2 data-i18n="action-clavier">Action clavier</h2>
+                <p class="muted small" data-i18n="ce-que-le-clavier-fait-quand-l-interaction-se-de">Ce que le clavier fait quand l'interaction se déclenche. « Capturer » lit ton VRAI clavier : appuie, ça s'écrit tout seul.</p>
                 <div class="kb-modes seg">
-                    <button type="button" class="seg__btn is-active" data-kbmode="single">Une touche</button>
-                    <button type="button" class="seg__btn" data-kbmode="combo">Combo (ensemble)</button>
-                    <button type="button" class="seg__btn" data-kbmode="sequence">Suite (enchaînement)</button>
+                    <button type="button" class="seg__btn is-active" data-kbmode="single" data-i18n="une-touche">Une touche</button>
+                    <button type="button" class="seg__btn" data-kbmode="combo" data-i18n="combo-ensemble">Combo (ensemble)</button>
+                    <button type="button" class="seg__btn" data-kbmode="sequence" data-i18n="suite-enchainement">Suite (enchaînement)</button>
                 </div>
                 <div id="kb-mode-help" class="hint"></div>
                 <div id="kb-body" class="gp-body"></div>
                 <div class="gp-common">
-                    <label class="gp-field" title="Injection clavier : « normal » convient à la plupart des jeux ; « bas niveau » pour ceux qui ignorent l'input synthétique.">Envoi&nbsp;: <select id="kb-backend"><option value="auto">clavier normal</option><option value="interception">bas niveau (pilote)</option></select></label>
+                    <label class="gp-field" data-i18n-title="injection-clavier-normal-convient-a-la-plupart-d" title="Injection clavier : « normal » convient à la plupart des jeux ; « bas niveau » pour ceux qui ignorent l'input synthétique.">Envoi&nbsp;: <select id="kb-backend"><option value="auto" data-i18n="clavier-normal">clavier normal</option><option value="interception" data-i18n="bas-niveau-pilote">bas niveau (pilote)</option></select></label>
                 </div>
                 <div class="row gap" style="margin-top:14px">
-                    <button id="kb-test" class="btn btn--ghost" title="Tester MAINTENANT, sans être en live">&#9654; Tester</button>
+                    <button id="kb-test" class="btn btn--ghost" data-i18n-title="tester-maintenant-sans-etre-en-live" title="Tester MAINTENANT, sans être en live" data-i18n="9654-tester">&#9654; Tester</button>
                     <span id="kb-test-res" class="cx-test-res"></span>
                     <span style="flex:1"></span>
-                    <button id="kb-save" class="btn btn--primary">Valider</button>
-                    <button id="kb-cancel" class="btn btn--ghost">Annuler</button>
+                    <button id="kb-save" class="btn btn--primary" data-i18n="valider">Valider</button>
+                    <button id="kb-cancel" class="btn btn--ghost" data-i18n="annuler">Annuler</button>
                 </div>
             </div>
         </div>
@@ -479,28 +479,28 @@
             <button id="icon-guide-close" class="modal__close">&#10005;</button>
             <div class="modal__body">
                 <div class="cgu__content">
-                    <h1>Réaliser l'icône d'un cadeau personnalisé</h1>
-                    <p>Un « cadeau personnalisé » affiche <strong>ta propre image</strong> aux spectateurs, à la place de l'art par défaut. L'icône est <strong>obligatoire</strong> pour ce type de cadeau.</p>
-                    <h2>Format technique</h2>
+                    <h1 data-i18n="realiser-l-icone-d-un-cadeau-personnalise">Réaliser l'icône d'un cadeau personnalisé</h1>
+                    <p>Un « cadeau personnalisé » affiche <strong data-i18n="ta-propre-image">ta propre image</strong> aux spectateurs, à la place de l'art par défaut. L'icône est <strong data-i18n="obligatoire">obligatoire</strong> pour ce type de cadeau.</p>
+                    <h2 data-i18n="format-technique">Format technique</h2>
                     <ul>
-                        <li><strong>PNG à fond transparent</strong> (pas de fond blanc ni de damier).</li>
-                        <li><strong>Carré</strong>, idéalement <strong>512 × 512 px</strong> (comme les icônes Minecraft de Hou.la).</li>
-                        <li>Sujet <strong>centré</strong>, avec une petite marge ; lisible même en tout petit (jusqu'à ~48 px).</li>
-                        <li>Poids raisonnable (&lt; 1 Mo).</li>
+                        <li><strong data-i18n="png-a-fond-transparent">PNG à fond transparent</strong> (pas de fond blanc ni de damier).</li>
+                        <li><strong data-i18n="carre">Carré</strong>, idéalement <strong data-i18n="512-512-px">512 × 512 px</strong> (comme les icônes Minecraft de Hou.la).</li>
+                        <li>Sujet <strong data-i18n="centre">centré</strong>, avec une petite marge ; lisible même en tout petit (jusqu'à ~48 px).</li>
+                        <li data-i18n="poids-raisonnable-lt-1-mo">Poids raisonnable (&lt; 1 Mo).</li>
                     </ul>
-                    <h2>Contenu autorisé</h2>
+                    <h2 data-i18n="contenu-autorise">Contenu autorisé</h2>
                     <ul>
-                        <li>Objets, personnages, effets <strong>en lien avec ton pack / ton jeu</strong>.</li>
-                        <li>Représentations <strong>de jeu</strong> d'armes, d'alcool, etc. (ex. une épée, une potion) : <strong>tolérées</strong> dans un contexte ludique.</li>
+                        <li>Objets, personnages, effets <strong data-i18n="en-lien-avec-ton-pack-ton-jeu">en lien avec ton pack / ton jeu</strong>.</li>
+                        <li>Représentations <strong data-i18n="de-jeu">de jeu</strong> d'armes, d'alcool, etc. (ex. une épée, une potion) : <strong data-i18n="tolerees">tolérées</strong> dans un contexte ludique.</li>
                     </ul>
-                    <h2>Contenu interdit</h2>
+                    <h2 data-i18n="contenu-interdit">Contenu interdit</h2>
                     <ul>
-                        <li><strong>Toute image sexuellement explicite</strong> ou pornographique.</li>
-                        <li>Contenu <strong>haineux, discriminatoire, choquant</strong> (gore gratuit), ou impliquant des mineurs de façon inappropriée.</li>
-                        <li>Promotion de <strong>produits ou activités illégaux</strong>.</li>
-                        <li>Marques / logos que tu n'as pas le droit d'utiliser.</li>
+                        <li><strong data-i18n="toute-image-sexuellement-explicite">Toute image sexuellement explicite</strong> ou pornographique.</li>
+                        <li>Contenu <strong data-i18n="haineux-discriminatoire-choquant">haineux, discriminatoire, choquant</strong> (gore gratuit), ou impliquant des mineurs de façon inappropriée.</li>
+                        <li>Promotion de <strong data-i18n="produits-ou-activites-illegaux">produits ou activités illégaux</strong>.</li>
+                        <li data-i18n="marques-logos-que-tu-n-as-pas-le-droit-d-utilise">Marques / logos que tu n'as pas le droit d'utiliser.</li>
                     </ul>
-                    <p class="muted">Toute icône diffusée aux spectateurs passe en modération (même pour un pack privé), car elle est vue par le public.</p>
+                    <p class="muted" data-i18n="toute-icone-diffusee-aux-spectateurs-passe-en-mo">Toute icône diffusée aux spectateurs passe en modération (même pour un pack privé), car elle est vue par le public.</p>
                 </div>
             </div>
         </div>
@@ -511,10 +511,10 @@
         <div class="modal__box cgu__box">
             <button id="cgu-close" class="modal__close hidden">&#10005;</button>
             <div class="modal__body">
-                <div id="cgu-content" class="cgu__content">Chargement…</div>
+                <div id="cgu-content" class="cgu__content" data-i18n="chargement">Chargement…</div>
                 <div id="cgu-actions" class="row gap cgu__actions hidden">
-                    <span class="muted" style="flex:1">En cliquant sur « J'accepte », tu confirmes avoir lu et accepté les conditions.</span>
-                    <button id="cgu-accept" class="btn btn--primary">J'accepte</button>
+                    <span class="muted" style="flex:1" data-i18n="en-cliquant-sur-j-accepte-tu-confirmes-avoir-lu-">En cliquant sur « J'accepte », tu confirmes avoir lu et accepté les conditions.</span>
+                    <button id="cgu-accept" class="btn btn--primary" data-i18n="j-accepte">J'accepte</button>
                 </div>
             </div>
         </div>
@@ -534,6 +534,7 @@
     <!-- Toasts (notifications non bloquantes : ex. « problème de connexion ») -->
     <div id="toaster" class="toaster" aria-live="polite"></div>
 
+    <script src="i18n.js"></script>
     <script src="manifest-lib.js"></script>
     <script src="renderer.js"></script>
 </body>

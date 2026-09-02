@@ -20,6 +20,19 @@ export interface PackOverlay {
     cooldownMs?: Record<string, number>;
     /** Configuration de commandes choisie (id d'un `manifest.profiles`) : clavier, manette… */
     profile?: string;
+    /**
+     * REMAPPAGE par le joueur : quelle touche / quel bouton déclenche chaque interaction.
+     *
+     * Le site promet « tu glisses des cadeaux sur des actions » depuis le début, mais rien
+     * de tel n'existait : le calque ne portait que `disabled` et `cooldownMs`, et les touches
+     * étaient figées dans le manifeste signé. Un pack écrit pour un clavier AZERTY, ou pour
+     * une configuration de touches qui n'est pas celle du joueur, était donc inutilisable.
+     *
+     * ⚠️ FRONTIÈRE DE SÉCURITÉ, à ne jamais franchir : on ne remplace QUE la touche ou le
+     * bouton, JAMAIS le type d'effet. Un joueur ne doit pas pouvoir transformer une action
+     * clavier en appel HTTP ou en commande RCON : ce serait détourner un pack signé.
+     */
+    keyBindings?: Record<string, { keys?: string; button?: string }>;
 }
 
 interface Schema {
@@ -335,13 +348,19 @@ export class StoreService {
     }
 
     // ── Personnalisation locale d'un pack (calque, jamais dans le manifeste signé) ──
-    getPackOverlay(slug: string): { disabled: string[]; cooldownMs: Record<string, number>; profile?: string } {
+    getPackOverlay(slug: string): {
+        disabled: string[];
+        cooldownMs: Record<string, number>;
+        profile?: string;
+        keyBindings: Record<string, { keys?: string; button?: string }>;
+    } {
         const all = this.store.get('packOverlays', {} as Record<string, PackOverlay>);
         const o = all[slug] || {};
-        const out: { disabled: string[]; cooldownMs: Record<string, number>; profile?: string } = {
+        const out = {
             disabled: o.disabled || [],
             cooldownMs: o.cooldownMs || {},
-        };
+            keyBindings: o.keyBindings || {},
+        } as { disabled: string[]; cooldownMs: Record<string, number>; profile?: string; keyBindings: Record<string, { keys?: string; button?: string }> };
         if (o.profile) out.profile = o.profile;
         return out;
     }
@@ -354,6 +373,10 @@ export class StoreService {
         const next: PackOverlay = { disabled: overlay.disabled || [], cooldownMs: overlay.cooldownMs || {} };
         const profile = overlay.profile !== undefined ? overlay.profile : prev.profile;
         if (profile) next.profile = profile;
+        // Même raisonnement que pour `profile` : un appelant qui n'envoie pas les remappages
+        // ne doit pas les EFFACER. Le joueur perdrait ses touches sans avoir rien demandé.
+        const kb = overlay.keyBindings !== undefined ? overlay.keyBindings : prev.keyBindings;
+        if (kb && Object.keys(kb).length) next.keyBindings = kb;
         all[slug] = next;
         this.store.set('packOverlays', all);
     }

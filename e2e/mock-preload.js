@@ -20,7 +20,7 @@
         authStatus: () => R({ authenticated: cfg.authenticated !== false }),
         isAdmin: () => R(!!cfg.isAdmin),
         moderation: {
-            queue: () => R(cfg.moderationQueue || { ok: true, items: [] }),
+            queue: rec('modQueue', () => R(cfg.moderationQueue || { ok: true, items: [] })),
             approve: rec('modApprove', () => R(cfg.moderationApproveResult || { ok: true })),
             reject: rec('modReject', () => R({ ok: true })),
         },

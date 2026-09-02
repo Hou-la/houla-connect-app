@@ -11,6 +11,10 @@ import { TriggerRouter } from './engine/trigger-router';
 import { Engine, AuditEntry } from './engine/engine';
 import { PythonSidecar } from './engine/python-sidecar';
 import { BundleManifest } from './engine/types';
+// Calque de personnalisation locale : EXTRAIT dans son propre module parce qu'il porte
+// une frontiere de securite (un remappage joueur ne doit JAMAIS changer le type d'effet)
+// et qu'une regle de securite non testable est une regle qu'on finit par casser.
+import { applyPackOverlay, resolveActiveProfile } from './engine/pack-overlay';
 
 const store = new StoreService();
 const api = new ApiService(store);
@@ -77,20 +81,42 @@ function isOurProxy(file: string): boolean {
 }
 /** Pose nos DLL proxy dans le dossier d'un jeu. Refuse d'écraser une DLL xinput ÉTRANGÈRE
  *  (certains jeux livrent la leur) : on préfère renoncer et l'expliquer. */
-function placeProxyDlls(dir: string): { ok: boolean; reason?: string } {
+function placeProxyDlls(dir: string): { ok: boolean; reason?: string; code?: string } {
     const src = proxyDllDir();
     const foreign = PROXY_DLL_NAMES.find((n) => {
         const dst = path.join(dir, n);
         return fs.existsSync(dst) && !isOurProxy(dst);
     });
-    if (foreign) return { ok: false, reason: `Une DLL « ${foreign} » est déjà présente dans le dossier du jeu et n’est pas la nôtre. Retire-la d’abord (ou ce jeu n’en a pas besoin).` };
-    try {
-        for (const n of PROXY_DLL_NAMES) {
-            const s = path.join(src, n);
-            if (fs.existsSync(s)) fs.copyFileSync(s, path.join(dir, n));
+    if (foreign) return { ok: false, code: 'FOREIGN_DLL', reason: `Une DLL « ${foreign} » est déjà présente dans le dossier du jeu et n’est pas la nôtre. Retire-la d’abord (ou ce jeu n’en a pas besoin).` };
+    for (const n of PROXY_DLL_NAMES) {
+        const s = path.join(src, n);
+        if (!fs.existsSync(s)) continue;
+        const dst = path.join(dir, n);
+        // ── Déjà à jour : ne RIEN écrire ──
+        // Windows verrouille un fichier chargé par un processus : réécrire une DLL identique
+        // pendant que le jeu tourne échoue en EBUSY... pour rien. On compare d'abord.
+        try {
+            if (fs.existsSync(dst) && fs.readFileSync(dst).equals(fs.readFileSync(s))) continue;
+        } catch { /* illisible : on tente la copie, l'erreur sera traitée ci-dessous */ }
+        try {
+            fs.copyFileSync(s, dst);
+        } catch (e) {
+            const err = e as NodeJS.ErrnoException;
+            // ⚠️ EBUSY / EPERM = le JEU EST OUVERT et a déjà chargé cette DLL. Le message brut
+            // (« EBUSY: resource busy or locked, copyfile… ») ne dit rien d'actionnable à un
+            // joueur. Et surtout : un jeu ne lit ce fichier qu'à SON DÉMARRAGE, donc même si
+            // la copie passait, elle ne servirait à rien tant qu'il n'a pas été relancé.
+            // Fermer le jeu n'est donc pas une contrainte technique de plus : c'est de toute
+            // façon l'étape nécessaire.
+            if (err?.code === 'EBUSY' || err?.code === 'EPERM') {
+                return {
+                    ok: false,
+                    code: 'GAME_RUNNING',
+                    reason: 'Le jeu est ouvert : Windows empêche de remplacer un fichier qu’il utilise. Ferme complètement le jeu, puis relance la liaison. (Le jeu ne lit ce fichier qu’au démarrage : il faudra de toute façon le relancer.)',
+                };
+            }
+            return { ok: false, code: err?.code || 'WRITE_FAILED', reason: `Impossible d’écrire dans le dossier du jeu : ${err?.message || ''}` };
         }
-    } catch (e) {
-        return { ok: false, reason: `Impossible d’écrire dans le dossier du jeu : ${(e as Error)?.message || ''}` };
     }
     return { ok: true };
 }
@@ -244,38 +270,6 @@ function send(channel: string, payload: unknown): void {
 // l'app « vide » en silence (aucun workspace, aucun pack), sans jamais l'expliquer.
 api.setStatusListener((online) => send('api:status', { online }));
 
-/**
- * Configuration de commandes ACTIVE d'un pack : celle que le joueur a choisie, sinon
- * celle marquée par défaut, sinon la première. Renvoie `null` si le pack n'en déclare
- * aucune (packs à configuration unique : tout s'applique, comportement historique).
- */
-function resolveActiveProfile(manifest: BundleManifest, chosen?: string | null): string | null {
-    const profiles = manifest?.profiles || [];
-    if (!profiles.length) return null;
-    if (chosen && profiles.some((p) => p.id === chosen)) return chosen;
-    return (profiles.find((p) => p.default) || profiles[0]).id;
-}
-
-/** Applique le calque de perso locale à un manifeste (copie, ne mute rien) :
- *  ne garde que la configuration de commandes choisie par le joueur, retire les
- *  interactions désactivées, override les cooldowns. Le manifeste SIGNÉ reste intact ;
- *  c'est un réglage runtime propre au streamer, qui survit aux MAJ. */
-function applyPackOverlay(
-    manifest: BundleManifest,
-    overlay: { disabled: string[]; cooldownMs: Record<string, number>; profile?: string },
-): BundleManifest {
-    const disabled = new Set(overlay.disabled);
-    const active = resolveActiveProfile(manifest, overlay.profile);
-    const rules = (manifest.rules || [])
-        // une règle SANS `profile` vaut pour toutes les configurations (OBS, RCON, HTTP…)
-        .filter((r) => !r.profile || r.profile === active)
-        .filter((r) => !disabled.has(r.id))
-        .map((r) => {
-            const cd = overlay.cooldownMs[r.id];
-            return cd != null ? { ...r, effect: { ...r.effect, cooldownMs: cd } } : r;
-        });
-    return { ...manifest, rules };
-}
 
 // Auto-update depuis GitHub Releases (dépôt public). On câble les événements ;
 // le renderer déclenche le check (pour qu'il écoute déjà) et propose Installer.
@@ -623,6 +617,25 @@ function registerIpc(): void {
                 defaultCooldownMs: r.effect?.cooldownMs ?? 0,
                 cooldownMs: overlay.cooldownMs[r.id], // override local, ou undefined
                 enabled: !disabled.has(r.id),
+                // ── REMAPPAGE joueur ──
+                // `bindable` dit si CETTE interaction peut voir sa touche changée. Seuls le
+                // clavier et la manette le peuvent : remapper une commande RCON ou un appel
+                // HTTP n'a aucun sens, et une action manette AVANCÉE (combo, séquence,
+                // chronologie, analogique) ne se réduit pas à un bouton unique sans perdre
+                // ce que le créateur a écrit. On l'affiche alors en lecture seule.
+                bindable:
+                    r.effect?.type === 'keyboard' ||
+                    (r.effect?.type === 'gamepad' && !r.effect?.buttons && !r.effect?.sequence
+                        && !r.effect?.randomFrom && !r.effect?.steps && !r.effect?.analog),
+                // Ce que le CRÉATEUR a écrit (repère « revenir au réglage d'origine »).
+                defaultBinding: r.effect?.type === 'keyboard' ? (r.effect?.keys || '')
+                    : r.effect?.type === 'gamepad' ? (r.effect?.button || '') : '',
+                // Ce que le JOUEUR a choisi, ou undefined s'il n'a rien changé.
+                binding: overlay.keyBindings[r.id]
+                    ? (r.effect?.type === 'keyboard'
+                        ? overlay.keyBindings[r.id].keys
+                        : overlay.keyBindings[r.id].button)
+                    : undefined,
             }));
         return { slug, version: d.version, rules, profiles, activeProfile, instructions: d.instructions ?? null };
     });
@@ -758,7 +771,19 @@ function registerIpc(): void {
             // Jeu de CE pack (garanti présent : vérifié en tête du handler).
             const game = store.getGameForPack(slug)!;
             // Re-pose la DLL si elle a disparu (une mise à jour du jeu peut nettoyer son dossier).
-            if (!fs.existsSync(path.join(game.dir, 'xinput1_4.dll'))) placeProxyDlls(game.dir);
+            // Repose SYSTÉMATIQUE (et non « seulement si absent ») : la DLL peut être là mais
+            // PÉRIMÉE après une mise à jour de l'app. `placeProxyDlls` ne réécrit rien quand le
+            // contenu est déjà identique, donc l'appel est gratuit et ne peut plus tomber en
+            // EBUSY dans le cas courant. S'il échoue quand même (jeu ouvert avec une ANCIENNE
+            // version de la DLL), on le DIT dans le journal au lieu d'avaler l'échec : sans ça,
+            // le pack démarre, le journal annonce « fired », et rien ne bouge en jeu.
+            const posee = placeProxyDlls(game.dir);
+            if (!posee.ok) {
+                send('onLog', {
+                    kind: 'error',
+                    text: `Manette : ${posee.reason || 'la préparation du jeu a échoué'}`,
+                });
+            }
             store.setFocusTarget({ exe: game.exe, dir: game.dir }); // focus-guard sur CE jeu
             try {
                 // targetExe : la DLL ne remappera QUE dans ce jeu (les autres restent intacts).
@@ -923,6 +948,14 @@ function registerIpc(): void {
         if (!slug || !exe || !fs.existsSync(exe)) return { ok: false, reason: 'Jeu introuvable.' };
         const dir = path.dirname(exe);
         const placed = placeProxyDlls(dir);
+        // ⚠️ JEU OUVERT : on ENREGISTRE quand même la liaison. Sinon le joueur tourne en rond,
+        // puisque la seule façon de désigner son jeu est de le repérer... en train de tourner.
+        // Le fichier sera reposé au démarrage du pack (engine:start rappelle placeProxyDlls,
+        // qui ne fait rien si le fichier est déjà identique). On lui dit exactement quoi faire.
+        if (!placed.ok && placed.code === 'GAME_RUNNING') {
+            store.setGameForPack(slug, { exe, dir });
+            return { ok: true, exe, dir, pending: true, reason: placed.reason };
+        }
         if (!placed.ok) return placed;
         store.setGameForPack(slug, { exe, dir });
         return { ok: true, exe, dir };

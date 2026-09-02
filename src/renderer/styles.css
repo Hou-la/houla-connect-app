@@ -681,3 +681,27 @@ button.is-busy::before {
 .mod-row__res.ok { color: var(--ok); }
 .mod-row__res.no { color: var(--danger); }
 .mod-row .btn { width: auto; margin: 0; padding: 6px 12px; font-size: 12px; flex: 0 0 auto; }
+
+/* Touche / bouton remappable par le joueur (reglages d'un pack installe). */
+.cx-bind { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.cx-bind-val { padding: 3px 8px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-3); font-size: 12px; min-width: 44px; text-align: center; }
+.cx-bind .btn { width: auto; margin: 0; padding: 4px 9px; font-size: 12px; }
+
+/* Detail d'une version en moderation : contenu + diff, pour ne plus valider a l'aveugle. */
+.mod-row { flex-direction: column; align-items: stretch; }
+.mod-row__head { display: flex; align-items: center; gap: 12px; }
+.mod-row--done { opacity: .5; }
+.mod-warn { margin: 8px 0 0; padding: 8px 10px; border: 1px solid var(--border);
+    border-left-width: 4px; border-radius: 6px; background: var(--bg-3); font-size: 12px; }
+.mod-detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.mod-detail h4 { margin: 12px 0 6px; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .6px; color: var(--muted); }
+.mod-rules, .mod-diff { margin: 0; padding-left: 18px; font-size: 13px; }
+.mod-rules li, .mod-diff li { margin: 3px 0; }
+/* Le type de changement est ecrit EN TOUTES LETTRES (+ AJOUTEE / - RETIREE / ~ MODIFIEE) :
+   jamais un simple code couleur, le proprietaire est daltonien. */
+.mod-tag { display: inline-block; min-width: 92px; font-size: 11px; font-weight: 700;
+    letter-spacing: .4px; }
+.mod-pre { max-height: 220px; overflow: auto; padding: 8px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg-3); font-size: 12px; white-space: pre-wrap; }

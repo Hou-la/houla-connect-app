@@ -899,10 +899,18 @@ async function promptPackGame(slug) {
             ? await api.game.linkPackTo(slug, found[Number(k.slice(1))].exe)
             : await api.game.linkPack(slug);
         if (r && r.ok) {
-            showToast('game', {
-                kind: 'ok', title: 'Jeu prêt',
-                msg: "Relance le jeu une fois pour qu'il prenne le réglage en compte. Ensuite, à chaque démarrage de ce pack, c'est automatique.",
-            });
+            // `pending` : le jeu était OUVERT, donc le fichier n'a pas pu être remplacé. La
+            // liaison est quand même enregistrée (sinon on tourne en rond : on repère le jeu
+            // justement parce qu'il tourne). On dit la seule chose utile : ferme, relance.
+            showToast('game', r.pending
+                ? {
+                    kind: 'error', title: 'Ferme le jeu, puis relance-le',
+                    msg: "Ton jeu est bien enregistré, mais il est ouvert : Windows empêche de remplacer un fichier qu'il utilise. Ferme-le complètement puis rouvre-le, et démarre le pack. C'est la seule manipulation nécessaire.",
+                }
+                : {
+                    kind: 'ok', title: 'Jeu prêt',
+                    msg: "Relance le jeu une fois pour qu'il prenne le réglage en compte. Ensuite, à chaque démarrage de ce pack, c'est automatique.",
+                });
             return true;
         }
         if (r && r.reason) showToast('game', { kind: 'error', title: 'Impossible de préparer le jeu', msg: r.reason });
@@ -1298,11 +1306,27 @@ async function openCustomize(slug, title) {
         const row = document.createElement('div');
         row.className = 'cx-rule';
         row.dataset.id = r.id;
+        row.dataset.effect = r.effectType || ''; // lu par la sauvegarde (touche vs bouton)
         const what = r.giftSlug ? esc(r.giftSlug) : esc(r.trigger || 'événement');
         const name = r.label ? esc(r.label) : what;
+        // ── Touche / bouton du JOUEUR ──
+        // Jusqu'ici les touches étaient figées dans le manifeste signé : un pack écrit pour
+        // une autre configuration de touches était inutilisable, et le joueur n'avait aucun
+        // recours. Il peut désormais choisir la sienne, en la CAPTURANT (on appuie, c'est pris).
+        // Ce que le créateur a écrit reste visible comme repère, et « ↺ » y revient.
+        const bindCur = r.binding != null && r.binding !== '' ? r.binding : (r.defaultBinding || '');
+        const bindPerso = r.binding != null && r.binding !== '';
+        const bindHtml = r.bindable
+            ? `<span class="cx-bind" title="Touche ou bouton qui déclenche cette action chez TOI">`
+              + `<code class="cx-bind-val">${esc(bindCur || '—')}</code>`
+              + `<button class="btn btn--ghost cx-bind-cap" title="Appuie sur la touche ou le bouton que tu veux">Changer</button>`
+              + `<button class="btn btn--ghost cx-bind-reset${bindPerso ? '' : ' hidden'}" title="Revenir à ce qu'a prévu le créateur : ${esc(r.defaultBinding || '—')}">&#8634;</button>`
+              + `</span>`
+            : '';
         row.innerHTML =
             `<label class="switch" title="Activer / désactiver cette interaction"><input type="checkbox" class="cx-en"${r.enabled ? ' checked' : ''}/><span class="switch__track"><span class="switch__thumb"></span></span></label>`
             + `<div class="cx-rule__info"><b>${name}</b> <span class="muted">${esc(r.effectType || '')}${r.giftSlug ? ' · ' + what : ''}</span></div>`
+            + bindHtml
             + `<label class="cx-cd muted" title="Temps minimum entre deux déclenchements">cooldown ms <input type="number" min="0" class="cx-cd-in" placeholder="${Number(r.defaultCooldownMs) || 0}" value="${r.cooldownMs != null ? r.cooldownMs : ''}"/></label>`
             + `<span class="cx-test-res"></span>`
             + `<button class="btn btn--ghost cx-test" title="Tester cette interaction MAINTENANT, sans être en live">&#9654; Tester</button>`;
@@ -1316,6 +1340,41 @@ async function openCustomize(slug, title) {
                 fire: () => api.engine.testInstalled(slug, r.id),
             });
         };
+        if (r.bindable) {
+            const valEl = row.querySelector('.cx-bind-val');
+            const resetEl = row.querySelector('.cx-bind-reset');
+            // La valeur affichée EST la source de vérité lue par la sauvegarde : pas de
+            // second endroit où l'état pourrait diverger de ce que le joueur voit.
+            row.querySelector('.cx-bind-cap').onclick = async (ev) => {
+                const b = ev.currentTarget;
+                const old = b.textContent;
+                b.disabled = true;
+                b.textContent = r.effectType === 'gamepad' ? 'Appuie sur un bouton…' : 'Appuie sur une touche…';
+                const tok = r.effectType === 'gamepad'
+                    ? await captureGamepadToken(5000, { analog: false })
+                    : await captureKeyboardSpec(5000);
+                b.disabled = false;
+                b.textContent = old;
+                if (!tok || typeof tok !== 'string') {
+                    showToast('cx-bind', {
+                        kind: 'error', title: 'Rien capté',
+                        msg: r.effectType === 'gamepad'
+                            ? 'Manette branchée ? Appuie sur un bouton pendant la capture.'
+                            : 'Appuie sur une touche pendant la capture.',
+                    });
+                    return;
+                }
+                valEl.textContent = tok;
+                row.dataset.bind = tok;
+                resetEl.classList.remove('hidden');
+            };
+            resetEl.onclick = () => {
+                valEl.textContent = r.defaultBinding || '—';
+                delete row.dataset.bind;
+                row.dataset.bindReset = '1'; // demande explicite de retour au réglage créateur
+                resetEl.classList.add('hidden');
+            };
+        }
         box.appendChild(row);
     });
 }
@@ -1330,6 +1389,10 @@ $('cx-save').onclick = async (ev) => {
         const slug = $('cx-modal').dataset.slug;
         const disabled = [];
         const cooldownMs = {};
+        // Remappages du joueur. On ENVOIE TOUJOURS l'objet, meme vide : c'est ce qui permet
+        // au « ↺ » (retour au reglage du createur) de RETIRER un remappage. Sans ca, effacer
+        // serait impossible : le main conserve la valeur precedente quand la cle est absente.
+        const keyBindings = {};
         // `[data-id]` est OBLIGATOIRE : seules les vraies interactions en portent un. La ligne
         // « Jeu piloté » partage la classe `cx-rule` sans case à cocher — sans ce filtre, la
         // boucle plantait dessus et l'enregistrement échouait EN SILENCE.
@@ -1340,8 +1403,17 @@ $('cx-save').onclick = async (ev) => {
             const cd = row.querySelector('.cx-cd-in');
             const v = cd ? cd.value : '';
             if (v !== '' && Number.isFinite(Number(v))) cooldownMs[id] = Math.max(0, Math.round(Number(v)));
+            // `data-bind` n'existe que si le joueur a CAPTURE quelque chose sur cette ligne ;
+            // `data-bind-reset` marque un retour explicite au reglage du createur.
+            const bind = row.dataset.bind;
+            if (bind) {
+                // Le TYPE de l'effet decide, pas la forme de la chaine : deviner « A » comme
+                // un bouton manette alors que c'est la touche A du clavier serait un bug
+                // silencieux (le remappage partirait dans le mauvais champ et serait ignore).
+                keyBindings[id] = row.dataset.effect === 'gamepad' ? { button: bind } : { keys: bind };
+            }
         });
-        await api.customize.save(slug, { disabled, cooldownMs });
+        await api.customize.save(slug, { disabled, cooldownMs, keyBindings });
         $('cx-save-msg').textContent = 'Enregistré ✓ — appliqué au prochain Démarrer.';
         showToast('customize', { kind: 'ok', title: 'Réglages enregistrés', msg: 'Ils seront appliqués au prochain démarrage du pack.' });
     } catch (e) {
@@ -1916,11 +1988,21 @@ function renderRules() {
         if (q('.r-iconguide')) q('.r-iconguide').onclick = () => $('icon-guide-modal').classList.remove('hidden');
         // Capturer un bouton depuis la VRAIE manette branchée (auto-sélection).
         if (q('.r-gp-cap')) q('.r-gp-cap').onclick = async (ev) => {
-            const b = ev.currentTarget; const old = b.textContent; b.textContent = 'Appuie…'; b.disabled = true;
+            const b = ev.currentTarget; const old = b.textContent; b.textContent = 'Appuie… (bouton ou stick)'; b.disabled = true;
             const tok = await captureGamepadToken(4000);
             b.textContent = old; b.disabled = false;
-            if (tok && q('.r-button')) { q('.r-button').value = tok; readRule(el, r); }
-            else if (!tok) $('lab-msg2').textContent = 'Aucun bouton détecté (manette branchée + appuie pendant la capture).';
+            if (tok && typeof tok === 'object' && tok.analog) {
+                // STICK poussé : ça ne rentre pas dans un sélecteur de boutons. On transforme
+                // l'action en effet ANALOGIQUE, que la ligne sait déjà afficher en résumé
+                // (voir execFieldHtml, branche `adv`), et qui se règle au ⚙.
+                readRule(el, r);
+                const k = Object.keys(tok.analog)[0];
+                r.effect = { type: 'gamepad', analog: tok.analog, holdMs: r.effect.holdMs || 300 };
+                labDirty = true;
+                $('lab-msg2').textContent = `Capturé : ${gpAxisLabel(k, tok.analog[k])} (${tok.analog[k]}). Règle la durée avec ⚙.`;
+                renderRules();
+            } else if (tok && q('.r-button')) { q('.r-button').value = tok; readRule(el, r); }
+            else if (!tok) $('lab-msg2').textContent = 'Rien détecté. Vérifie que la manette est branchée, puis appuie sur un bouton ou pousse un stick à fond pendant la capture.';
         };
         // Éditeur avancé manette : combo, séquence, chronologie, analogique, répétition.
         if (q('.r-gp-edit')) q('.r-gp-edit').onclick = () => {
@@ -2125,7 +2207,33 @@ function bumpVersion(v, type) {
 // touche (retour de Flicky : « on appuie, ça se sélectionne tout seul »). Lecture
 // SEULE (API Gamepad du renderer / keydown) : aucun pilotage, aucun sidecar.
 const GP_STD_INDEX = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'BACK', 'START', 'LS', 'RS', 'UP', 'DOWN', 'LEFT', 'RIGHT'];
-function captureGamepadToken(timeoutMs = 4000) {
+// Axes du « standard gamepad mapping » du navigateur, dans l'ordre où il les expose.
+const GP_STD_AXES = ['lx', 'ly', 'rx', 'ry'];
+// ⚠️ CONVENTION DE SIGNE, source d'un bug garanti si on l'oublie : l'API Gamepad du
+// navigateur donne l'axe vertical NÉGATIF vers le HAUT, alors que XInput (donc vgamepad,
+// donc notre manette virtuelle) le donne POSITIF vers le haut. On inverse donc ly/ry à la
+// capture, sinon un stick poussé vers le haut produirait une action vers le bas.
+// Re-vérification : capturer « stick gauche vers le haut » doit écrire ly POSITIF.
+const GP_AXIS_INVERTED = { ly: true, ry: true };
+// Seuil de capture. Une manette usée dérive couramment jusqu'à ~0.1, et les zones mortes
+// XInput de référence valent 0.24 (stick gauche) / 0.265 (stick droit). À 0.5 on ne capture
+// qu'une poussée FRANCHE et volontaire : aucune dérive ne peut déclencher une capture.
+const GP_CAPTURE_THRESHOLD = 0.5;
+/**
+ * Capture l'entrée manette PHYSIQUE. Renvoie :
+ *   - une chaîne  : un bouton ('A', 'LB', 'UP'…)
+ *   - un objet    : { analog: { ly: 1 } } quand un STICK est poussé
+ *   - null        : rien détecté avant le délai
+ *
+ * ⚠️ BUG CORRIGÉ le 2026-09-03 : cette fonction ne lisait QUE `p.buttons`, jamais `p.axes`.
+ * Bouger un joystick ne produisait donc STRICTEMENT RIEN, sans le moindre message : le
+ * créateur appuyait, relâchait, et concluait que la capture était cassée. Elle l'était.
+ *
+ * `opts.analog === false` restreint la capture aux boutons (l'éditeur avancé remplit des
+ * sélecteurs de boutons : un stick n'y a pas de place).
+ */
+function captureGamepadToken(timeoutMs = 4000, opts) {
+    const wantAnalog = !opts || opts.analog !== false;
     return new Promise((resolve) => {
         if (!navigator.getGamepads) { resolve(null); return; }
         const start = performance.now();
@@ -2133,11 +2241,30 @@ function captureGamepadToken(timeoutMs = 4000) {
         const scan = () => {
             const pads = navigator.getGamepads();
             for (const p of pads) {
-                if (!p || !p.buttons) continue;
-                for (let i = 0; i < p.buttons.length && i < GP_STD_INDEX.length; i++) {
+                if (!p) continue;
+                for (let i = 0; p.buttons && i < p.buttons.length && i < GP_STD_INDEX.length; i++) {
                     const btn = p.buttons[i];
                     const pressed = typeof btn === 'object' ? (btn.pressed || btn.value > 0.5) : btn > 0.5;
                     if (pressed) { cancelAnimationFrame(raf); resolve(GP_STD_INDEX[i]); return; }
+                }
+                if (!wantAnalog || !p.axes) continue;
+                // On retient l'axe le PLUS poussé : pousser un stick en diagonale bouge deux
+                // axes à la fois, et prendre le premier dépassant le seuil donnerait un
+                // résultat qui dépend de l'ordre de lecture, donc imprévisible.
+                let best = null;
+                for (let i = 0; i < p.axes.length && i < GP_STD_AXES.length; i++) {
+                    const raw = Number(p.axes[i]) || 0;
+                    if (Math.abs(raw) < GP_CAPTURE_THRESHOLD) continue;
+                    if (!best || Math.abs(raw) > Math.abs(best.raw)) best = { k: GP_STD_AXES[i], raw };
+                }
+                if (best) {
+                    cancelAnimationFrame(raf);
+                    const v = GP_AXIS_INVERTED[best.k] ? -best.raw : best.raw;
+                    // Arrondi au pas des curseurs de l'éditeur (0.05) et borné à [-1, 1] :
+                    // la valeur capturée doit être exactement représentable par l'UI.
+                    const snapped = Math.max(-1, Math.min(1, Math.round(v * 20) / 20));
+                    resolve({ analog: { [best.k]: snapped } });
+                    return;
                 }
             }
             if (performance.now() - start > timeoutMs) { resolve(null); return; }
@@ -2145,6 +2272,12 @@ function captureGamepadToken(timeoutMs = 4000) {
         };
         raf = requestAnimationFrame(scan);
     });
+}
+/** Libellé humain d'un axe capturé, pour le retour à l'écran (jamais une couleur seule). */
+function gpAxisLabel(k, v) {
+    const noms = { lx: 'Stick gauche', ly: 'Stick gauche', rx: 'Stick droit', ry: 'Stick droit' };
+    const sens = (k === 'lx' || k === 'rx') ? (v > 0 ? 'droite' : 'gauche') : (v > 0 ? 'haut' : 'bas');
+    return `${noms[k] || k} vers le ${sens}`;
 }
 function captureKeyboardSpec(timeoutMs = 4000) {
     return new Promise((resolve) => {
@@ -2329,7 +2462,12 @@ function renderGpBody() {
             const v = gp.analog[k] != null ? gp.analog[k] : 0;
             return `<label class="gp-slider">${label} <input type="range" class="gp-an" data-k="${k}" min="${min}" max="${max}" step="0.05" value="${v}"/><output class="gp-an-out" data-k="${k}">${v}</output></label>`;
         };
-        body.innerHTML = `<div class="gp-analog">${sliderRow('lx', 'Stick G ←→', -1, 1)}${sliderRow('ly', 'Stick G ↑↓', -1, 1)}${sliderRow('rx', 'Stick D ←→', -1, 1)}${sliderRow('ry', 'Stick D ↑↓', -1, 1)}${sliderRow('lt', 'Gâchette ZL', 0, 1)}${sliderRow('rt', 'Gâchette ZR', 0, 1)}</div>`;
+        // Régler six curseurs à la main pour décrire « pousser le stick vers le haut » est
+        // absurde quand la manette est branchée : on capture le geste réel.
+        body.innerHTML = `<div class="gp-analog">${sliderRow('lx', 'Stick G ←→', -1, 1)}${sliderRow('ly', 'Stick G ↑↓', -1, 1)}${sliderRow('rx', 'Stick D ←→', -1, 1)}${sliderRow('ry', 'Stick D ↑↓', -1, 1)}${sliderRow('lt', 'Gâchette ZL', 0, 1)}${sliderRow('rt', 'Gâchette ZR', 0, 1)}</div>`
+            + `<div class="row" style="gap:10px;align-items:center;margin-top:10px">`
+            + `<button type="button" id="gp-an-cap" class="btn btn--ghost">Capturer depuis ma manette</button>`
+            + `<span id="gp-an-cap-msg" class="muted small"></span></div>`;
         body.querySelectorAll('.gp-an').forEach((sl) => {
             sl.oninput = (e) => {
                 const k = e.target.dataset.k; const val = Number(e.target.value);
@@ -2337,12 +2475,39 @@ function renderGpBody() {
                 const out = body.querySelector(`.gp-an-out[data-k="${k}"]`); if (out) out.textContent = String(val);
             };
         });
+        const capBtn = body.querySelector('#gp-an-cap');
+        const capMsg = body.querySelector('#gp-an-cap-msg');
+        capBtn.onclick = async () => {
+            const old = capBtn.textContent;
+            capBtn.textContent = 'Pousse un stick…'; capBtn.disabled = true;
+            capMsg.textContent = '';
+            const tok = await captureGamepadToken(4000);
+            capBtn.textContent = old; capBtn.disabled = false;
+            if (tok && typeof tok === 'object' && tok.analog) {
+                const k = Object.keys(tok.analog)[0];
+                const v = tok.analog[k];
+                gp.analog[k] = v;
+                const sl = body.querySelector(`.gp-an[data-k="${k}"]`);
+                const out = body.querySelector(`.gp-an-out[data-k="${k}"]`);
+                if (sl) sl.value = String(v);
+                if (out) out.textContent = String(v);
+                capMsg.textContent = `✓ ${gpAxisLabel(k, v)} → ${v}`;
+            } else if (typeof tok === 'string') {
+                // Un BOUTON pendant une capture analogique : le dire, plutôt que de ne rien
+                // faire et laisser croire que la manette n'est pas détectée.
+                capMsg.textContent = `Bouton « ${gpLabel(tok)} » détecté : ici on capture les STICKS. Pousse un stick, ou passe en mode Bouton.`;
+            } else {
+                capMsg.textContent = 'Rien détecté. Manette branchée ? Pousse un stick à fond pendant la capture.';
+            }
+        };
     }
 }
 // Capture manette et applique via callback ; feedback visuel sur le bouton.
+// `analog: false` : cet appelant remplit un SÉLECTEUR DE BOUTONS (combo, séquence, étape),
+// où un stick n'a aucune place. Le mode Analogique de l'éditeur a sa propre capture.
 async function gpCaptureInto(btn, apply) {
     const old = btn.textContent; btn.textContent = 'Appuie…'; btn.disabled = true;
-    const tok = await captureGamepadToken(4000);
+    const tok = await captureGamepadToken(4000, { analog: false });
     btn.textContent = old; btn.disabled = false;
     if (tok) apply(tok);
 }
@@ -3077,7 +3242,37 @@ function renderMoreMine() {
 }
 
 // ── Settings ──
-$('lang').onchange = (e) => api.language(e.target.value);
+// ── Langue de l'interface ──
+// Le selecteur ecrivait la valeur et RIEN ne la relisait : l'app etait en francais code en
+// dur alors que le site annonce 5 langues. On charge desormais le catalogue et on applique
+// la traduction a chaud, sans redemarrage.
+const I18N_CATALOGS = {}; // lang -> catalogue (charge une fois, garde en memoire)
+async function loadCatalog(lang) {
+    if (I18N_CATALOGS[lang]) return I18N_CATALOGS[lang];
+    try {
+        const res = await fetch(`locales/${lang}.json`);
+        if (!res.ok) throw new Error(String(res.status));
+        I18N_CATALOGS[lang] = await res.json();
+    } catch {
+        // Catalogue absent ou illisible : on n'a RIEN a afficher de casse, le repli francais
+        // du runtime prend le relais. Mieux vaut une interface en francais qu'une interface
+        // pleine de cles techniques.
+        I18N_CATALOGS[lang] = {};
+    }
+    return I18N_CATALOGS[lang];
+}
+async function applyLanguage(lang) {
+    const fr = await loadCatalog('fr');
+    const cat = lang === 'fr' ? fr : await loadCatalog(lang);
+    HoulaI18n.setCatalogs(fr, cat, lang);
+    HoulaI18n.apply(document);
+    document.documentElement.setAttribute('lang', lang);
+}
+$('lang').onchange = async (e) => {
+    const lang = e.target.value;
+    await api.language(lang);
+    await applyLanguage(lang);
+};
 $('env-select').onchange = async () => {
     await api.env.set($('env-select').value);
     // Déconnecté par le changement d'env : on revient à l'écran de connexion.
@@ -3235,22 +3430,110 @@ function renderConnectorsList() {
 // SEUL chemin vers la publication. Faute d'un endroit où trancher, la file n'a JAMAIS été
 // vidée — constat prod du 2026-09-03 : 13 versions bloquées, dont 10 d'un créateur tiers
 // qui a réessayé dix fois en trois jours sans jamais recevoir de réponse.
+/** Résumé humain et COMPACT d'un effet, pour juger sans lire du JSON. */
+function modEffectSummary(e) {
+    if (!e || !e.type) return '?';
+    switch (e.type) {
+        case 'keyboard': return `clavier ${e.keys || '?'}`;
+        case 'gamepad':
+            if (e.analog) return 'manette ' + Object.entries(e.analog).map(([k, v]) => `${k}=${v}`).join(' ');
+            if (e.steps) return `manette chronologie (${e.steps.length} étapes)`;
+            if (e.sequence) return `manette séquence ${e.sequence.join('>')}`;
+            if (e.buttons) return `manette combo ${e.buttons.join('+')}`;
+            if (e.randomFrom) return `manette aléatoire ${e.randomFrom.join('/')}`;
+            return `manette ${e.button || '?'}`;
+        case 'rcon': return `RCON « ${e.command || '?'} »`;
+        case 'obs': return `OBS ${e.request || '?'}`;
+        case 'http': return `HTTP ${e.method || ''} ${e.url || e.path || ''}`.trim();
+        case 'mqtt': return `MQTT ${e.topic || '?'} = ${e.payload || ''}`;
+        case 'osc': return `OSC ${e.address || '?'}`;
+        case 'ws': return `WebSocket « ${e.message || '?'} »`;
+        case 'python': return `pilote ${e.helper || '?'}`;
+        default: return e.type;
+    }
+}
+/** Description courte d'un déclencheur. */
+function modTriggerSummary(on) {
+    if (!on || !on.type) return '?';
+    if (on.type === 'gift') return `cadeau ${on.giftSlug || on.slot || '?'}`;
+    if (on.type === 'comment') return on.contains ? `message contenant « ${on.contains} »` : `1 message sur ${on.every}`;
+    if (on.type === 'hearts') return on.milestone ? `${on.milestone} likes` : `tous les ${on.every} likes`;
+    if (on.type === 'share') return on.every ? `1 partage sur ${on.every}` : 'partage';
+    if (on.type === 'viewer') return `tous les ${on.every} spectateurs`;
+    return on.type;
+}
+/** Clé d'identité d'une règle pour le diff (l'id est stable d'une version à l'autre). */
+const modRuleKey = (r) => String((r && r.id) || '');
+/**
+ * Diff entre deux manifestes : ce qui a été AJOUTÉ, RETIRÉ, MODIFIÉ.
+ * C'est le cœur d'une modération honnête : approuver sans voir ce qui change, c'est
+ * signer à l'aveugle une version qui peut avoir glissé une interaction en douce.
+ */
+function modDiff(nouveau, ancien) {
+    const A = new Map(((ancien && ancien.rules) || []).map((r) => [modRuleKey(r), r]));
+    const N = new Map(((nouveau && nouveau.rules) || []).map((r) => [modRuleKey(r), r]));
+    const ajoutees = [], retirees = [], modifiees = [];
+    for (const [k, r] of N) {
+        if (!A.has(k)) { ajoutees.push(r); continue; }
+        const av = A.get(k);
+        if (JSON.stringify(av.effect) !== JSON.stringify(r.effect) || JSON.stringify(av.on) !== JSON.stringify(r.on)) {
+            modifiees.push({ avant: av, apres: r });
+        }
+    }
+    for (const [k, r] of A) if (!N.has(k)) retirees.push(r);
+    return { ajoutees, retirees, modifiees };
+}
 function moderationRowHtml(item) {
     const v = (item && item.version) || {};
     const b = (item && item.bundle) || {};
+    const prev = (item && item.previous) || null;
     const jours = v.createdAt ? Math.floor((Date.now() - new Date(v.createdAt).getTime()) / 86400000) : null;
     // ⚠️ Le retard est signalé par le TEXTE et un symbole, jamais par la seule couleur.
     const retard = jours == null ? '' : jours >= 2 ? `⏰ en attente depuis ${jours} j` : jours === 1 ? 'en attente depuis 1 j' : 'arrivée aujourd’hui';
+    const m = v.manifestJson || {};
+    const regles = m.rules || [];
+    const caps = (v.capabilities || []).join(', ');
+    const hosts = (v.hostAllowlist || []).join(', ');
+    // ⚠️ AVERTISSEMENT DÉCISIF : approuver une version PRIVÉE ne la publie PAS. Le pointeur
+    // public n'est posé que pour une version `public` (bundle-moderation.service.ts). Sans
+    // ce message, on approuve, il ne se passe rien, et on cherche le bug ailleurs. C'est
+    // exactement ce qui est arrivé aux 10 versions du pack Mario Kart.
+    const prive = v.visibility !== 'public';
+    const d = modDiff(m, prev && prev.manifestJson);
+    const ligneRegle = (r) => `<li><b>${esc(r.label || r.id)}</b> : ${esc(modTriggerSummary(r.on))} → ${esc(modEffectSummary(r.effect))}</li>`;
+    const diffHtml = !prev
+        ? '<p class="muted small">Première version de ce pack : rien à comparer.</p>'
+        : (!d.ajoutees.length && !d.retirees.length && !d.modifiees.length)
+            ? `<p class="muted small">Aucun changement d'interaction depuis la v${esc(prev.version)}. Seuls les textes ou la présentation ont pu changer.</p>`
+            : `<ul class="mod-diff">`
+              + d.ajoutees.map((r) => `<li><span class="mod-tag">+ AJOUTÉE</span> ${esc(r.label || r.id)} : ${esc(modTriggerSummary(r.on))} → ${esc(modEffectSummary(r.effect))}</li>`).join('')
+              + d.retirees.map((r) => `<li><span class="mod-tag">− RETIRÉE</span> ${esc(r.label || r.id)}</li>`).join('')
+              + d.modifiees.map((x) => `<li><span class="mod-tag">~ MODIFIÉE</span> ${esc(x.apres.label || x.apres.id)} : <s>${esc(modEffectSummary(x.avant.effect))}</s> → ${esc(modEffectSummary(x.apres.effect))}</li>`).join('')
+              + `</ul>`;
     return `<div class="mod-row" data-id="${esc(v.id || '')}">
-        <div class="mod-row__info">
-            <b>${esc(b.title || b.slug || 'Pack')}</b>
-            <span class="badge badge--off">v${esc(v.version || '?')}</span>
-            <span class="badge badge--off">${esc(moderationLabel(v.moderationStatus))}</span>
-            <div class="muted small"><code>${esc(b.slug || '')}</code> · ${esc(v.visibility || '')} · ${esc(retard)}</div>
+        <div class="mod-row__head">
+            <div class="mod-row__info">
+                <b>${esc(b.title || b.slug || 'Pack')}</b>
+                <span class="badge badge--off">v${esc(v.version || '?')}</span>
+                <span class="badge badge--off">${esc(moderationLabel(v.moderationStatus))}</span>
+                <div class="muted small"><code>${esc(b.slug || '')}</code> · ${esc(v.visibility || '')} · ${esc(retard)} · ${regles.length} interaction(s)</div>
+            </div>
+            <span class="mod-row__res"></span>
+            <button class="btn btn--ghost mod-toggle" title="Voir ce que contient cette version">Examiner</button>
+            <button class="btn btn--ghost mod-reject" title="Refuser cette version, avec un motif envoyé au créateur">✖ Refuser</button>
+            <button class="btn btn--primary mod-approve" title="Approuver cette version">✔ Approuver</button>
         </div>
-        <span class="mod-row__res"></span>
-        <button class="btn btn--ghost mod-reject" title="Refuser cette version, avec un motif envoyé au créateur">✖ Refuser</button>
-        <button class="btn btn--primary mod-approve" title="Approuver : la version devient publiable et installable">✔ Approuver</button>
+        ${prive ? `<p class="mod-warn">⚠ Version <b>privée</b> : l’approuver ne la publiera pas dans le store. Seul son créateur peut la passer en publique.</p>` : ''}
+        <div class="mod-detail hidden">
+            <h4>Ce qui change</h4>
+            ${diffHtml}
+            <h4>Toutes les interactions (${regles.length})</h4>
+            <ul class="mod-rules">${regles.map(ligneRegle).join('') || '<li class="muted">aucune</li>'}</ul>
+            <h4>Ce que le pack peut faire</h4>
+            <p class="muted small">Capacités : ${esc(caps || 'aucune')}${hosts ? ` · Hôtes réseau : ${esc(hosts)}` : ''}</p>
+            ${v.changelog ? `<h4>Note du créateur</h4><p class="small">${esc(v.changelog)}</p>` : ''}
+            ${v.instructions ? `<h4>Instructions livrées aux joueurs</h4><pre class="mod-pre">${esc(String(v.instructions).slice(0, 4000))}</pre>` : ''}
+        </div>
     </div>`;
 }
 async function loadModerationQueue() {
@@ -3279,12 +3562,30 @@ async function loadModerationQueue() {
                 resEl.textContent = '✓ enregistré';
                 resEl.className = 'mod-row__res ok';
                 row.querySelectorAll('button').forEach((x) => { x.disabled = true; });
-                setTimeout(() => loadModerationQueue(), 600); // la file se met à jour
+                // ⚠️ ON NE RECHARGE PLUS TOUTE LA FILE. Chaque décision faisait 2 requêtes
+                // (la décision + le rechargement) : en enchaînant les validations, on dépassait
+                // le palier global de 10 requêtes/seconde et l'admin se prenait des 429 en
+                // pleine session de modération. On retire simplement la ligne traitée.
+                row.classList.add('mod-row--done');
+                setTimeout(() => {
+                    row.remove();
+                    if (!box.querySelector('.mod-row')) {
+                        box.innerHTML = '<p class="muted">✔ Aucune version en attente. La file est à jour.</p>';
+                    }
+                }, 700);
             } catch (e) {
                 resEl.textContent = '✗ ' + friendlyError(e, 'échec');
                 resEl.className = 'mod-row__res no';
                 setBtnBusy(btn, false);
             }
+        };
+        // « Examiner » : déplie le contenu de la version et le diff. Sans ça, approuver
+        // revient à dire oui à quelque chose qu'on n'a pas vu.
+        const detail = row.querySelector('.mod-detail');
+        const toggle = row.querySelector('.mod-toggle');
+        toggle.onclick = () => {
+            const ouvert = !detail.classList.toggle('hidden');
+            toggle.textContent = ouvert ? 'Replier' : 'Examiner';
         };
         row.querySelector('.mod-approve').onclick = (ev) =>
             decide(ev.currentTarget, 'Approbation…', () => api.moderation.approve(id));
@@ -3375,6 +3676,6 @@ async function checkLegalGate() {
 // ── Boot ──
 refreshAuth();
 checkLegalGate(); // acceptation obligatoire au premier lancement (bloquant)
-api.language().then((l) => ($('lang').value = l));
+api.language().then(async (l) => { $('lang').value = l; await applyLanguage(l || 'fr'); });
 api.appVersion().then((v) => ($('app-ver').textContent = 'v' + v));
 api.update.check(); // check silencieux au démarrage (installe en tâche de fond)
