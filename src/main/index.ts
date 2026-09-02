@@ -66,17 +66,21 @@ function proxyDllDir(): string {
         : path.join(__dirname, '..', '..', 'resources', 'xinput-proxy');
 }
 
-const filesEqual = (a: string, b: string): boolean => {
-    try { return fs.statSync(a).size === fs.statSync(b).size && fs.readFileSync(a).equals(fs.readFileSync(b)); }
-    catch { return false; }
-};
+// Nos DLL portent ce marqueur (cf. resources/xinput-proxy/proxy.c). On reconnaît ainsi LES
+// NÔTRES — y compris une version antérieure lors d'une mise à jour — sans jamais confondre
+// avec une DLL xinput TIERCE livrée par un jeu. Comparer les octets ne marcherait pas : la
+// moindre nouvelle version du proxy serait prise pour une DLL étrangère et bloquerait tout.
+const PROXY_MARKER = Buffer.from('HoulaConnectXInputProxy');
+function isOurProxy(file: string): boolean {
+    try { return fs.readFileSync(file).includes(PROXY_MARKER); } catch { return false; }
+}
 /** Pose nos DLL proxy dans le dossier d'un jeu. Refuse d'écraser une DLL xinput ÉTRANGÈRE
  *  (certains jeux livrent la leur) : on préfère renoncer et l'expliquer. */
 function placeProxyDlls(dir: string): { ok: boolean; reason?: string } {
     const src = proxyDllDir();
     const foreign = PROXY_DLL_NAMES.find((n) => {
         const dst = path.join(dir, n);
-        return fs.existsSync(dst) && !filesEqual(dst, path.join(src, n));
+        return fs.existsSync(dst) && !isOurProxy(dst);
     });
     if (foreign) return { ok: false, reason: `Une DLL « ${foreign} » est déjà présente dans le dossier du jeu et n’est pas la nôtre. Retire-la d’abord (ou ce jeu n’en a pas besoin).` };
     try {
@@ -89,13 +93,12 @@ function placeProxyDlls(dir: string): { ok: boolean; reason?: string } {
     }
     return { ok: true };
 }
-/** Retire UNIQUEMENT nos DLL (byte-identiques), jamais celle du jeu. */
+/** Retire UNIQUEMENT nos DLL (reconnues au marqueur), jamais celle du jeu. */
 function removeProxyDlls(dir: string): void {
-    const src = proxyDllDir();
     for (const n of PROXY_DLL_NAMES) {
         const dst = path.join(dir, n);
-        if (fs.existsSync(dst) && filesEqual(dst, path.join(src, n))) {
-            try { fs.unlinkSync(dst); } catch { /* déjà retirée */ }
+        if (fs.existsSync(dst) && isOurProxy(dst)) {
+            try { fs.unlinkSync(dst); } catch { /* déjà retirée, ou tenue par le jeu ouvert */ }
         }
     }
 }
@@ -385,7 +388,11 @@ function registerIpc(): void {
             const role = r.effect.connector || t;
             req.set(`${role}:${t}`, { role, type: t });
         }
-        return { ok: true, capabilities: d.capabilities, hosts: d.hosts, requiredConnectors: [...req.values()] };
+        // La MANETTE est un connecteur LOCAL : elle n'apparaît jamais dans requiredConnectors
+        // (réservé aux protocoles réseau à configurer). On signale donc à part qu'un pack la
+        // pilote, pour pouvoir demander À L'INSTALLATION quel jeu il vise.
+        const usesGamepad = ((d.manifest?.rules || []) as any[]).some((r) => r?.effect?.type === 'gamepad');
+        return { ok: true, capabilities: d.capabilities, hosts: d.hosts, requiredConnectors: [...req.values()], usesGamepad };
     });
     ipcMain.handle('store:installed', () => store.getInstalled());
 

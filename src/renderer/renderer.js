@@ -841,9 +841,10 @@ async function promptPackGame(slug) {
     }
     return false;
 }
-async function ensurePackGame(slug, required) {
-    // `required` = liste d'objets { role, type } (cf. bindRequiredConnectors), pas de chaînes.
-    if (!(required || []).some((rc) => (rc && rc.type) === 'gamepad')) return; // pas de manette
+async function ensurePackGame(slug, usesGamepad) {
+    // `usesGamepad` vient de store.install : la manette est un connecteur LOCAL, elle n'est
+    // JAMAIS listée dans requiredConnectors (réservé aux protocoles réseau).
+    if (!usesGamepad) return;
     let st = null;
     try { st = await api.game.packStatus(slug); } catch { /* statut indispo -> on demande */ }
     if (st && st.exe) return; // jeu déjà connu pour ce pack
@@ -854,7 +855,7 @@ async function installBundle(slug, btn) {
     try {
         const res = await api.store.install(slug);
         await bindRequiredConnectors(slug, (res && res.requiredConnectors) || []);
-        await ensurePackGame(slug, (res && res.requiredConnectors) || []);
+        await ensurePackGame(slug, !!(res && res.usesGamepad));
         if (btn) btn.textContent = 'Installé ✓';
         await loadInstalled(); // rafraîchit le menu Capture
         await loadStore(); // rafraîchit l'état installé/mise à jour des cartes

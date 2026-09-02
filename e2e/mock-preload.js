@@ -33,7 +33,7 @@
             install: rec('install', (slug) => {
                 if (cfg.installError) return rej(cfg.installError);
                 if (!installedState.find((x) => x.slug === slug)) installedState.push({ slug, version: verOf(slug) });
-                return R({ ok: true, requiredConnectors: cfg.requiredConnectors || [] });
+                return R({ ok: true, requiredConnectors: cfg.requiredConnectors || [], usesGamepad: !!cfg.usesGamepad });
             }),
             installed: () => R(installedState),
             uninstall: rec('uninstall', (slug) => {

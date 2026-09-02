@@ -151,7 +151,15 @@ DWORD WINAPI XInputGetAudioDeviceIds(DWORD idx, LPWSTR r, UINT* rc, LPWSTR c, UI
     return rGetAudio ? rGetAudio(ri, r, rc, c, cc) : ERROR_DEVICE_NOT_CONNECTED;
 }
 
+/* Marqueur : permet a Hou.la Connect de reconnaitre SES propres DLL (y compris une version
+   anterieure, lors d'une mise a jour) et de les remplacer, sans jamais toucher a une DLL
+   xinput TIERCE livree par un jeu. Reference dans DllMain pour ne pas etre optimise out. */
+static const char kHoulaProxyMarker[] = "HoulaConnectXInputProxy/1";
+
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID r) {
-    if (reason == DLL_PROCESS_ATTACH) DisableThreadLibraryCalls(h);
+    if (reason == DLL_PROCESS_ATTACH) {
+        DisableThreadLibraryCalls(h);
+        if (kHoulaProxyMarker[0] == 0) return FALSE; /* garde le marqueur dans le binaire */
+    }
     return TRUE;
 }

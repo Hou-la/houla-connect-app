@@ -9,8 +9,10 @@ const GAMEPAD_CX = { id: 'local-gamepad', type: 'gamepad', name: 'Manette virtue
 test('install d’un pack MANETTE : on demande le jeu et « Choisir mon jeu » appelle game.linkPack', async ({ page }) => {
     await boot(page, {
         store: [PACK],
-        connectors: [GAMEPAD_CX], // évite la modale de création de connecteur
-        requiredConnectors: [{ role: 'gamepad', type: 'gamepad' }],
+        connectors: [GAMEPAD_CX],
+        // La manette est un connecteur LOCAL : elle n'est PAS dans requiredConnectors (réservé
+        // au réseau). C'est ce drapeau qui dit qu'un pack la pilote — le bug corrigé ici.
+        usesGamepad: true,
         gamePackStatus: { exe: null, dir: null, placed: false }, // aucun jeu connu pour ce pack
     });
     await page.locator('.nav[data-view="store"]').click();
@@ -27,7 +29,7 @@ test('install d’un pack MANETTE : on demande le jeu et « Choisir mon jeu » a
 });
 
 test('install d’un pack SANS manette : aucune demande de jeu', async ({ page }) => {
-    await boot(page, { store: [PACK], requiredConnectors: [] });
+    await boot(page, { store: [PACK], usesGamepad: false });
     await page.locator('.nav[data-view="store"]').click();
     await page.locator('.bundle-card', { hasText: 'Pack Démo' }).locator('.install').click();
     await expect(page.locator('.bundle-card', { hasText: 'Pack Démo' }).locator('.install')).toContainText(/Installé/i);
