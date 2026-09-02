@@ -22,6 +22,7 @@ Dépendances (voir requirements.txt) : interception-python, vgamepad.
 Le driver ViGEmBus / Interception doit être installé (flux guidé dans l'app).
 """
 import sys
+import os
 import json
 import time
 import ctypes
@@ -153,6 +154,31 @@ _XI_BUTTONS = [
 ]
 
 
+# ── Proxy XInput : faire lire au JEU la virtuelle comme Joueur 1 ──────
+# Le jeu (Meccha…) lit STRICTEMENT le slot XInput 0. La physique y est ; la virtuelle prend
+# le slot 1 et est IGNORÉE -> les cadeaux n'arrivent jamais en jeu. Ni HidHide (masque la
+# visibilité mais ne libère pas le slot 0) ni pnputil disable/enable (exige un reboot ici) ne
+# règlent ça proprement. Solution retenue et VALIDÉE (Meccha, 2026-09-02) : une DLL proxy
+# `xinput1_4.dll` posée dans le dossier du jeu (chargée avant System32) remappe game-index 0 ->
+# index RÉEL de la virtuelle. On lui communique cet index via un petit fichier de config, relu
+# à chaud par la DLL (-1 = transparent). Voir resources/xinput-proxy/proxy.c.
+_PROXY_CFG = os.path.join(
+    os.environ.get("LOCALAPPDATA", os.path.expanduser(r"~\AppData\Local")),
+    "HoulaConnect", "xinput_proxy.cfg",
+)
+
+
+def _write_proxy_config(virtual_index):
+    """Écrit l'index réel de la virtuelle (ou -1 = transparent) pour la DLL proxy.
+    Best-effort : jamais bloquant, jamais fatal (le proxy peut ne pas être posé)."""
+    try:
+        os.makedirs(os.path.dirname(_PROXY_CFG), exist_ok=True)
+        with open(_PROXY_CFG, "w") as f:
+            f.write(str(virtual_index if virtual_index is not None else -1))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # ── Passthrough : physique recopiée dans la virtuelle + overlays cadeaux ──
 _pt_running = False
 _pt_thread = None
@@ -274,8 +300,14 @@ def helper_vigem_passthrough(args):
             _pt_running = True
             _pt_thread = threading.Thread(target=_passthrough_loop, args=(pad, vg), daemon=True)
             _pt_thread.start()
+        # Dit à la DLL proxy (posée dans le dossier du jeu) de faire lire la VIRTUELLE comme
+        # Joueur 1 (index 0 du jeu -> index réel de la virtuelle). Le jeu voit ainsi la
+        # physique recopiée + les cadeaux. Best-effort : si le proxy n'est pas posé, sans effet.
+        _write_proxy_config(_virtual_index)
         return {"passthrough": True, "physicalIndex": _pt_index, "virtualIndex": _virtual_index}
-    # Désactivation : on stoppe le loop, on vide les overlays, on relâche le pad.
+    # Désactivation : proxy transparent (le jeu relit la manette normalement), on stoppe le
+    # loop, on vide les overlays, on relâche le pad.
+    _write_proxy_config(-1)
     _pt_running = False
     with _pt_lock:
         _ov_buttons.clear()
@@ -426,6 +458,12 @@ def _cleanup_pad():
     l'exécutera pas : l'app doit d'abord fermer stdin pour laisser CE nettoyage tourner."""
     global _pad, _pt_running
     _pt_running = False
+    # Filet de sécurité : proxy transparent (le jeu relit la manette normalement) même si le
+    # sidecar s'arrête en cours de pack.
+    try:
+        _write_proxy_config(-1)
+    except Exception:  # noqa: BLE001
+        pass
     p = _pad
     _pad = None
     if p is None:

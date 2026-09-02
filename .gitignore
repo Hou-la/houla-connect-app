@@ -11,9 +11,16 @@ resources/sidecar/dist/
 resources/sidecar/__pycache__/
 /houla-sidecar.spec
 build/houla-sidecar/
+build/pyi-work/
 build/*.spec
 ViGEmBusSetup_x64.msi
 .vscode/
+# artefacts de compilation du proxy XInput (la source .c/.def/.bat est suivie ; les DLL
+# bâties sont republiées via la release sidecar-bin-v1 comme l'exe du sidecar)
+resources/xinput-proxy/*.dll
+resources/xinput-proxy/*.obj
+resources/xinput-proxy/*.exp
+resources/xinput-proxy/*.lib
 
 # Tests
 test-results/
