@@ -810,6 +810,35 @@ function logLine(l) {
 
 // ── Store ──
 function fmtDate(d) { try { return d ? new Date(d).toLocaleDateString() : ''; } catch { return ''; } }
+
+// Statuts de modération d'une version : l'API renvoie des clés techniques (`in_review`…).
+// Les afficher brutes laissait le créateur devant « in review », qu'il lit comme un bug.
+// ⚠️ Le propriétaire est DALTONIEN : la pastille ne doit JAMAIS distinguer par la couleur
+// seule -> chaque statut porte un symbole de forme distincte EN PLUS du texte.
+const MODERATION_LABELS = {
+    pending: '⏳ En attente de relecture',
+    in_review: '🔍 En cours de relecture',
+    approved: '✔ Publiée',
+    rejected: '✖ Refusée',
+    re_review: '↻ Nouvelle relecture',
+    private: '🔒 Privée',
+    public: '✔ Publique',
+    restricted: '⚠ Diffusion restreinte',
+};
+const MODERATION_HINTS = {
+    pending: 'Ta version est dans la file de relecture. Tant qu’elle n’est pas approuvée, les joueurs continuent d’utiliser la dernière version publiée.',
+    in_review: 'Un relecteur examine cette version. Les joueurs utilisent toujours la dernière version publiée.',
+    approved: 'Cette version est celle que les joueurs téléchargent.',
+    rejected: 'Cette version a été refusée. Corrige-la et soumets-en une nouvelle.',
+    re_review: 'Tu as modifié cette version : elle repasse en relecture.',
+};
+function moderationLabel(status) {
+    const k = String(status || '').toLowerCase();
+    return MODERATION_LABELS[k] || (k ? k.replace(/_/g, ' ') : '');
+}
+function moderationHint(status) {
+    return MODERATION_HINTS[String(status || '').toLowerCase()] || '';
+}
 function publisherHtml(pub, installs) {
     pub = pub || {};
     // Nom du créateur CLIQUABLE -> ouvre son profil public hou.la/@slug (abonnement, DM).
@@ -886,12 +915,38 @@ async function ensurePackGame(slug, usesGamepad) {
     if (st && st.exe) return; // jeu déjà connu pour ce pack
     await promptPackGame(slug);
 }
+/**
+ * Demande au joueur COMMENT il joue (clavier / manette / …) quand le pack propose
+ * plusieurs configurations de commandes. Un pack décrit ses actions une fois par
+ * périphérique : sans ce choix, un joueur au clavier hériterait des interactions
+ * manette et le pack ne ferait rien chez lui, sans le moindre message.
+ * Renvoie l'id retenu (ou null si le pack n'a qu'une seule configuration).
+ */
+async function ensurePackProfile(slug, profiles) {
+    const list = profiles || [];
+    if (list.length < 2) return list.length === 1 ? list[0].id : null;
+    const key = await showChoice({
+        title: 'Comment joues-tu ?',
+        msg: 'Ce pack propose plusieurs configurations de commandes. Choisis celle qui correspond à ton matériel — tu pourras en changer à tout moment dans les réglages du pack.',
+        choices: list.map((p, i) => ({ key: p.id, label: p.label, kind: (p.default || i === 0) ? 'primary' : 'ghost' })),
+    });
+    // Fermer la modale sans choisir ne doit rien casser : on retombe sur la configuration
+    // par défaut du pack, exactement comme le moteur le fera de son côté.
+    const chosen = key || (list.find((p) => p.default) || list[0]).id;
+    try { await api.customize.setProfile(slug, chosen); } catch { /* le défaut s'appliquera */ }
+    return chosen;
+}
 async function installBundle(slug, btn) {
     if (btn) btn.textContent = '…';
     try {
         const res = await api.store.install(slug);
         await bindRequiredConnectors(slug, (res && res.requiredConnectors) || []);
-        await ensurePackGame(slug, !!(res && res.usesGamepad));
+        const profile = await ensurePackProfile(slug, (res && res.profiles) || []);
+        // Le jeu n'est demandé QUE si la configuration retenue pilote vraiment une manette :
+        // un joueur au clavier n'a aucune raison d'aller chercher un .exe.
+        const gp = (res && res.gamepadProfiles) || [];
+        const needsGame = profile ? gp.indexOf(profile) !== -1 : !!(res && res.usesGamepad);
+        await ensurePackGame(slug, needsGame);
         if (btn) btn.textContent = 'Installé ✓';
         await loadInstalled(); // rafraîchit le menu Capture
         await loadStore(); // rafraîchit l'état installé/mise à jour des cartes
@@ -1184,6 +1239,34 @@ async function openCustomize(slug, title) {
     const rules = (data && data.rules) || [];
     if (!rules.length) { box.innerHTML = '<p class="muted">Ce pack n\'a pas d\'interaction personnalisable.</p>'; return; }
     box.innerHTML = '';
+    // Configuration de commandes ACTIVE (clavier / manette / …). Elle décide quelles
+    // interactions tournent : elle doit donc se voir et se changer ici, en tête de liste.
+    const profiles = (data && data.profiles) || [];
+    if (profiles.length > 1) {
+        const cur = profiles.find((p) => p.id === data.activeProfile) || profiles[0];
+        const prow = document.createElement('div');
+        prow.className = 'cx-rule';
+        prow.innerHTML =
+            `<div class="cx-rule__info"><b>🕹️ Tu joues en</b> <span class="muted">${esc(cur.label)}</span></div>`
+            + `<select class="cx-profile" title="Configuration de commandes utilisée par ce pack">`
+            + profiles.map((p) => `<option value="${esc(p.id)}"${p.id === cur.id ? ' selected' : ''}>${esc(p.label)}</option>`).join('')
+            + `</select>`;
+        // Changement immédiat (pas au « Enregistrer ») : il recharge la liste des
+        // interactions, qui n'est plus la même d'une configuration à l'autre.
+        prow.querySelector('.cx-profile').onchange = async (ev) => {
+            const sel = ev.currentTarget;
+            sel.disabled = true;
+            try {
+                const r = await api.customize.setProfile(slug, sel.value);
+                if (!r || !r.ok) { showToast('cx-profile', { kind: 'error', title: 'Configuration', msg: (r && r.reason) || 'Changement refusé.' }); sel.disabled = false; return; }
+                openCustomize(slug, title); // recharge : les interactions changent avec la config
+            } catch (e) {
+                sel.disabled = false;
+                showToast('cx-profile', { kind: 'error', title: 'Configuration', msg: friendlyError(e, 'Réessaie.') });
+            }
+        };
+        box.appendChild(prow);
+    }
     // Pack MANETTE : le jeu piloté se voit et se change ICI, dans les réglages du pack — pas
     // dans les Connecteurs (la manette sert à tous les jeux, le jeu appartient au pack).
     if (rules.some((r) => r.effectType === 'gamepad')) {
@@ -1371,6 +1454,19 @@ function gpSummary(e) {
 const GP_SHORT = { LT: 'ZL', RT: 'ZR', LB: 'L', RB: 'R', LS: 'L3', RS: 'R3', START: '+', BACK: '−', UP: '↑', DOWN: '↓', LEFT: '←', RIGHT: '→' };
 const gpLabelShort = (t) => GP_SHORT[t] || t;
 let labRules = [];
+// ── Configurations de commandes du pack en cours d'édition ──
+// Un pack manette est inutilisable au clavier (et l'inverse) : le joueur ne peut RIEN
+// remapper de son côté. Le créateur décrit donc ses actions une fois par matériel, et
+// le joueur choisit sa configuration à l'installation.
+// ⚠️ On ne propose QUE ce que l'app sait réellement piloter aujourd'hui : du clavier
+// (Interception) et une manette XInput (ViGEm). Un volant / des pédales, c'est du
+// DirectInput : proposer « Volant » créerait une configuration inerte chez le joueur.
+const PROFILE_PRESETS = [
+    { id: 'clavier', label: 'Clavier', effect: 'keyboard' },
+    { id: 'manette', label: 'Manette', effect: 'gamepad' },
+];
+let labProfiles = [];
+let labActiveProfile = ''; // id affiché ; '' = toutes les interactions
 // « Sale » = des modifs Lab non enregistrées. Mis à true par toute saisie utilisateur dans
 // la vue (listener délégué), remis à false à l'entrée du Lab et après un enregistrement réussi.
 // Sert à la garde anti-perte de switchView (modal « Enregistrer / Quitter / Annuler »).
@@ -1511,7 +1607,17 @@ function connectorPickerHtml(r) {
         .map((c) => `<option value="${esc(c.id)}"${r.effect._connectorId === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
     return `<select class="r-connector" title="Connecteur (adresse + identifiants)"><option value="">— connecteur —</option>${opts}<option value="__new__">+ Nouveau…</option></select>`;
 }
-function newRule() { return { event: { type: 'gift', giftSlug: defaultGiftSlug() }, effect: { type: 'keyboard', keys: 'space', backend: 'auto' }, followersOnly: false, moderatorsOnly: false }; }
+function newRule() {
+    // Une interaction creee depuis l'onglet d'une configuration lui appartient, et part
+    // avec l'action qui correspond a son materiel : ajouter une interaction dans l'onglet
+    // Manette pour la voir arriver en clavier serait absurde.
+    const prof = labProfiles.some((p) => p.id === labActiveProfile) ? labActiveProfile : '';
+    const preset = PROFILE_PRESETS.find((p) => p.id === prof);
+    const effect = preset && preset.effect === 'gamepad'
+        ? { type: 'gamepad', button: 'A' }
+        : { type: 'keyboard', keys: 'space', backend: 'auto' };
+    return { event: { type: 'gift', giftSlug: defaultGiftSlug() }, effect, followersOnly: false, moderatorsOnly: false, profile: prof };
+}
 
 function readRule(el, r) {
     const q = (s) => el.querySelector(s);
@@ -1621,11 +1727,151 @@ function swapSlots(i, j) {
     if (!a || !b) return;
     const t = a.event.giftSlug; a.event.giftSlug = b.event.giftSlug; b.event.giftSlug = t;
 }
+/** Une interaction est-elle visible dans l'onglet de configuration courant ?
+ *  Une règle SANS configuration est commune : elle apparaît partout. */
+function ruleInActiveProfile(r) {
+    if (!labProfiles.length || !labActiveProfile) return true;
+    return !r.profile || r.profile === labActiveProfile;
+}
+/** Barre d'onglets des configurations de commandes du pack. */
+function renderProfiles() {
+    const box = $('lab-profiles');
+    if (!box) return;
+    const count = (id) => labRules.filter((r) => r.profile === id).length;
+    if (!labProfiles.length) {
+        // Cas historique : pack à configuration unique. On ne montre qu'une porte d'entrée,
+        // pas un onglet vide — la notion ne doit pas encombrer les packs qui n'en ont pas.
+        box.innerHTML = '<button id="lab-add-profile" class="btn btn--ghost" title="Décrire ce pack au clavier ET à la manette">+ Proposer plusieurs configurations (clavier / manette)</button>';
+    } else {
+        // Onglet actif signalé par le TEXTE (chevron) autant que par le style : le
+        // propriétaire est daltonien, la couleur seule ne doit jamais porter l'information.
+        const tab = (id, label, n, active) =>
+            `<button class="lab-tab${active ? ' lab-tab--on' : ''}" data-profile="${esc(id)}">${active ? '▾ ' : ''}${esc(label)}`
+            + `<span class="lab-tab__n">${n}</span></button>`;
+        const commonN = labRules.filter((r) => !r.profile).length;
+        const curLabel = (labProfiles.find((p) => p.id === labActiveProfile) || {}).label || '';
+        box.innerHTML =
+            '<div class="lab-tabs">'
+            + tab('', 'Toutes', labRules.length, !labActiveProfile)
+            + labProfiles.map((p) => tab(p.id, p.label, count(p.id), labActiveProfile === p.id)).join('')
+            + (labProfiles.length < PROFILE_PRESETS.length ? '<button id="lab-add-profile" class="btn btn--ghost lab-tab__add" title="Ajouter une configuration">+</button>' : '')
+            + '</div>'
+            + '<div class="lab-profiles__bar">'
+            + (labActiveProfile
+                ? `<span class="muted small">Ces interactions ne se déclencheront que chez les joueurs qui ont choisi « ${esc(curLabel)} ».</span>`
+                  + '<button class="btn btn--ghost lab-prof-dup">Dupliquer vers…</button>'
+                  + '<button class="btn btn--ghost lab-prof-del">Supprimer cette configuration</button>'
+                : `<span class="muted small">${commonN} interaction(s) commune(s) à toutes les configurations, ${labRules.length - commonN} propre(s) à une configuration.</span>`)
+            + '</div>';
+    }
+    const add = $('lab-add-profile');
+    if (add) add.onclick = addLabProfile;
+    box.querySelectorAll('.lab-tab').forEach((t) => {
+        t.onclick = () => { labActiveProfile = t.dataset.profile || ''; renderProfiles(); renderRules(); };
+    });
+    const dup = box.querySelector('.lab-prof-dup');
+    if (dup) dup.onclick = duplicateLabProfile;
+    const del = box.querySelector('.lab-prof-del');
+    if (del) del.onclick = deleteLabProfile;
+}
+/** Ajoute une configuration (parmi celles que l'app sait piloter) et y bascule. */
+async function addLabProfile() {
+    const free = PROFILE_PRESETS.filter((p) => !labProfiles.some((x) => x.id === p.id));
+    if (!free.length) return;
+    let preset = free[0];
+    if (free.length > 1) {
+        const key = await showChoice({
+            title: 'Ajouter une configuration',
+            msg: 'Décris ce pack pour un type de matériel. Le joueur choisira le sien à l’installation.',
+            choices: free.map((p, i) => ({ key: p.id, label: p.label, kind: i === 0 ? 'primary' : 'ghost' })),
+        });
+        if (!key) return;
+        preset = free.find((p) => p.id === key) || free[0];
+    }
+    // La PREMIÈRE configuration créée récupère les interactions déjà écrites : sans ça, le
+    // créateur qui a saisi 20 interactions les verrait rester « communes » et se déclencher
+    // chez tout le monde, y compris sur le matériel qui ne sait pas les exécuter.
+    const first = !labProfiles.length;
+    labProfiles.push(first ? { id: preset.id, label: preset.label, default: true } : { id: preset.id, label: preset.label });
+    if (first) { for (const r of labRules) if (!r.profile) r.profile = preset.id; }
+    labActiveProfile = preset.id;
+    labDirty = true;
+    renderProfiles();
+    renderRules();
+}
+/** Recopie les interactions de la configuration courante vers une autre, en repartant d'une
+ *  action NEUVE du bon type. C'est le geste qui rend la double configuration tenable : on
+ *  décrit le pack une fois, puis on n'a plus qu'à régler les touches. */
+async function duplicateLabProfile() {
+    const src = labActiveProfile;
+    if (!src) return;
+    const target = PROFILE_PRESETS.find((p) => p.id !== src);
+    if (!target) return;
+    const srcRules = labRules.filter((r) => r.profile === src);
+    if (!srcRules.length) {
+        showToast('lab-prof', { kind: 'error', title: 'Rien à dupliquer', msg: 'Cette configuration n’a aucune interaction.' });
+        return;
+    }
+    const exists = labProfiles.some((p) => p.id === target.id);
+    const key = await showChoice({
+        title: `Dupliquer vers « ${target.label} »`,
+        msg: `${srcRules.length} interaction(s) vont être recopiées${exists ? ', en plus de celles qui existent déjà' : ''}. Les déclencheurs (cadeaux, abonnés…) sont conservés ; les actions passent en ${target.label.toLowerCase()} et restent à régler.`,
+        choices: [{ key: 'go', label: 'Dupliquer', kind: 'primary' }, { key: 'no', label: 'Annuler' }],
+    });
+    if (key !== 'go') return;
+    if (!exists) labProfiles.push({ id: target.id, label: target.label });
+    for (const r of srcRules) {
+        const copy = JSON.parse(JSON.stringify(r));
+        copy.profile = target.id;
+        // L'action change de nature : effet NEUF du bon type plutôt que de traîner les champs
+        // de l'autre — le serveur rejette tout champ étranger au type (anti-smuggling).
+        copy.effect = target.effect === 'gamepad' ? { type: 'gamepad', button: 'A' } : { type: 'keyboard', keys: '' };
+        labRules.push(copy);
+    }
+    labActiveProfile = target.id;
+    labDirty = true;
+    renderProfiles();
+    renderRules();
+}
+/** Supprime la configuration courante ET ses interactions (confirmation chiffrée). */
+async function deleteLabProfile() {
+    const id = labActiveProfile;
+    if (!id) return;
+    const p = labProfiles.find((x) => x.id === id);
+    const n = labRules.filter((r) => r.profile === id).length;
+    const key = await showChoice({
+        title: `Supprimer « ${(p && p.label) || id} » ?`,
+        msg: n
+            ? `Ses ${n} interaction(s) seront supprimées avec elle. Les interactions communes et celles des autres configurations ne bougent pas.`
+            : 'Cette configuration n’a aucune interaction.',
+        choices: [{ key: 'del', label: 'Supprimer', kind: 'primary' }, { key: 'no', label: 'Annuler' }],
+    });
+    if (key !== 'del') return;
+    labRules = labRules.filter((r) => r.profile !== id);
+    labProfiles = labProfiles.filter((x) => x.id !== id);
+    // Une seule configuration restante n'en est plus une : on repasse le pack en
+    // configuration unique, sinon le joueur se verrait poser un choix à une seule réponse.
+    if (labProfiles.length === 1) {
+        for (const r of labRules) if (r.profile === labProfiles[0].id) r.profile = '';
+        labProfiles = [];
+    } else if (labProfiles.length && !labProfiles.some((x) => x.default)) {
+        labProfiles[0].default = true;
+    }
+    labActiveProfile = '';
+    labDirty = true;
+    renderProfiles();
+    renderRules();
+}
 function renderRules() {
+    renderProfiles(); // compteurs par configuration : ils bougent a chaque ajout/suppression
     const box = $('lab-rules');
     cancelTestCountdown(); // un décompte en cours pointe une ligne qu'on va détacher
     box.innerHTML = '';
     labRules.forEach((r, i) => {
+        // On parcourt TOUTES les règles pour garder `i` = index réel (glisser-déposer,
+        // suppression et génération d'id en dépendent) : on saute seulement l'AFFICHAGE
+        // de celles qui n'appartiennent pas à l'onglet courant.
+        if (!ruleInActiveProfile(r)) return;
         const el = document.createElement('div');
         el.className = 'rule';
         el.innerHTML = `
@@ -1838,10 +2084,16 @@ function buildRule(r, i) {
     if (lbl) rule.label = lbl;
     if (r.followersOnly) rule.followersOnly = true;
     if (r.moderatorsOnly) rule.moderatorsOnly = true;
+    // Configuration de commandes d'appartenance. Absent = commune à toutes (OBS, RCON…).
+    // On ne l'émet que si la configuration existe encore : une référence pendouillante
+    // ferait rejeter TOUT le manifeste par la garde serveur.
+    if (r.profile && labProfiles.some((p) => p.id === r.profile)) rule.profile = r.profile;
     return rule;
 }
 function buildManifest() {
-    return { schema: 2, rules: labRules.map((r, i) => buildRule(r, i)) };
+    const m = { schema: 2, rules: labRules.map((r, i) => buildRule(r, i)) };
+    if (labProfiles.length) m.profiles = labProfiles.map((p) => (p.default ? { id: p.id, label: p.label, default: true } : { id: p.id, label: p.label }));
+    return m;
 }
 // validateManifestClient / manifestToRules / canonicalize vivent dans le module PARTAGÉ
 // et TESTÉ src/renderer/manifest-lib.js (chargé avant renderer.js). On les alias ici pour
@@ -1854,6 +2106,7 @@ async function isMyOrphanSlug(slug) {
     catch { return false; } // pas à moi / introuvable
 }
 const manifestToRules = HoulaManifest.manifestToRules; // module partagé testé (voir ci-dessus)
+const manifestToProfiles = HoulaManifest.manifestToProfiles;
 function bumpVersion(v, type) {
     if (!v) return '1.0.0';
     const [maj, min, pat] = v.split('.').map(Number);
@@ -2332,7 +2585,12 @@ $('lab-mode').onchange = () => {
         $('lab-json-mode').classList.remove('hidden');
         $('lab-mode-label').textContent = 'Mode simplifié';
     } else {
-        try { labRules = manifestToRules(JSON.parse($('lab-manifest').value)); } catch { /* garde l'existant */ }
+        try {
+            const parsed = JSON.parse($('lab-manifest').value);
+            labRules = manifestToRules(parsed);
+            labProfiles = manifestToProfiles(parsed);
+            labActiveProfile = '';
+        } catch { /* garde l'existant */ }
         renderRules();
         $('lab-builder').classList.remove('hidden');
         $('lab-json-mode').classList.add('hidden');
@@ -2494,6 +2752,8 @@ function setupLabMarkdownEditor() {
 }
 function enterCreateMode() {
     labCurrentSlug = null; labLatestVersion = null; labTags = [];
+    labProfiles = [];
+    labActiveProfile = '';
     labRules = [newRule()];
     $('lab-slug').value = ''; $('lab-title').value = ''; $('lab-game').value = '';
     $('lab-desc').value = ''; $('lab-fee').value = 0;
@@ -2523,12 +2783,14 @@ async function enterEditMode(slug) {
     // Historique des versions (numéro + statut de modération + date + changelog).
     $('lab-versions').innerHTML = versions.length
         ? '<span class="lab-sub">Versions</span>' + versions.map((v) =>
-            `<div class="lab-ver"><b>v${esc(v.version)}</b> <span class="badge badge--off">${esc(v.moderationStatus || v.visibility || '')}</span> <span class="muted small">${esc(fmtDate(v.createdAt))}</span>${v.changelog ? `<div class="changelog">${esc(v.changelog)}</div>` : ''}</div>`
+            `<div class="lab-ver"><b>v${esc(v.version)}</b> <span class="badge badge--off" title="${esc(moderationHint(v.moderationStatus))}">${esc(moderationLabel(v.moderationStatus || v.visibility || ''))}</span> <span class="muted small">${esc(fmtDate(v.createdAt))}</span>${v.changelog ? `<div class="changelog">${esc(v.changelog)}</div>` : ''}</div>`
         ).join('')
         : '<span class="lab-sub">Versions</span><p class="muted small">Aucune version encore.</p>';
     $('lab-msg').textContent = ''; $('lab-msg2').textContent = '';
     const lastVis = versions.length ? versions[0].visibility : b.visibility;
     $('lab-vis').checked = lastVis === 'public'; $('lab-vis-label').textContent = lastVis === 'public' ? 'Public' : 'Privé';
+    labProfiles = versions.length ? manifestToProfiles(versions[0].manifestJson) : [];
+    labActiveProfile = '';
     labRules = versions.length ? manifestToRules(versions[0].manifestJson) : [newRule()];
     // Restaure le connecteur choisi par rôle (liaisons locales du pack).
     try {
@@ -2552,7 +2814,7 @@ async function loadLab() {
         $('lab-mode-title').textContent = 'Chargement…';
         $('lab-slug').value = ''; $('lab-title').value = ''; $('lab-desc').value = '';
         $('lab-instructions').value = ''; showLabInstrTab('edit'); syncLabCounters();
-        $('lab-versions').innerHTML = ''; labRules = [];
+        $('lab-versions').innerHTML = ''; labRules = []; labProfiles = []; labActiveProfile = '';
         if (!labJsonMode) renderRules();
     }
     await Promise.all([loadGiftCatalog(), loadDictionaries(), loadConnectors()]);

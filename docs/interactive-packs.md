@@ -307,6 +307,60 @@ cadeau soit visible — hash recalculé, signature nulle en dev (clé de signatu
 curseur non edge-to-edge (→ curseur custom), pas de refresh au switch de compte, RCON double-send, RCON fuite
 concurrente, 2 races du scroll Store, auto-remplissage manquant de Mes bundles.
 
+## 17. Configurations de commandes : clavier / manette dans le MÊME pack (2026-09-02)
+
+**Le trou.** `BundleRule.effect` était un objet UNIQUE, et le calque local du joueur
+(`packOverlays`) ne porte que `disabled` / `cooldownMs` : **aucun remapping n'existe côté
+joueur**. Conséquence directe : un pack écrit à la manette était purement inerte chez un
+joueur au clavier, et l'inverse. Le pack ne servait donc que la moitié des joueurs.
+
+**Le modèle retenu : la CONFIGURATION porte les interactions** (et non l'interaction qui
+porterait plusieurs effets) — parce que le jeu d'actions n'est pas forcément le même d'un
+matériel à l'autre.
+
+```jsonc
+{
+  "schema": 2, "slug": "meccha",
+  "profiles": [ { "id": "clavier", "label": "Keyboard", "default": true },
+                { "id": "manette", "label": "Gamepad" } ],
+  "rules": [
+    { "id": "r1", "on": {...}, "effect": { "type": "keyboard", "keys": "space" }, "profile": "clavier" },
+    { "id": "r2", "on": {...}, "effect": { "type": "gamepad",  "button": "A" },   "profile": "manette" },
+    { "id": "r3", "on": {...}, "effect": { "type": "obs", "request": "..." } }   // SANS profile = commune
+  ]
+}
+```
+
+- **Règle sans `profile` = commune à toutes les configurations** (OBS, RCON, HTTP… ne dépendent
+  pas du périphérique du joueur).
+- **Absence de `profiles` = comportement historique** : pack à configuration unique, tout
+  s'applique. Les packs déjà signés ne bougent pas (test de non-régression dédié).
+
+**Gardes serveur** (`bundle-manifest.validator.ts`, fail-closed) : ≤ 6 configurations, ids
+`^[a-z0-9][a-z0-9_-]{0,23}$` uniques, une seule `default`, clés inconnues rejetées, `profile`
+pendouillant rejeté, et **une configuration sans aucune interaction est REFUSÉE** (le joueur
+la choisirait et rien ne se passerait).
+
+**Ce que ça règle côté joueur.** Le jeu piloté n'est demandé QUE si la configuration retenue
+utilise vraiment une manette (`store:install` renvoie `gamepadProfiles`) : un joueur au clavier
+ne va plus chercher un `.exe` sans raison. `engine:start` applique le calque AVANT de décider,
+donc il raisonne sur ce qui va réellement tourner.
+
+**Limite assumée, à dire au créateur.** Le Lab ne propose que **Clavier** et **Manette** :
+c'est tout ce que l'app sait émettre (Interception + ViGEm/XInput). Un volant ou des pédales,
+c'est du DirectInput — il faudrait embarquer un pilote type vJoy. Le schéma est ouvert à N
+configurations, l'implémentation ne l'est pas encore.
+
+**Points vérifiés au passage** : le plan visuel dédoublonne déjà les slots
+(`bundle-visual-sync.service.ts`, « un slot au plus une fois ») et la passerelle dédoublonne
+`reactsTo` — un même cadeau présent dans deux configurations n'apparaît donc pas en double
+côté viewer. Le commentaire périmé de `connection.service.ts` sur `reactsTo` a été corrigé.
+
+**Tests** : 8 cas serveur (`bundle-manifest.validator.spec.ts`, dont le contre-témoin « pack
+sans profiles inchangé »), 3 TU (`test/manifest-lib.test.js`), 6 e2e
+(`e2e/renderer/control-profiles.spec.js`, dont **le joueur clavier à qui on ne demande jamais
+le jeu**, doublé du contre-témoin « le pack est bien installé »).
+
 ## 12. État du dépôt (2026-08-24)
 Commits **locaux non poussés** (dev d'abord, prod après validation) :
 - `houla-connect-app` : env-scoping, bouton Capture, quantité/journal, dédup par règle, éditeur+prix,

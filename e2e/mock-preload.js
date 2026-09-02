@@ -33,7 +33,9 @@
             install: rec('install', (slug) => {
                 if (cfg.installError) return rej(cfg.installError);
                 if (!installedState.find((x) => x.slug === slug)) installedState.push({ slug, version: verOf(slug) });
-                return R({ ok: true, requiredConnectors: cfg.requiredConnectors || [], usesGamepad: !!cfg.usesGamepad });
+                return R({ ok: true, requiredConnectors: cfg.requiredConnectors || [],
+                    usesGamepad: !!cfg.usesGamepad,
+                    profiles: cfg.profiles || [], gamepadProfiles: cfg.gamepadProfiles || [] });
             }),
             installed: () => R(installedState),
             uninstall: rec('uninstall', (slug) => {
@@ -45,6 +47,7 @@
         customize: {
             get: () => R(cfg.customize || { slug: 's', version: '1.0.0', rules: [], instructions: null }),
             save: rec('customizeSave', () => R({ ok: true })),
+            setProfile: rec('setProfile', (slug, profile) => R({ ok: true, profile })),
         },
         lab: {
             create: rec('create', () => (cfg.createError ? rej(cfg.createError) : R({ ok: true }))),

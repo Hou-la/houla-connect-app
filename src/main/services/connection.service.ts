@@ -7,8 +7,12 @@ export interface ConnState {
     error?: string;
 }
 
-// Ouvre la connexion temps réel (clé hle_) et route chaque événement vers le
-// TriggerRouter. reactsTo = les slugs de cadeaux du manifeste (badge côté viewer).
+// Ouvre la connexion temps réel (clé hle_) et route chaque événement vers le TriggerRouter.
+// PÉRIMÉ (corrigé le 2026-09-02) : ce service déclarait autrefois un `reactsTo` (slugs de
+// cadeaux) dans le handshake pour badger les cadeaux interactifs côté viewer. Il ne le fait
+// plus — le badge vient désormais du PLAN VISUEL, publié par l'API quand le pack devient
+// actif (`api.setActivePackBundle(visualBundleId)` dans engine:start/stop/panic).
+// Re-vérification : `grep -rn "reactsTo" src/main/` ne doit rien renvoyer d'autre que ceci.
 export class ConnectionService {
     private conn: HoulaLiveConnection | null = null;
     private workspaceId: string | null = null;

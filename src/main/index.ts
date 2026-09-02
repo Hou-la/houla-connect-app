@@ -27,6 +27,7 @@ let activeManifest: BundleManifest | null = null;
 let engineRunning = false;
 let gameFocused = true; // focus-guard : le jeu cible est-il au 1er plan (permissif si aucun jeu lié)
 let focusPollTimer: NodeJS.Timeout | null = null;
+let gamepadSessionOn = false; // manette virtuelle deja presente (evite de re-attendre a chaque test)
 
 function sidecarPath(): string {
     const bin = process.platform === 'win32' ? 'houla-sidecar.exe' : 'houla-sidecar';
@@ -192,7 +193,18 @@ function stopFocusPoll(): void {
 // actif ensuite (le jeu lit la virtuelle = état voulu), nettoyé à l'arrêt/fermeture.
 async function ensureGamepadRemap(effect: unknown): Promise<void> {
     if ((effect as { type?: string })?.type !== 'gamepad') return;
-    try { await sidecar().call('vigem-passthrough', { enable: true }); } catch { /* le test remontera l'échec */ }
+    try {
+        const already = gamepadSessionOn;
+        await sidecar().call('vigem-passthrough', { enable: true });
+        gamepadSessionOn = true;
+        // ⚠️ Beaucoup de jeux CONSOMMENT la première entrée d'une manette qui vient
+        // d'apparaître pour rebasculer leur affichage clavier -> manette, SANS exécuter
+        // l'action. Le premier test semblait alors « ne rien faire », et seul un second
+        // marchait. On laisse donc la manette virtuelle se signaler au repos un court
+        // instant avant d'envoyer l'effet : le jeu a le temps de basculer, et l'action
+        // part vraiment. Inutile si la session manette tournait déjà.
+        if (!already) await new Promise((r) => setTimeout(r, 500));
+    } catch { /* le test remontera l'échec */ }
 }
 /** Après un test manette HORS pack : débrancher la manette virtuelle.
  *  Sinon elle reste et OCCUPE un emplacement XInput — si c'est le 0, le jeu lit une manette
@@ -201,6 +213,7 @@ async function releaseGamepadAfterTest(effect: unknown): Promise<void> {
     if ((effect as { type?: string })?.type !== 'gamepad') return;
     if (engineRunning) return; // un pack tourne : la virtuelle doit rester en place
     try { await sidecar().call('release-pad', {}); } catch { /* noop */ }
+    gamepadSessionOn = false;
 }
 
 // Traduit un verdict de test en message ACTIONNABLE + un CODE que le renderer utilise pour
@@ -224,15 +237,31 @@ function send(channel: string, payload: unknown): void {
 // l'app « vide » en silence (aucun workspace, aucun pack), sans jamais l'expliquer.
 api.setStatusListener((online) => send('api:status', { online }));
 
+/**
+ * Configuration de commandes ACTIVE d'un pack : celle que le joueur a choisie, sinon
+ * celle marquée par défaut, sinon la première. Renvoie `null` si le pack n'en déclare
+ * aucune (packs à configuration unique : tout s'applique, comportement historique).
+ */
+function resolveActiveProfile(manifest: BundleManifest, chosen?: string | null): string | null {
+    const profiles = manifest?.profiles || [];
+    if (!profiles.length) return null;
+    if (chosen && profiles.some((p) => p.id === chosen)) return chosen;
+    return (profiles.find((p) => p.default) || profiles[0]).id;
+}
+
 /** Applique le calque de perso locale à un manifeste (copie, ne mute rien) :
- *  retire les interactions désactivées, override les cooldowns. Le manifeste SIGNÉ
- *  reste intact ; c'est un réglage runtime propre au streamer, qui survit aux MAJ. */
+ *  ne garde que la configuration de commandes choisie par le joueur, retire les
+ *  interactions désactivées, override les cooldowns. Le manifeste SIGNÉ reste intact ;
+ *  c'est un réglage runtime propre au streamer, qui survit aux MAJ. */
 function applyPackOverlay(
     manifest: BundleManifest,
-    overlay: { disabled: string[]; cooldownMs: Record<string, number> },
+    overlay: { disabled: string[]; cooldownMs: Record<string, number>; profile?: string },
 ): BundleManifest {
     const disabled = new Set(overlay.disabled);
+    const active = resolveActiveProfile(manifest, overlay.profile);
     const rules = (manifest.rules || [])
+        // une règle SANS `profile` vaut pour toutes les configurations (OBS, RCON, HTTP…)
+        .filter((r) => !r.profile || r.profile === active)
         .filter((r) => !disabled.has(r.id))
         .map((r) => {
             const cd = overlay.cooldownMs[r.id];
@@ -459,11 +488,33 @@ function registerIpc(): void {
             const role = r.effect.connector || t;
             req.set(`${role}:${t}`, { role, type: t });
         }
+        // Configurations de commandes proposées par le pack (clavier / manette / …). Le joueur
+        // en choisit une JUSTE APRÈS l'installation : c'est elle qui décide des interactions
+        // actives, et donc de ce qu'on doit encore lui demander (le jeu, seulement en manette).
+        const manifest = (d.manifest || {}) as BundleManifest;
+        const profiles = manifest.profiles || [];
         // La MANETTE est un connecteur LOCAL : elle n'apparaît jamais dans requiredConnectors
         // (réservé aux protocoles réseau à configurer). On signale donc à part qu'un pack la
-        // pilote, pour pouvoir demander À L'INSTALLATION quel jeu il vise.
-        const usesGamepad = ((d.manifest?.rules || []) as any[]).some((r) => r?.effect?.type === 'gamepad');
-        return { ok: true, capabilities: d.capabilities, hosts: d.hosts, requiredConnectors: [...req.values()], usesGamepad };
+        // pilote, pour pouvoir demander À L'INSTALLATION quel jeu il vise. Avec plusieurs
+        // configurations, on répond PAR CONFIGURATION : le joueur au clavier n'a pas de jeu à
+        // désigner, même si le pack propose par ailleurs une configuration manette.
+        const usesGamepadIn = (profileId: string | null) =>
+            (manifest.rules || []).some(
+                (r: any) => r?.effect?.type === 'gamepad' && (!r.profile || r.profile === profileId),
+            );
+        const gamepadProfiles = profiles.filter((p) => usesGamepadIn(p.id)).map((p) => p.id);
+        const usesGamepad = profiles.length
+            ? gamepadProfiles.length > 0
+            : (manifest.rules || []).some((r: any) => r?.effect?.type === 'gamepad');
+        return {
+            ok: true,
+            capabilities: d.capabilities,
+            hosts: d.hosts,
+            requiredConnectors: [...req.values()],
+            usesGamepad,
+            profiles,
+            gamepadProfiles,
+        };
     });
     ipcMain.handle('store:installed', () => store.getInstalled());
 
@@ -528,17 +579,24 @@ function registerIpc(): void {
         const d = await api.fetchVerifiedManifest(slug); // manifeste signé (lecture seule)
         const overlay = store.getPackOverlay(slug);
         const disabled = new Set(overlay.disabled);
-        const rules = ((d.manifest?.rules || []) as any[]).map((r) => ({
-            id: r.id,
-            label: r.label || '',
-            trigger: r.on?.type || 'gift',
-            giftSlug: r.on?.giftSlug || r.on?.slot || '',
-            effectType: r.effect?.type || '',
-            defaultCooldownMs: r.effect?.cooldownMs ?? 0,
-            cooldownMs: overlay.cooldownMs[r.id], // override local, ou undefined
-            enabled: !disabled.has(r.id),
-        }));
-        return { slug, version: d.version, rules, instructions: d.instructions ?? null };
+        const manifest = (d.manifest || {}) as BundleManifest;
+        const profiles = manifest.profiles || [];
+        const activeProfile = resolveActiveProfile(manifest, overlay.profile);
+        const rules = ((manifest.rules || []) as any[])
+            // On ne montre que les interactions de la configuration active : afficher celles
+            // des autres périphériques laisserait croire qu'elles vont se déclencher.
+            .filter((r) => !r.profile || r.profile === activeProfile)
+            .map((r) => ({
+                id: r.id,
+                label: r.label || '',
+                trigger: r.on?.type || 'gift',
+                giftSlug: r.on?.giftSlug || r.on?.slot || '',
+                effectType: r.effect?.type || '',
+                defaultCooldownMs: r.effect?.cooldownMs ?? 0,
+                cooldownMs: overlay.cooldownMs[r.id], // override local, ou undefined
+                enabled: !disabled.has(r.id),
+            }));
+        return { slug, version: d.version, rules, profiles, activeProfile, instructions: d.instructions ?? null };
     });
     // Test OFF-LIVE d'une interaction d'un pack INSTALLÉ (pack tiers ou le sien) :
     // on rejoue l'effet du manifeste SIGNÉ via le pipeline sécurisé du moteur, sans
@@ -562,6 +620,21 @@ function registerIpc(): void {
     ipcMain.handle('customize:save', (_e, slug: string, overlay: any) => {
         store.setPackOverlay(slug, overlay || {});
         return { ok: true };
+    });
+    // Choix de la CONFIGURATION DE COMMANDES (clavier / manette / …), sans toucher au reste
+    // du calque. Le renderer ne peut envoyer qu'un id ; on le confronte au manifeste SIGNÉ et
+    // on refuse tout id inconnu, plutôt que d'enregistrer un choix qui rendrait le pack inerte.
+    ipcMain.handle('customize:setProfile', async (_e, slug: string, profile: string) => {
+        try {
+            const d = await api.fetchVerifiedManifest(slug);
+            const profiles = ((d.manifest || {}) as BundleManifest).profiles || [];
+            if (!profiles.some((p) => p.id === profile)) return { ok: false, reason: 'configuration inconnue' };
+            const overlay = store.getPackOverlay(slug);
+            store.setPackOverlay(slug, { ...overlay, profile });
+            return { ok: true, profile };
+        } catch (e: any) {
+            return { ok: false, reason: e?.message || 'configuration non enregistrée' };
+        }
     });
 
     // Ouvrir une URL EXTERNE (profil créateur) — bornée à https://…hou.la (anti-abus).
@@ -620,12 +693,16 @@ function registerIpc(): void {
     // Runtime
     ipcMain.handle('engine:start', async (_e, slug: string) => {
         const d = await api.fetchVerifiedManifest(slug); // re-vérifie signature avant exécution
+        // Le CALQUE local est appliqué D'ABORD : il fixe la configuration de commandes choisie
+        // par le joueur (clavier / manette / …). Tout ce qui suit doit raisonner sur ce qui va
+        // RÉELLEMENT tourner, pas sur l'ensemble des règles du pack — sinon un joueur au clavier
+        // se verrait réclamer le jeu à cause des interactions manette qu'il n'utilisera jamais.
+        const overlaid = applyPackOverlay(d.manifest as BundleManifest, store.getPackOverlay(slug));
         // Pack MANETTE : le jeu piloté est une propriété du PACK (demandé à l'installation).
         // Si l'info manque (pack installé avant cette version, ou jeu déplacé/désinstallé), on
         // le redemande AVANT de rien démarrer — plutôt que de lancer un pack qui n'agirait pas
         // en jeu, ce qui donnerait « ça ne marche pas » sans explication.
-        const rulesToCheck = ((d.manifest as BundleManifest)?.rules || []) as { effect?: { type?: string } }[];
-        if (rulesToCheck.some((r) => r.effect?.type === 'gamepad')) {
+        if (overlaid.rules.some((r) => (r.effect as { type?: string })?.type === 'gamepad')) {
             const g = store.getGameForPack(slug);
             if (!g?.exe || !fs.existsSync(g.exe)) return { ok: false, needGame: true, slug };
         }
@@ -641,7 +718,7 @@ function registerIpc(): void {
         }
         // Applique le CALQUE local (perso streamer) : désactive des interactions,
         // override des cooldowns. N'altère jamais le manifeste signé sur le disque.
-        activeManifest = applyPackOverlay(d.manifest as BundleManifest, store.getPackOverlay(slug));
+        activeManifest = overlaid;
         router.setManifest(activeManifest);
         // Pack qui utilise la MANETTE -> mode « une seule manette » : le sidecar recopie EN
         // CONTINU la manette PHYSIQUE du joueur dans la virtuelle et y superpose les cadeaux.
@@ -700,6 +777,7 @@ function registerIpc(): void {
         // Coupe le mode « une seule manette » (sinon le thread de mirroring tourne encore et
         // garde la manette virtuelle active après l'arrêt du pack).
         if (sidecarInstance) { try { await sidecar().call('vigem-passthrough', { enable: false }); } catch { /* noop */ } }
+        gamepadSessionOn = false; // la virtuelle a disparu : le prochain test devra re-patienter
         // Retire le pack visuel côté viewer : plus de pack actif -> plus rien à montrer.
         await api.setActivePackBundle(null).catch(() => {});
         return { ok: true };
@@ -709,6 +787,7 @@ function registerIpc(): void {
         await engine.panic();
         stopFocusPoll();
         if (sidecarInstance) { try { await sidecar().call('vigem-passthrough', { enable: false }); } catch { /* noop */ } }
+        gamepadSessionOn = false;
         sidecarInstance?.kill();
         engineRunning = false;
         await api.setActivePackBundle(null).catch(() => {});

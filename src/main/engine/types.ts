@@ -117,11 +117,28 @@ export interface BundleRule {
     label?: string;
     followersOnly?: boolean;
     moderatorsOnly?: boolean;
+    /**
+     * Configuration de commandes à laquelle la règle appartient (id d'un `profiles`).
+     * **Absent = vaut pour TOUTES les configurations** (effets indépendants du
+     * périphérique : OBS, RCON, HTTP…).
+     */
+    profile?: string;
+}
+/**
+ * Une CONFIGURATION DE COMMANDES : le même pack décrit ses actions une fois au clavier,
+ * une fois à la manette. Le joueur choisit la sienne ; sans ça, la moitié des joueurs
+ * se retrouve avec un pack inerte, puisque rien n'est remappable de leur côté.
+ */
+export interface BundleControlProfile {
+    id: string;
+    label: string;
+    default?: boolean;
 }
 export interface BundleManifest {
     schema: 2;
     slug: string;
     game?: string;
+    profiles?: BundleControlProfile[];
     rules: BundleRule[];
 }
 

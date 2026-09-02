@@ -647,3 +647,25 @@ button.is-busy::before {
     max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .cx-test-res.ok { color: var(--ok); }
 .cx-test-res.no { color: var(--danger); }
+
+/* ── Configurations de commandes d'un pack (clavier / manette / …) ──
+   L'onglet actif se lit SANS la couleur : chevron « ▾ » dans le libellé, fond plein et
+   soulignement épais. Le propriétaire est daltonien : jamais de signal couleur seul. */
+.lab-profiles { margin: 0 0 12px; }
+.lab-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.lab-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+    border: 1px solid var(--border); border-bottom: 3px solid transparent;
+    border-radius: 8px 8px 0 0; background: var(--bg-3); color: var(--muted);
+    font-size: 13px; cursor: pointer; }
+.lab-tab:hover { color: var(--text); }
+.lab-tab--on { background: var(--bg-2); color: var(--text); font-weight: 600;
+    border-bottom-color: var(--accent); }
+.lab-tab__n { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--bg);
+    border: 1px solid var(--border); font-size: 11px; font-variant-numeric: tabular-nums;
+    text-align: center; }
+.lab-tab__add { padding: 6px 12px; font-size: 13px; width: auto; margin: 0; }
+.lab-profiles__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    padding: 8px 2px 0; }
+.lab-profiles__bar .btn { width: auto; margin: 0; padding: 5px 10px; font-size: 12px; }
+/* Sélecteur de configuration dans les réglages d'un pack installé. */
+.cx-profile { width: auto; margin: 0; padding: 6px 10px; font-size: 13px; }

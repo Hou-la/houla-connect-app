@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('houlaConnect', {
     customize: {
         get: (slug: string) => invoke('customize:get', slug),
         save: (slug: string, overlay: unknown) => invoke('customize:save', slug, overlay),
+        /** Configuration de commandes du pack (clavier / manette / …) choisie par le joueur. */
+        setProfile: (slug: string, profile: string) => invoke('customize:setProfile', slug, profile),
     },
     lab: {
         create: (dto: unknown) => invoke('lab:create', dto),

@@ -17,6 +17,14 @@
         const rules = (m && m.rules) || [];
         if (!rules.length) return 'Ajoute au moins une interaction avant d\'enregistrer.';
         const empty = (v) => !String(v == null ? '' : v).trim();
+        // Configurations de commandes : le serveur REJETTE tout le manifeste si l'une d'elles
+        // n'a aucune interaction (le joueur la choisirait, et rien ne se passerait). On le dit
+        // ici, en clair, plutot que de laisser le createur face a un refus serveur opaque.
+        const profiles = (m && m.profiles) || [];
+        for (let p = 0; p < profiles.length; p++) {
+            const used = rules.some(function (r) { return r && r.profile === profiles[p].id; });
+            if (!used) return 'La configuration « ' + profiles[p].label + ' » n’a aucune interaction : ajoutes-en une, ou supprime la configuration.';
+        }
         for (let i = 0; i < rules.length; i++) {
             const e = (rules[i] && rules[i].effect) || {};
             const n = 'Interaction ' + (i + 1);
@@ -49,7 +57,19 @@
                 label: rule.label || '',
                 followersOnly: !!rule.followersOnly,
                 moderatorsOnly: !!rule.moderatorsOnly,
+                // Configuration de commandes d'appartenance ('' = commune a toutes).
+                profile: rule.profile || '',
             };
+        });
+    }
+
+    // Manifeste -> configurations de commandes du Lab (tableau vide si le pack n'en a pas :
+    // c'est le cas historique, un pack a configuration unique).
+    function manifestToProfiles(m) {
+        return ((m && m.profiles) || []).map(function (p) {
+            const out = { id: p.id, label: p.label };
+            if (p.default) out.default = true;
+            return out;
         });
     }
 
@@ -99,5 +119,5 @@
         return k.toLowerCase();
     }
 
-    return { validateManifestClient: validateManifestClient, manifestToRules: manifestToRules, canonicalize: canonicalize, kbToken: kbToken };
+    return { validateManifestClient: validateManifestClient, manifestToRules: manifestToRules, manifestToProfiles: manifestToProfiles, canonicalize: canonicalize, kbToken: kbToken };
 });

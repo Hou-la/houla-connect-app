@@ -162,3 +162,36 @@ test('kbToken : repli KB_SYMBOL quand e.code absent (ne casse pas la grammaire)'
     assert.strictEqual(M.kbToken({ key: '+' }), 'plus');
     assert.strictEqual(M.kbToken({ key: ',' }), 'comma');
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Configurations de commandes (clavier / manette / …). Un pack décrit ses actions une
+// fois par matériel : le joueur ne peut RIEN remapper de son côté, donc un pack manette
+// serait purement inerte chez un joueur au clavier.
+// ─────────────────────────────────────────────────────────────────────────
+test('validateManifestClient : configuration sans aucune interaction rejetée (le serveur la refuserait)', () => {
+    const m = {
+        schema: 2,
+        profiles: [{ id: 'clavier', label: 'Clavier' }, { id: 'manette', label: 'Manette' }],
+        rules: [{ on: { type: 'gift', giftSlug: 'x' }, effect: { type: 'keyboard', keys: 'space' }, profile: 'clavier' }],
+    };
+    assert.match(M.validateManifestClient(m), /Manette/);
+    // CONTRE-TÉMOIN : dès qu'une interaction lui est rattachée, le manifeste passe.
+    m.rules.push({ on: { type: 'gift', giftSlug: 'x' }, effect: { type: 'gamepad', button: 'A' }, profile: 'manette' });
+    assert.strictEqual(M.validateManifestClient(m), null);
+});
+
+test('manifestToProfiles : aller-retour, et absence de configurations pour les packs historiques', () => {
+    assert.deepStrictEqual(M.manifestToProfiles({ profiles: [{ id: 'clavier', label: 'Clavier', default: true }] }),
+        [{ id: 'clavier', label: 'Clavier', default: true }]);
+    assert.deepStrictEqual(M.manifestToProfiles({ rules: [] }), []);
+    assert.deepStrictEqual(M.manifestToProfiles(null), []);
+});
+
+test('manifestToRules : le rattachement à une configuration survit à l’édition', () => {
+    const r = M.manifestToRules({ rules: [
+        { on: { type: 'gift', giftSlug: 'x' }, effect: { type: 'gamepad', button: 'A' }, profile: 'manette' },
+        { on: { type: 'follow' }, effect: { type: 'obs', request: 'X' } },
+    ] });
+    assert.strictEqual(r[0].profile, 'manette');
+    assert.strictEqual(r[1].profile, ''); // commune à toutes les configurations
+});

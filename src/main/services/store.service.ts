@@ -12,6 +12,16 @@ export interface InstalledBundle {
     contentHash: string;
 }
 
+/** Réglages LOCAUX d'un pack installé. Ne touchent jamais le manifeste signé. */
+export interface PackOverlay {
+    /** Ids d'interactions désactivées par le joueur. */
+    disabled?: string[];
+    /** Override de cooldown, par id d'interaction. */
+    cooldownMs?: Record<string, number>;
+    /** Configuration de commandes choisie (id d'un `manifest.profiles`) : clavier, manette… */
+    profile?: string;
+}
+
 interface Schema {
     accessToken?: string; // chiffré
     refreshToken?: string; // chiffré
@@ -38,7 +48,7 @@ interface Schema {
     bundleBindings?: Record<string, Record<string, string>>; // slug -> role -> connectorId
     // Calque de PERSONNALISATION locale par pack (streamer) : n'édite JAMAIS le
     // manifeste signé, juste des réglages appliqués au runtime. Survit aux MAJ.
-    packOverlays?: Record<string, { disabled?: string[]; cooldownMs?: Record<string, number> }>;
+    packOverlays?: Record<string, PackOverlay>;
     environment?: string; // 'prod' | 'staging' | 'dev' (sélecteur admin)
     // Cache OFFLINE des identités : dernière liste de workspaces connue (avatars en
     // data: URL) pour que le sélecteur d'identité reste utilisable sans connexion.
@@ -325,14 +335,26 @@ export class StoreService {
     }
 
     // ── Personnalisation locale d'un pack (calque, jamais dans le manifeste signé) ──
-    getPackOverlay(slug: string): { disabled: string[]; cooldownMs: Record<string, number> } {
-        const all = this.store.get('packOverlays', {} as Record<string, { disabled?: string[]; cooldownMs?: Record<string, number> }>);
+    getPackOverlay(slug: string): { disabled: string[]; cooldownMs: Record<string, number>; profile?: string } {
+        const all = this.store.get('packOverlays', {} as Record<string, PackOverlay>);
         const o = all[slug] || {};
-        return { disabled: o.disabled || [], cooldownMs: o.cooldownMs || {} };
+        const out: { disabled: string[]; cooldownMs: Record<string, number>; profile?: string } = {
+            disabled: o.disabled || [],
+            cooldownMs: o.cooldownMs || {},
+        };
+        if (o.profile) out.profile = o.profile;
+        return out;
     }
-    setPackOverlay(slug: string, overlay: { disabled?: string[]; cooldownMs?: Record<string, number> }): void {
-        const all = this.store.get('packOverlays', {} as Record<string, { disabled?: string[]; cooldownMs?: Record<string, number> }>);
-        all[slug] = { disabled: overlay.disabled || [], cooldownMs: overlay.cooldownMs || {} };
+    setPackOverlay(slug: string, overlay: PackOverlay): void {
+        const all = this.store.get('packOverlays', {} as Record<string, PackOverlay>);
+        const prev = all[slug] || {};
+        // `profile` (configuration de commandes choisie) n'est PAS toujours transmis : la
+        // modale de personnalisation peut n'envoyer que disabled/cooldownMs. On le conserve
+        // au lieu de l'effacer, sinon le joueur repasserait en clavier sans rien demander.
+        const next: PackOverlay = { disabled: overlay.disabled || [], cooldownMs: overlay.cooldownMs || {} };
+        const profile = overlay.profile !== undefined ? overlay.profile : prev.profile;
+        if (profile) next.profile = profile;
+        all[slug] = next;
         this.store.set('packOverlays', all);
     }
 
