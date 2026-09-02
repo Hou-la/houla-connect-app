@@ -22,7 +22,7 @@ interface Schema {
     workspaceName?: string;
     language?: string;
     autostart?: boolean;
-    focusTarget?: { exe?: string; title?: string };
+    focusTarget?: { exe?: string; title?: string; dir?: string }; // dir = dossier du jeu où est posé le proxy XInput
     capabilities?: Record<string, boolean>; // par exécuteur
     hostAllowlist?: string[];
     secrets?: Record<string, string>; // valeurs chiffrées (rconHost, rconPassword, obsUrl, ...)
@@ -153,7 +153,7 @@ export class StoreService {
     getFocusTarget() {
         return this.store.get('focusTarget', {} as any);
     }
-    setFocusTarget(t: { exe?: string; title?: string }) {
+    setFocusTarget(t: { exe?: string; title?: string; dir?: string }) {
         this.store.set('focusTarget', t);
     }
 

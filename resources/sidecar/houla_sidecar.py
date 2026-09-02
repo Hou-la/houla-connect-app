@@ -489,10 +489,42 @@ def helper_shutdown(args):
     return {"shutdown": True}
 
 
+def helper_foreground(args):
+    """Chemin de l'exe de la fenêtre au PREMIER PLAN (pour le focus-guard de l'app : ne
+    déclencher les effets manette/clavier que si le JEU cible est actif). Windows only."""
+    try:
+        u = ctypes.windll.user32
+        k = ctypes.windll.kernel32
+        u.GetForegroundWindow.restype = ctypes.c_void_p
+        k.OpenProcess.restype = ctypes.c_void_p
+        k.OpenProcess.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.c_uint]
+        hwnd = u.GetForegroundWindow()
+        if not hwnd:
+            return {"exe": None}
+        pid = ctypes.c_uint(0)
+        u.GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(pid))
+        if not pid.value:
+            return {"exe": None}
+        h = k.OpenProcess(0x1000, False, pid.value)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return {"exe": None}
+        try:
+            buf = ctypes.create_unicode_buffer(1024)
+            size = ctypes.c_uint(1024)
+            if k.QueryFullProcessImageNameW(ctypes.c_void_p(h), 0, buf, ctypes.byref(size)):
+                return {"exe": buf.value}
+        finally:
+            k.CloseHandle(ctypes.c_void_p(h))
+    except Exception:  # noqa: BLE001
+        pass
+    return {"exe": None}
+
+
 HELPERS = {
     "interception-keys": helper_interception_keys,
     "vigem-gamepad": helper_vigem_gamepad,
     "vigem-passthrough": helper_vigem_passthrough,
+    "foreground": helper_foreground,
     "shutdown": helper_shutdown,
 }
 

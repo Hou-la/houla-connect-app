@@ -2749,10 +2749,14 @@ $('connector-save').onclick = async () => {
 
 // ── Vue Connecteurs ──
 function connectorTypeLabel(type) { return (CONNECTOR_TYPES[type] || {}).label || 'Local'; }
+function gameBase(p) { return String(p || '').split(/[\\/]/).pop() || 'jeu'; }
 // État du pilote manette (ViGEmBus) : null = pas encore vérifié, true/false = connu.
 // Renseigné à l'ouverture de la vue + mis à true après une install réussie, pour que le
 // bouton « Installer le pilote » laisse place à « ✓ Pilote installé ».
 let gamepadDriverInstalled = null;
+// Jeu lié pour le proxy XInput (la DLL posée dans son dossier lui fait lire la virtuelle
+// comme Joueur 1). null = pas encore vérifié ; sinon { exe, dir, placed }.
+let gamepadGame = null;
 function renderConnectorsList() {
     const box = $('cx-list');
     if (!myConnectors.length) { box.innerHTML = '<p class="muted">Aucun connecteur.</p>'; return; }
@@ -2765,10 +2769,17 @@ function renderConnectorsList() {
             : (gamepadDriverInstalled === true
                 ? '<span class="cx-driver-ok" title="Le pilote de la manette virtuelle (ViGEmBus) est installé sur ce PC.">✓ Pilote installé</span>'
                 : '<button class="cx-driver btn btn--ghost btn--mini" title="Installer le pilote de la manette virtuelle (ViGEmBus). Une seule fois, sous Windows. Une fenêtre UAC demandera l\'autorisation.">Installer le pilote</button>');
+        // « Lier mon jeu » : pose le proxy XInput dans le dossier du jeu -> il lit la manette
+        // virtuelle (cadeaux + gestes recopiés) comme Joueur 1. Une fois par jeu.
+        const gameBtn = c.type !== 'gamepad'
+            ? ''
+            : (gamepadGame && gamepadGame.exe
+                ? `<span class="cx-game-ok" title="Jeu lié : ${esc(gamepadGame.exe)}. Il lira la manette virtuelle comme Joueur 1.">🎮 ${esc(gameBase(gamepadGame.exe))}</span><button class="cx-game-un btn btn--ghost btn--mini" title="Délier ce jeu (retire la DLL proxy de son dossier).">Délier</button>`
+                : '<button class="cx-game btn btn--ghost btn--mini" title="Choisis ton jeu : on pose une petite DLL dans son dossier pour qu\'il lise la manette virtuelle (cadeaux + tes gestes) comme Joueur 1.">Lier mon jeu</button>');
         return `<div class="cx-row" data-id="${esc(c.id)}">`
             + `<label class="switch" title="Activer / désactiver"><input type="checkbox" class="cx-enable"${c.enabled ? ' checked' : ''}/><span class="switch__track"><span class="switch__thumb"></span></span></label>`
             + `<span class="cx-type">${esc(connectorTypeLabel(c.type))}</span><b>${esc(c.name)}</b>`
-            + driverBtn
+            + driverBtn + gameBtn
             + (isLocal ? '' : `<button class="cx-edit">Éditer</button><button class="cx-del" title="Supprimer">&#10005;</button>`)
             + `</div>`;
     }).join('');
@@ -2797,11 +2808,39 @@ function renderConnectorsList() {
                 showToast('driver', { kind: 'error', title: 'Installation impossible', msg: friendlyError(e, 'Réessaie dans un instant.') });
             }
         };
+        const glink = row.querySelector('.cx-game');
+        if (glink) glink.onclick = async () => {
+            setBtnBusy(glink, true, 'Ouverture…');
+            try {
+                const res = await api.game.link();
+                if (res && res.ok) {
+                    gamepadGame = { exe: res.exe, dir: res.dir, placed: true };
+                    showToast('game', { kind: 'ok', title: 'Jeu lié', msg: 'Lance (ou relance) ton jeu : il lira la manette virtuelle comme Joueur 1. Les cadeaux et tes gestes y arrivent.' });
+                    renderConnectorsList();
+                } else if (res && res.reason) {
+                    setBtnBusy(glink, false);
+                    showToast('game', { kind: 'error', title: 'Impossible de lier le jeu', msg: res.reason });
+                } else {
+                    setBtnBusy(glink, false); // annulé
+                }
+            } catch (e) {
+                setBtnBusy(glink, false);
+                showToast('game', { kind: 'error', title: 'Erreur', msg: friendlyError(e, 'Réessaie.') });
+            }
+        };
+        const gunlink = row.querySelector('.cx-game-un');
+        if (gunlink) gunlink.onclick = async () => {
+            await api.game.unlink().catch(() => {});
+            gamepadGame = null;
+            renderConnectorsList();
+        };
     });
 }
 async function loadConnectorsView() {
     $('cx-list').innerHTML = skeletonRowsHtml(3);
     await loadConnectors();
+    // État du jeu lié (proxy XInput) pour la ligne manette.
+    try { const g = await api.game.status(); gamepadGame = (g && g.exe) ? g : null; } catch { gamepadGame = null; }
     // État du pilote manette AVANT le rendu : décide « Installer le pilote » vs « ✓ installé ».
     try { const s = await api.driver.isGamepadInstalled(); gamepadDriverInstalled = s ? !!s.installed : null; }
     catch { gamepadDriverInstalled = null; }

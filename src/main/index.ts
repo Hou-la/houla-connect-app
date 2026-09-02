@@ -25,6 +25,8 @@ let isQuitting = false; // vrai seulement quand on quitte VRAIMENT (menu tray)
 let sidecarInstance: PythonSidecar | null = null;
 let activeManifest: BundleManifest | null = null;
 let engineRunning = false;
+let gameFocused = true; // focus-guard : le jeu cible est-il au 1er plan (permissif si aucun jeu lié)
+let focusPollTimer: NodeJS.Timeout | null = null;
 
 function sidecarPath(): string {
     const bin = process.platform === 'win32' ? 'houla-sidecar.exe' : 'houla-sidecar';
@@ -52,6 +54,37 @@ function driverMsiPath(): string {
         ? path.join(process.resourcesPath, 'sidecar')
         : path.join(__dirname, '..', '..', 'resources', 'sidecar');
     return path.join(dir, 'ViGEmBusSetup_x64.msi');
+}
+
+// Dossier des DLL proxy XInput empaquetées (xinput1_4/1_3/9_1_0.dll). Posées dans le
+// dossier d'un jeu, elles lui font lire la manette VIRTUELLE comme Joueur 1 (voir
+// resources/xinput-proxy/proxy.c). C'est ce qui rend les cadeaux effectifs en jeu.
+const PROXY_DLL_NAMES = ['xinput1_4.dll', 'xinput1_3.dll', 'xinput9_1_0.dll'];
+function proxyDllDir(): string {
+    return app.isPackaged
+        ? path.join(process.resourcesPath, 'xinput-proxy')
+        : path.join(__dirname, '..', '..', 'resources', 'xinput-proxy');
+}
+
+// Poll du focus-guard : rafraîchit gameFocused = (fenêtre au 1er plan == exe du jeu lié).
+// Sans jeu lié, permissif (true) et AUCUN appel sidecar (self-guard). Démarré pendant un
+// pack, arrêté à l'arrêt/panic.
+function startFocusPoll(): void {
+    stopFocusPoll();
+    focusPollTimer = setInterval(async () => {
+        const target = store.getFocusTarget();
+        if (!target?.exe) { gameFocused = true; return; } // pas de jeu lié -> ne rien bloquer
+        try {
+            const r = await sidecar().call('foreground', {}, 3000);
+            const fg = String((r && (r as { exe?: string }).exe) || '').toLowerCase();
+            const base = path.basename(target.exe).toLowerCase();
+            gameFocused = fg === target.exe.toLowerCase() || fg.endsWith('\\' + base);
+        } catch { /* garder l'état précédent */ }
+    }, 350);
+}
+function stopFocusPoll(): void {
+    if (focusPollTimer) { clearInterval(focusPollTimer); focusPollTimer = null; }
+    gameFocused = true; // au repos, ne bloquer aucun effet
 }
 
 // Traduit un verdict de test en message ACTIONNABLE + un CODE que le renderer utilise pour
@@ -142,8 +175,11 @@ const engine = new Engine({
     },
     hasEnabledConnector: (type: string) => store.hasEnabledConnector(type),
     sidecar,
-    // TODO focus-guard natif (fenêtre au premier plan). Permissif tant que non implémenté.
-    isTargetFocused: () => true,
+    // Focus-guard : ne tirer les effets manette/clavier QUE si le jeu cible est au premier
+    // plan. Sinon un cadeau qui presse « A » pendant qu'on est dans Discord/VS Code fuit
+    // (navigation manette Windows -> clavier tactile qui tape une touche). `gameFocused` est
+    // rafraîchi par un poll (voir startFocusPoll). Permissif si AUCUN jeu n'est lié.
+    isTargetFocused: () => gameFocused,
     audit: (e: AuditEntry) => send('onLog', e),
 });
 const router = new TriggerRouter(engine, () => store.resolveVars());
@@ -514,6 +550,7 @@ function registerIpc(): void {
         // workspaceId : pour le poll de fallback du compte de viewers (endpoint public).
         conn.connect(key, store.getWorkspaceId() || undefined);
         engineRunning = true;
+        startFocusPoll(); // focus-guard : n'autoriser les effets manette/clavier que si le jeu est actif
         send('onState', { connected: false, events, reactSlugs });
         return { ok: true };
     });
@@ -521,6 +558,7 @@ function registerIpc(): void {
         conn.disconnect();
         router.setManifest(null);
         engineRunning = false;
+        stopFocusPoll();
         // Coupe le mode « une seule manette » (sinon le thread de mirroring tourne encore et
         // garde la manette virtuelle active après l'arrêt du pack).
         if (sidecarInstance) { try { await sidecar().call('vigem-passthrough', { enable: false }); } catch { /* noop */ } }
@@ -531,6 +569,7 @@ function registerIpc(): void {
     ipcMain.handle('engine:panic', async () => {
         conn.disconnect();
         await engine.panic();
+        stopFocusPoll();
         if (sidecarInstance) { try { await sidecar().call('vigem-passthrough', { enable: false }); } catch { /* noop */ } }
         sidecarInstance?.kill();
         engineRunning = false;
@@ -607,6 +646,63 @@ function registerIpc(): void {
                 resolve({ installed: false });
             }
         });
+    });
+    // ── Lier le JEU (proxy XInput) ──
+    // Pour qu'un cadeau agisse en jeu, le jeu doit LIRE notre manette virtuelle comme
+    // Joueur 1. On y arrive en posant une DLL proxy `xinput1_4.dll` dans le dossier de son
+    // exe (voir resources/xinput-proxy). L'utilisateur choisit son jeu une fois ; on retient
+    // aussi l'exe pour le focus-guard.
+    const filesEqual = (a: string, b: string): boolean => {
+        try { return fs.statSync(a).size === fs.statSync(b).size && fs.readFileSync(a).equals(fs.readFileSync(b)); }
+        catch { return false; }
+    };
+    ipcMain.handle('game:link', async () => {
+        const r = await dialog.showOpenDialog({
+            title: 'Choisis l’exécutable de ton jeu (le .exe que tu lances)',
+            properties: ['openFile'],
+            filters: [{ name: 'Jeu', extensions: ['exe'] }],
+        });
+        if (r.canceled || !r.filePaths[0]) return { ok: false };
+        const exe = r.filePaths[0];
+        const dir = path.dirname(exe);
+        const src = proxyDllDir();
+        // Garde-fou : ne JAMAIS écraser une DLL xinput qui ne serait pas la nôtre (le jeu
+        // pourrait livrer la sienne). On refuse et on explique.
+        const foreign = PROXY_DLL_NAMES.find((n) => {
+            const dst = path.join(dir, n);
+            return fs.existsSync(dst) && !filesEqual(dst, path.join(src, n));
+        });
+        if (foreign) return { ok: false, reason: `Une DLL « ${foreign} » est déjà présente dans le dossier du jeu et n’est pas la nôtre. Retire-la d’abord (ou ce jeu n’en a pas besoin).` };
+        try {
+            for (const n of PROXY_DLL_NAMES) {
+                const s = path.join(src, n);
+                if (fs.existsSync(s)) fs.copyFileSync(s, path.join(dir, n));
+            }
+        } catch (e) {
+            return { ok: false, reason: `Impossible d’écrire dans le dossier du jeu : ${(e as Error)?.message || ''}` };
+        }
+        store.setFocusTarget({ exe, dir });
+        return { ok: true, exe, dir };
+    });
+    ipcMain.handle('game:status', () => {
+        const t = store.getFocusTarget();
+        const placed = !!(t?.dir && fs.existsSync(path.join(t.dir, 'xinput1_4.dll')));
+        return { exe: t?.exe || null, dir: t?.dir || null, placed };
+    });
+    ipcMain.handle('game:unlink', async () => {
+        const t = store.getFocusTarget();
+        const src = proxyDllDir();
+        if (t?.dir) {
+            // Ne supprimer QUE nos propres DLL (byte-identiques), jamais celle du jeu.
+            for (const n of PROXY_DLL_NAMES) {
+                const dst = path.join(t.dir, n);
+                if (fs.existsSync(dst) && filesEqual(dst, path.join(src, n))) {
+                    try { fs.unlinkSync(dst); } catch { /* déjà retirée */ }
+                }
+            }
+        }
+        store.setFocusTarget({});
+        return { ok: true };
     });
     ipcMain.handle('prefs:language', (_e, lang?: string) => {
         if (lang) store.setLanguage(lang);

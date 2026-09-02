@@ -120,6 +120,13 @@ jobs:
             --pattern 'ViGEmBusSetup_x64.msi' --dir resources/sidecar --clobber \
             || echo "::warning::MSI ViGEmBus introuvable dans sidecar-bin-v1 — install pilote in-app indisponible"
           echo "Sidecar manette récupéré :"; ls -la resources/sidecar/ || true
+          # DLL proxy XInput (font lire la virtuelle comme Joueur 1 quand posées dans le
+          # dossier d'un jeu — cf resources/xinput-proxy/proxy.c, « Lier mon jeu »).
+          mkdir -p resources/xinput-proxy
+          gh release download sidecar-bin-v1 --repo Hou-la/houla-connect-app \
+            --pattern 'xinput*.dll' --dir resources/xinput-proxy --clobber \
+            || echo "::warning::DLL proxy XInput introuvables dans sidecar-bin-v1 — « Lier mon jeu » indisponible"
+          echo "Proxy XInput récupéré :"; ls -la resources/xinput-proxy/ || true
       # Signature de code, UNIQUEMENT si les secrets sont configurés (sinon build non
       # signé, toujours téléchargeable ; SmartScreen/Gatekeeper alerteront) :
       #   - Windows : Azure Trusted Signing (secrets AZURE_*)

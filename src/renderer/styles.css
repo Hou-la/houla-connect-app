@@ -356,6 +356,9 @@ input[readonly] { opacity: .6; cursor: not-allowed; }
    ✓ (forme) + le texte + l'opacité réduite portent le sens, jamais la couleur seule. */
 .cx-driver-ok { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 6px 10px;
     color: var(--text); border: 1px solid var(--border); border-radius: 8px; white-space: nowrap; opacity: .72; }
+.cx-game-ok { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 6px 10px;
+    color: var(--text); border: 1px solid var(--border); border-radius: 8px; white-space: nowrap;
+    max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 .r-connector { max-width: 180px; }
 
 /* Modale CGU */

@@ -73,6 +73,11 @@
             installGamepad: rec('installGamepad', () => R(cfg.installGamepadResult || { ok: true })),
             isGamepadInstalled: () => R({ installed: !!cfg.gamepadDriverInstalled }),
         },
+        game: {
+            link: rec('gameLink', () => R(cfg.gameLinkResult || { ok: true, exe: 'C:/Games/Demo/game.exe', dir: 'C:/Games/Demo' })),
+            status: () => R(cfg.gameStatus || { exe: null, dir: null, placed: false }),
+            unlink: rec('gameUnlink', () => R({ ok: true })),
+        },
         language: () => R(), autoLaunch: () => R(false),
         legal: { text: () => R(''), status: () => R({ accepted: true }), accept: () => R() },
         update: { check: () => R(), install: () => R() },

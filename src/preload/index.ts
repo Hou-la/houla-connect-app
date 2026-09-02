@@ -90,6 +90,13 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         // Le pilote est-il déjà installé ? -> { installed: boolean }. Pour l'UI Connecteurs.
         isGamepadInstalled: () => invoke('driver:isGamepadInstalled'),
     },
+    // Lier le JEU : pose la DLL proxy XInput dans le dossier du jeu (le jeu lit la manette
+    // virtuelle comme Joueur 1) et retient l'exe pour le focus-guard.
+    game: {
+        link: () => invoke('game:link'),
+        status: () => invoke('game:status'),
+        unlink: () => invoke('game:unlink'),
+    },
     language: (lang?: string) => invoke('prefs:language', lang),
     autoLaunch: (enabled?: boolean) => invoke('prefs:autolaunch', enabled),
     legal: {

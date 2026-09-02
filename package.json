@@ -57,12 +57,20 @@
       "dist/**/*",
       "resources/**/*",
       "!resources/sidecar/**",
+      "!resources/xinput-proxy/**",
       "docs/conditions-utilisation.html"
     ],
     "extraResources": [
       {
         "from": "resources/sidecar",
         "to": "sidecar"
+      },
+      {
+        "from": "resources/xinput-proxy",
+        "to": "xinput-proxy",
+        "filter": [
+          "*.dll"
+        ]
       }
     ],
     "win": {
