@@ -114,27 +114,50 @@ function gameNameFromPath(exe: string): string {
     const m = exe.match(/(?:steamapps[\\/]common|Epic Games|GOG Games|Origin Games|XboxGames)[\\/]([^\\/]+)/i);
     return (m && m[1]) || path.basename(exe, path.extname(exe));
 }
-/** Jeux actuellement lancés, repérés à leur emplacement. `exeName` filtre si le pack le déclare. */
+/** Clé d'un jeu : son dossier dans la bibliothèque (ex. « MECCHA CHAMELEON »). Deux process
+ *  du même jeu (lanceur + exécutable réel) partagent cette clé. */
+function gameKeyFromPath(exe: string): string {
+    const m = exe.match(/((?:steamapps[\\/]common|Epic Games|GOG Games|Origin Games|XboxGames)[\\/][^\\/]+)/i);
+    return (m && m[1].toLowerCase()) || exe.toLowerCase();
+}
+/**
+ * Jeux actuellement lancés. `exeName` filtre si le pack déclare son exécutable.
+ *
+ * ⚠️ Un jeu expose souvent DEUX process : un lanceur à la racine (PenguinHotel.exe) et
+ * l'exécutable réel (PenguinHotel-Win64-Shipping.exe, dans Binaries/Win64). Proposer les deux
+ * sous le même nom est ingérable, et poser le fichier à côté du lanceur ne sert à RIEN : le
+ * jeu ne le charge jamais. On départage donc sur le seul critère qui compte — **quel process
+ * a chargé XInput**, c'est-à-dire celui qui lit vraiment la manette — puis on dédoublonne par
+ * jeu pour n'en proposer qu'un.
+ */
 async function detectRunningGames(exeName?: string): Promise<{ name: string; exe: string; dir: string }[]> {
     if (process.platform !== 'win32') return [];
     return await new Promise((resolve) => {
         try {
             // eslint-disable-next-line @typescript-eslint/no-var-requires
             const { spawn } = require('child_process') as typeof import('child_process');
-            const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-                'Get-Process | Where-Object { $_.Path } | Select-Object -ExpandProperty Path'],
-                { windowsHide: true });
+            const script = "Get-Process | Where-Object { $_.Path } | ForEach-Object { $x=0; try { if ($_.Modules | Where-Object { $_.ModuleName -like 'xinput*' }) { $x=1 } } catch {}; \"$x|$($_.Path)\" }";
+            const ps = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true });
             let out = '';
             ps.stdout?.on('data', (d: Buffer) => { out += String(d); });
             ps.on('error', () => resolve([]));
             ps.on('exit', () => {
                 const want = exeName ? exeName.toLowerCase() : null;
-                const seen = new Set<string>();
-                const games = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
-                    .filter((p) => (want ? path.basename(p).toLowerCase() === want : GAME_LIB_RX.test(p)))
-                    .filter((p) => { const k = p.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
-                    .map((p) => ({ name: gameNameFromPath(p), exe: p, dir: path.dirname(p) }));
-                resolve(games);
+                const rows = out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+                    .map((l) => { const i = l.indexOf('|'); return { xi: l.slice(0, i) === '1', exe: l.slice(i + 1) }; })
+                    .filter((r) => r.exe && (want ? path.basename(r.exe).toLowerCase() === want : GAME_LIB_RX.test(r.exe)));
+                // Un seul candidat par jeu : celui qui lit la manette gagne ; sinon le chemin le
+                // plus profond (l'exécutable réel est sous Binaries/…, le lanceur est à la racine).
+                const best = new Map<string, { xi: boolean; exe: string }>();
+                for (const r of rows) {
+                    const k = gameKeyFromPath(r.exe);
+                    const cur = best.get(k);
+                    if (!cur) { best.set(k, r); continue; }
+                    const better = (r.xi && !cur.xi)
+                        || (r.xi === cur.xi && r.exe.split(/[\\/]/).length > cur.exe.split(/[\\/]/).length);
+                    if (better) best.set(k, r);
+                }
+                resolve([...best.values()].map((r) => ({ name: gameNameFromPath(r.exe), exe: r.exe, dir: path.dirname(r.exe) })));
             });
         } catch { resolve([]); }
     });
