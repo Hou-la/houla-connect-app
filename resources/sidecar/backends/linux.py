@@ -133,6 +133,10 @@ _KEY_ALIASES = {
     "alt": "KEY_LEFTALT", "altleft": "KEY_LEFTALT", "altright": "KEY_RIGHTALT",
     "win": "KEY_LEFTMETA", "winleft": "KEY_LEFTMETA", "winright": "KEY_RIGHTMETA",
     "super": "KEY_LEFTMETA", "apps": "KEY_COMPOSE",
+    # Vocabulaire « macOS » qu'interception-python accepte aussi : un pack peut l'employer,
+    # il doit donc marcher ici. Commande devient la touche Logo, Option devient Alt.
+    "command": "KEY_LEFTMETA", "commandleft": "KEY_LEFTMETA", "commandright": "KEY_RIGHTMETA",
+    "option": "KEY_LEFTALT", "optionleft": "KEY_LEFTALT", "optionright": "KEY_RIGHTALT",
     "capslock": "KEY_CAPSLOCK", "numlock": "KEY_NUMLOCK", "scrolllock": "KEY_SCROLLLOCK",
     "pause": "KEY_PAUSE", "insert": "KEY_INSERT", "del": "KEY_DELETE", "delete": "KEY_DELETE",
     "home": "KEY_HOME", "end": "KEY_END",
@@ -142,9 +146,30 @@ _KEY_ALIASES = {
     "prntscrn": "KEY_SYSRQ", "printscreen": "KEY_SYSRQ",
     "-": "KEY_MINUS", "=": "KEY_EQUAL", "[": "KEY_LEFTBRACE", "]": "KEY_RIGHTBRACE",
     "\\": "KEY_BACKSLASH", ";": "KEY_SEMICOLON", "'": "KEY_APOSTROPHE",
-    ".": "KEY_DOT", "/": "KEY_SLASH", "`": "KEY_GRAVE",
+    ",": "KEY_COMMA", ".": "KEY_DOT", "/": "KEY_SLASH", "`": "KEY_GRAVE",
     "multiply": "KEY_KPASTERISK", "add": "KEY_KPPLUS", "subtract": "KEY_KPMINUS",
     "decimal": "KEY_KPDOT", "divide": "KEY_KPSLASH",
+    # Touches multimédia : interception-python les accepte sous Windows, le noyau Linux
+    # a les mêmes. Les ajouter coûte une ligne et évite un « touche inconnue » sur un
+    # pack qui baisserait le son.
+    "volumemute": "KEY_MUTE", "volumedown": "KEY_VOLUMEDOWN", "volumeup": "KEY_VOLUMEUP",
+    "nexttrack": "KEY_NEXTSONG", "prevtrack": "KEY_PREVIOUSSONG",
+    "playpause": "KEY_PLAYPAUSE", "stop": "KEY_STOPCD",
+    "launchmail": "KEY_MAIL", "browserback": "KEY_BACK", "browserforward": "KEY_FORWARD",
+    "browserrefresh": "KEY_REFRESH", "browserstop": "KEY_STOP",
+    "browsersearch": "KEY_SEARCH", "browserfavorites": "KEY_BOOKMARKS",
+    "browserhome": "KEY_HOMEPAGE",
+}
+
+# Symboles qui n'ont pas de touche à eux sur un clavier ANSI : ils s'obtiennent avec
+# Maj + une autre touche. interception-python le fait pour nous sous Windows ; ici il
+# faut l'expliciter, sinon '!' serait refusé alors qu'il marche sous Windows.
+# ⚠️ ',' ':' '+' '<' restent inatteignables dans une key-spec, où ils servent de
+# séparateurs (étape, maintien, accord). C'était déjà vrai sous Windows.
+_SHIFTED = {
+    "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7",
+    "*": "8", "(": "9", ")": "0", "_": "-", "+": "=", "{": "[", "}": "]",
+    "|": "\\", ":": ";", '"': "'", "<": ",", ">": ".", "?": "/", "~": "`",
 }
 for _i in range(10):
     _KEY_ALIASES[str(_i)] = "KEY_%d" % _i
@@ -176,19 +201,20 @@ def _all_key_codes():
     return sorted(_kb_codes)
 
 
-def _key_code(name):
-    """Code KEY_* du noyau pour un nom de touche, ou ValueError explicite.
+def _resolve_key(name):
+    """(code KEY_* du noyau, faut-il ajouter Maj ?), ou ValueError explicite.
 
     Le code doit appartenir aux capacités DÉCLARÉES par _all_key_codes(), sinon le
     noyau jetterait l'événement sans rien dire : on préfère une erreur nommant la
     touche fautive à un pack qui ne fait rien sans expliquer pourquoi."""
     ec = _get_evdev().ecodes
-    ident = _KEY_ALIASES.get(name)
+    shifted = name in _SHIFTED
+    ident = _KEY_ALIASES.get(_SHIFTED[name] if shifted else name)
     code = ec.ecodes.get(ident) if ident else None
     _all_key_codes()   # garantit que _kb_codes est rempli
     if code is None or code not in _kb_codes:
         raise ValueError("touche inconnue: %s" % name)
-    return code
+    return code, shifted
 
 
 # ── Manette virtuelle : tokens Hou.la -> événements evdev ────────────────────
@@ -290,7 +316,15 @@ def keys(args):
     ui = _get_kb()
     ec = _get_evdev().ecodes
     for names, hold in parse_key_spec(spec):
-        codes = [_key_code(n) for n in names]  # tout valider avant d'appuyer quoi que ce soit
+        # Tout résoudre AVANT d'appuyer quoi que ce soit : une faute de frappe au milieu
+        # d'un accord ne doit pas laisser la première touche enfoncée.
+        resolved = [_resolve_key(n) for n in names]
+        codes = []
+        if any(sh for _, sh in resolved):   # un symbole comme '!' se tape Maj + '1'
+            codes.append(_resolve_key("shift")[0])
+        for code, _ in resolved:
+            if code not in codes:          # dédoublonne un 'shift' déjà présent dans l'accord
+                codes.append(code)
         for c in codes:
             ui.write(ec.EV_KEY, c, 1)
         ui.syn()

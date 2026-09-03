@@ -22,6 +22,33 @@ BUTTON_TOKENS = (
 )
 TRIGGER_TOKENS = ("LT", "RT")
 
+# Noms de touches que les TROIS backends doivent accepter. C'est le socle du contrat :
+# un pack écrit sous Windows tourne tel quel sous Linux et macOS tant qu'il s'en tient
+# à cette liste. Elle est vérifiée par selftest_sidecar.py, qui compare les tables de
+# backends/linux.py et backends/darwin.py à celle-ci.
+#
+# Ce socle est plus ÉTROIT que ce qu'accepte interception-python sous Windows : les
+# touches héritées de Windows (IME kana/hanja, browserback, launchapp1, sleep…) et les
+# fonctions f21 à f24 n'ont pas d'équivalent partout. Elles restent utilisables sous
+# Windows ; ailleurs elles produisent « touche inconnue: <nom> », qui nomme la touche
+# fautive au lieu de laisser le pack ne rien faire en silence.
+PORTABLE_KEY_NAMES = frozenset(
+    list("abcdefghijklmnopqrstuvwxyz")
+    + [str(d) for d in range(10)]
+    + ["f%d" % i for i in range(1, 13)]
+    + ["num%d" % i for i in range(10)]
+    + [
+        "space", "enter", "return", "tab", "esc", "escape", "backspace", "del", "delete",
+        "shift", "shiftleft", "shiftright", "ctrl", "ctrlleft", "ctrlright",
+        "alt", "altleft", "altright", "win", "winleft", "winright", "super",
+        "command", "option", "optionleft", "optionright",
+        "up", "down", "left", "right", "home", "end", "insert",
+        "pgup", "pageup", "pgdn", "pagedown", "capslock",
+        "-", "=", "[", "]", "\\", ";", "'", ".", "/", "`",
+        "multiply", "add", "subtract", "decimal", "divide",
+    ]
+)
+
 
 def clamp_ms(v, hi):
     """Borne une durée en millisecondes dans [0, hi]. Toute valeur illisible vaut 0
