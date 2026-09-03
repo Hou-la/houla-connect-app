@@ -272,6 +272,22 @@ function withDriverCode(res: { ok: boolean; reason?: string }): { ok: boolean; r
         return { ok: false, code: 'vigembus', reason: 'Le pilote de la manette virtuelle (ViGEmBus) n\'est pas installé.' };
     if (/pilote\/sidecar non installé|moteur de pilotage bas niveau introuvable/i.test(res.reason))
         return { ok: false, code: 'sidecar', reason: res.reason };
+    // Pilote INTERCEPTION (clavier bas niveau) absent de la machine.
+    // Le sidecar remonte le message BRUT de la bibliothèque, en anglais et sans rien
+    // d'actionnable : « Interception driver was not found or is not installed. Please
+    // confirm that it has been installed properly and is added to PATH. » Personne ne sait
+    // quoi en faire. On le traduit et on dit la seule chose utile : quoi installer, et que
+    // ça demande un redémarrage. ⚠️ Contrairement à ViGEmBus, l'app n'embarque PAS cet
+    // installeur (question de licence à trancher avant toute redistribution) : on ne peut
+    // donc pas proposer un bouton qui installe, seulement expliquer.
+    if (/interception driver was not found|is not installed.*PATH|INTERCEPTION_MISSING/i.test(res.reason))
+        return {
+            ok: false,
+            code: 'interception',
+            reason: 'Le pilote clavier bas niveau (Interception) n’est pas installé sur cet ordinateur. '
+                + 'Les autres actions du pack fonctionnent ; seules les touches « bas niveau » ont besoin de lui. '
+                + 'Son installation demande un redémarrage. En attendant, bascule cette interaction sur le mode clavier « normal ».',
+        };
     return res;
 }
 

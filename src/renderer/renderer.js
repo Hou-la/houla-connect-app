@@ -83,6 +83,20 @@ function runEffectTest({ resEl, cls, needsFocus, btn, fire }) {
                 // Manette virtuelle sans pilote ViGEmBus : au lieu d'un message opaque, on
                 // propose l'installation guidée (une seule fois, élévation UAC côté main).
                 if (v && v.code === 'vigembus') offerGamepadDriverInstall();
+                // Pilote clavier bas niveau absent : contrairement a la manette, l'app
+                // n'embarque PAS son installeur (licence a trancher). On ne peut donc pas
+                // proposer un bouton qui installe : on explique, et surtout on donne la
+                // sortie IMMEDIATE (basculer en clavier « normal »), pour que l'utilisateur
+                // ne reste pas bloque sur une porte fermee.
+                else if (v && v.code === 'interception') {
+                    // `persist` (et non `timeout`, qui n'existe pas dans showToast et serait
+                    // ignoré en silence) : le message est long et porte la marche à suivre,
+                    // il ne doit pas disparaître avant d'avoir été lu.
+                    showToast('effect-test', {
+                        kind: 'warn', title: 'Pilote clavier bas niveau absent',
+                        msg: r, persist: true,
+                    });
+                }
                 else showToast('effect-test', { kind: 'warn', title: 'Test non déclenché', msg: r });
             }
         } catch (e) {
