@@ -1084,7 +1084,9 @@ function buildStoreCard(b, inst) {
         : updateAvail
             ? `<button class="btn btn--primary install" title="Mettre à jour vers v${esc(b.version)}">&#8593; v${esc(b.version)}</button>`
             : `<button class="btn btn--ghost install" disabled title="Installé${inst.version ? ' (v' + esc(inst.version) + ')' : ''}">&#10003; Installé</button>`;
-    const customizeBtn = inst ? `<button class="btn btn--ghost btn--icon customize" title="Personnaliser (activer/désactiver, cooldowns)">&#9881;</button>` : '';
+    // ✏ plutot que l'engrenage : l'engrenage dit « reglages du logiciel », alors qu'ici on
+    // MODIFIE le pack (touches, cooldowns, jeu). Le crayon dit « editer ».
+    const customizeBtn = inst ? `<button class="btn btn--ghost btn--icon customize" title="Modifier ce pack (touches, cooldowns, jeu)">&#9998;</button>` : '';
     const uninstallBtn = inst ? `<button class="btn btn--ghost btn--icon uninstall" title="Désinstaller (réversible)">&#128465;</button>` : '';
     card.innerHTML = `
         <div class="bundle-card__banner"${banner}></div>
@@ -1095,14 +1097,33 @@ function buildStoreCard(b, inst) {
             <div class="card-actions">
                 ${installBtn}
                 ${customizeBtn}
-                <button class="btn btn--ghost btn--icon more" title="Voir plus (détails, changelog)">&#8943;</button>
                 ${uninstallBtn}
             </div>
         </div>`;
     if (!inst) card.querySelector('.install').onclick = (e) => installBundle(b.slug, e.target);
     else if (updateAvail) card.querySelector('.install').onclick = (e) => updateBundleFlow(b.slug, e.target);
     if (inst) { const cb = card.querySelector('.customize'); if (cb) cb.onclick = () => openCustomize(b.slug, b.title || b.slug); }
-    card.querySelector('.more').onclick = () => openModal(b, !!inst);
+    // ── TOUTE LA CARTE ouvre le detail ──
+    // Avant, il fallait trouver le bouton « ⋯ », que personne ne devine. Cliquer la carte est
+    // le geste naturel, et l'image en fait partie : c'est meme la premiere chose qu'on vise.
+    // Le bouton « ⋯ » devient donc inutile et disparait.
+    card.classList.add('bundle-card--clickable');
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', `Voir le détail de ${b.title || b.slug}`);
+    const ouvrirDetail = (ev) => {
+        // ⚠️ Les actions de la carte (Installer, Modifier, Désinstaller) et les liens
+        // (profil du créateur) doivent garder LEUR geste : sans cette garde, installer un
+        // pack ouvrirait aussi la modale par-dessus.
+        if (ev && ev.target && ev.target.closest('button, a, input, select, textarea')) return;
+        openModal(b, !!inst);
+    };
+    card.onclick = ouvrirDetail;
+    // Accessible au clavier : une carte cliquable qui ne repond pas a Entree est une carte
+    // inutilisable pour qui ne se sert pas de la souris.
+    card.onkeydown = (ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openModal(b, !!inst); }
+    };
     if (inst) {
         const ub = card.querySelector('.uninstall');
         // Confirmation dans une VRAIE modale. Un bouton qui se change en « Confirmer ? » est
@@ -2874,10 +2895,24 @@ function showLabInstrTab(which) {
     prev.classList.toggle('hidden', editing);
     if (!editing) renderMarkdownInto(prev, $('lab-instructions').value); // rendu SÛR (même moteur)
 }
+/** Bascule Éditer / Aperçu de la DESCRIPTION (même moteur de rendu que les instructions). */
+function showLabDescTab(which) {
+    const editing = which !== 'preview';
+    $('lab-desc-edit-tab').classList.toggle('is-active', editing);
+    $('lab-desc-preview-tab').classList.toggle('is-active', !editing);
+    $('lab-desc').classList.toggle('hidden', !editing);
+    $('lab-desc-toolbar').classList.toggle('hidden', !editing);
+    const prev = $('lab-desc-preview');
+    prev.classList.toggle('hidden', editing);
+    if (!editing) renderMarkdownInto(prev, $('lab-desc').value);
+}
 // Mini-WYSIWYG : insère du Markdown au niveau de la sélection du textarea (aucune
 // lib externe — la CSP bloquerait un CDN de toute façon). Opère sur #lab-instructions.
-function applyMdTool(action) {
-    const ta = $('lab-instructions');
+// `taId` : la MEME barre d'outils sert la description et les instructions. Sans ce
+// parametre, elle ecrivait toujours dans les instructions, y compris quand on editait
+// la description : le texte serait parti dans le mauvais champ, en silence.
+function applyMdTool(action, taId) {
+    const ta = $(taId || 'lab-instructions');
     if (!ta) return;
     const s = ta.selectionStart, e = ta.selectionEnd;
     const sel = ta.value.slice(s, e);
@@ -2922,7 +2957,20 @@ function setupLabMarkdownEditor() {
     $('lab-instructions').addEventListener('input', syncLabCounters);
     // Barre d'outils : chaque bouton insère le Markdown correspondant.
     $('lab-instr-toolbar').querySelectorAll('.md-tool').forEach((b) => {
-        b.onclick = () => applyMdTool(b.dataset.md);
+        b.onclick = () => applyMdTool(b.dataset.md, 'lab-instructions');
+    });
+    // Même éditeur pour la DESCRIPTION : c'est elle qu'on lit en premier dans le store, et
+    // rien ne justifiait qu'elle soit le seul champ à ne pas accepter de mise en forme.
+    $('lab-desc-edit-tab').onclick = () => showLabDescTab('edit');
+    $('lab-desc-preview-tab').onclick = () => showLabDescTab('preview');
+    $('lab-desc-toolbar').querySelectorAll('.md-tool').forEach((b) => {
+        b.onclick = () => applyMdTool(b.dataset.md, 'lab-desc');
+    });
+    $('lab-desc').addEventListener('keydown', (ev) => {
+        if (!(ev.ctrlKey || ev.metaKey)) return;
+        const k = ev.key.toLowerCase();
+        if (k === 'b') { ev.preventDefault(); applyMdTool('bold', 'lab-desc'); }
+        else if (k === 'i') { ev.preventDefault(); applyMdTool('italic', 'lab-desc'); }
     });
     // Raccourcis clavier dans l'éditeur (gras / italique).
     $('lab-instructions').addEventListener('keydown', (ev) => {

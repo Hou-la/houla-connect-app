@@ -714,3 +714,17 @@ button.is-busy::before {
     border-radius: 999px; color: var(--accent-2); font-size: 10px; font-weight: 700;
     letter-spacing: .8px; line-height: 16px; vertical-align: 1px; cursor: help;
     -webkit-app-region: no-drag; }
+
+/* Carte de pack CLIQUABLE : tout ouvre le detail, sauf les boutons d'action.
+   Liseré au survol dans la couleur du thème, léger. Doublé d'un LÉGER soulèvement :
+   le propriétaire est daltonien, la couleur seule ne doit jamais porter l'information. */
+.bundle-card--clickable { cursor: pointer; transition: border-color .12s ease, transform .12s ease, box-shadow .12s ease; }
+.bundle-card--clickable:hover,
+.bundle-card--clickable:focus-visible {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+    transform: translateY(-1px);
+    outline: none;
+}
+/* Les actions gardent leur propre geste : le curseur doit le dire. */
+.bundle-card--clickable .card-actions button { cursor: pointer; }

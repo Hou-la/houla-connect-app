@@ -131,8 +131,27 @@
                         </label>
                         <input id="lab-slug" data-i18n-ph="ex-mon-pack-minecraft" placeholder="ex. mon-pack-minecraft" maxlength="80" autocomplete="off" spellcheck="false" />
                         <input id="lab-title" data-i18n-ph="titre-anglais" placeholder="Titre (anglais)" />
-                        <textarea id="lab-desc" rows="4" maxlength="2000" data-i18n-ph="description-courte-a-quoi-sert-le-pack-en-une-ou" placeholder="Description courte : à quoi sert le pack, en une ou deux phrases. Les détails/prérequis vont dans « Instructions » ci-dessous."></textarea>
-                        <div class="char-counter"><span id="lab-desc-count">0</span> / 2000</div>
+                        <!-- La description accepte le MEME Markdown que les instructions : c'est
+                             le premier texte qu'on lit dans le store, et rien ne justifiait
+                             qu'elle soit le seul champ sans mise en forme. -->
+                        <div class="md-editor">
+                            <div class="md-editor__tabs">
+                                <button type="button" id="lab-desc-edit-tab" class="md-tab is-active" data-i18n="editer">Éditer</button>
+                                <button type="button" id="lab-desc-preview-tab" class="md-tab" data-i18n="apercu">Aperçu</button>
+                                <span class="char-counter md-editor__count"><span id="lab-desc-count">0</span> / 2000</span>
+                            </div>
+                            <div id="lab-desc-toolbar" class="md-toolbar" role="toolbar" aria-label="Mise en forme de la description">
+                                <button type="button" class="md-tool" data-md="title" data-i18n-title="titre" title="Titre">H</button>
+                                <button type="button" class="md-tool" data-md="bold" data-i18n-title="gras-ctrl-b" title="Gras (Ctrl+B)"><b>B</b></button>
+                                <button type="button" class="md-tool" data-md="italic" data-i18n-title="italique-ctrl-i" title="Italique (Ctrl+I)"><i>I</i></button>
+                                <button type="button" class="md-tool" data-md="code" data-i18n-title="code-en-ligne-un-mot" title="Code en ligne (un mot)" data-i18n="lt-gt">&lt;&gt;</button>
+                                <button type="button" class="md-tool" data-md="codeblock" data-i18n-title="bloc-de-code-plusieurs-lignes-copiable" title="Bloc de code (plusieurs lignes, copiable)" data-i18n="bloc-de-code">{ } Bloc de code</button>
+                                <button type="button" class="md-tool" data-md="list" data-i18n-title="liste-a-puces" title="Liste à puces" data-i18n="8226-liste">&#8226; Liste</button>
+                                <button type="button" class="md-tool" data-md="link" data-i18n-title="lien" title="Lien">🔗</button>
+                            </div>
+                            <textarea id="lab-desc" rows="4" maxlength="2000" data-i18n-ph="description-courte-a-quoi-sert-le-pack-en-une-ou" placeholder="Description courte : à quoi sert le pack, en une ou deux phrases. Les détails/prérequis vont dans « Instructions » ci-dessous."></textarea>
+                            <div id="lab-desc-preview" class="md-instructions md-editor__preview hidden"></div>
+                        </div>
 
                         <span class="lab-sub">Instructions / prérequis <span class="muted" data-i18n="markdown-optionnel">(Markdown, optionnel)</span></span>
                         <div class="md-editor">
@@ -145,8 +164,12 @@
                                 <button type="button" class="md-tool" data-md="title" data-i18n-title="titre" title="Titre">H</button>
                                 <button type="button" class="md-tool" data-md="bold" data-i18n-title="gras-ctrl-b" title="Gras (Ctrl+B)"><b>B</b></button>
                                 <button type="button" class="md-tool" data-md="italic" data-i18n-title="italique-ctrl-i" title="Italique (Ctrl+I)"><i>I</i></button>
-                                <button type="button" class="md-tool" data-md="code" data-i18n-title="code-en-ligne" title="Code en ligne" data-i18n="lt-gt">&lt;&gt;</button>
-                                <button type="button" class="md-tool" data-md="codeblock" data-i18n-title="bloc-de-code" title="Bloc de code">{ }</button>
+                                <button type="button" class="md-tool" data-md="code" data-i18n-title="code-en-ligne-un-mot" title="Code en ligne (un mot)" data-i18n="lt-gt">&lt;&gt;</button>
+                                <!-- Libelle EN TOUTES LETTRES. « { } » seul est une icone de
+                                     developpeur : un createur qui colle 40 lignes de codes de
+                                     triche ne devine pas que c'est ce bouton qu'il lui faut.
+                                     C'est exactement ce qui s'est produit sur le pack mk8dx. -->
+                                <button type="button" class="md-tool" data-md="codeblock" data-i18n-title="bloc-de-code-plusieurs-lignes-copiable" title="Bloc de code (plusieurs lignes, copiable)" data-i18n="bloc-de-code">{ } Bloc de code</button>
                                 <button type="button" class="md-tool" data-md="list" data-i18n-title="liste-a-puces" title="Liste à puces" data-i18n="8226-liste">&#8226; Liste</button>
                                 <button type="button" class="md-tool" data-md="link" data-i18n-title="lien" title="Lien">🔗</button>
                             </div>
