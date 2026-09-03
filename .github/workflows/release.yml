@@ -149,6 +149,45 @@ jobs:
             fi
             echo "OK  $f  ($(wc -c < "$f") octets)"
           done
+
+      # ── Sidecar Linux / macOS : CONSTRUIT ICI, contrairement a Windows ──
+      # La raison pour laquelle Windows ne peut pas etre construit en CI ne vaut QUE pour
+      # Windows : `vgamepad` se connecte au pilote noyau ViGEmBus des l'import. Linux et
+      # macOS n'ont besoin d'AUCUN pilote tiers :
+      #   - Linux : `uinput` est dans le noyau. `evdev` cree une manette et un clavier
+      #     virtuels sans rien installer, et il n'y a pas d'XInput donc pas de DLL proxy.
+      #   - macOS : `CGEventPost` (pyobjc) est dans le systeme. Reste l'autorisation
+      #     Accessibilite, que l'UTILISATEUR accorde une fois, pas le build.
+      # Le figeage PyInstaller peut donc tourner sur les runners, et l'app cesse d'etre
+      # livree sans son moteur d'entree sur ces deux systemes.
+      #
+      # ⚠️ BLOQUANT, comme le pas Windows au-dessus, et pour la meme raison deja payee :
+      # un artefact manquant doit CASSER le build. Une release qui s'installe mais dont la
+      # fonction principale est absente est pire qu'une release absente, parce que personne
+      # ne le sait. Re-verification apres build : l'installeur doit contenir
+      # `resources/sidecar/houla-sidecar`.
+      - name: Construire le sidecar (Linux / macOS)
+        if: matrix.os != 'windows-2022'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip pyinstaller
+          # Les marqueurs PEP 508 de requirements.txt n'installent que ce qui concerne
+          # CETTE plateforme (evdev sur Linux, pyobjc sur macOS, rien de Windows).
+          python3 -m pip install -r resources/sidecar/requirements.txt
+          python3 -m PyInstaller --onefile --name houla-sidecar             --distpath resources/sidecar --workpath "$RUNNER_TEMP/pyi-build"             --specpath "$RUNNER_TEMP/pyi-spec"             resources/sidecar/houla_sidecar.py
+          BIN=resources/sidecar/houla-sidecar
+          if [ ! -s "$BIN" ]; then
+            echo "::error::Sidecar non construit sur ${{ matrix.os }} : $BIN absent ou vide."
+            echo "::error::Ce build produirait une app SANS pilotage clavier/manette. Arret."
+            exit 1
+          fi
+          chmod +x "$BIN"
+          echo "OK  $BIN  ($(wc -c < "$BIN") octets)"
+          # Le binaire doit au moins DEMARRER et repondre : un fichier present ne prouve
+          # pas qu'il s'execute (dependance native manquante, architecture incompatible).
+          echo '{"id":1,"helper":"capabilities","args":{}}' | timeout 30 "$BIN" | head -c 400
+          echo
       # Signature de code, UNIQUEMENT si les secrets sont configurés (sinon build non
       # signé, toujours téléchargeable ; SmartScreen/Gatekeeper alerteront) :
       #   - Windows : Azure Trusted Signing (secrets AZURE_*)

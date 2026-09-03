@@ -66,7 +66,12 @@
     "extraResources": [
       {
         "from": "resources/sidecar",
-        "to": "sidecar"
+        "to": "sidecar",
+        "filter": [
+          "**/*",
+          "!__pycache__",
+          "!__pycache__/**"
+        ]
       },
       {
         "from": "resources/xinput-proxy",

@@ -743,7 +743,15 @@ function registerIpc(): void {
         // Si l'info manque (pack installé avant cette version, ou jeu déplacé/désinstallé), on
         // le redemande AVANT de rien démarrer — plutôt que de lancer un pack qui n'agirait pas
         // en jeu, ce qui donnerait « ça ne marche pas » sans explication.
-        if (overlaid.rules.some((r) => (r.effect as { type?: string })?.type === 'gamepad')) {
+        // ⚠️ WINDOWS SEULEMENT. Désigner un jeu n'a de sens QUE sur Windows : la manette
+        // virtuelle y arrive sur un emplacement XInput libre, et il faut poser une DLL proxy
+        // dans le dossier du jeu pour qu'il la lise comme Joueur 1.
+        // Sur Linux, une manette créée par `uinput` est un périphérique evdev ORDINAIRE : les
+        // jeux l'énumèrent comme n'importe quelle manette branchée. Il n'y a ni XInput, ni
+        // notion de Joueur 1 à corriger, ni fichier à poser. Réclamer un jeu là-bas serait un
+        // blocage pur, sans aucune contrepartie technique.
+        if (process.platform === 'win32'
+            && overlaid.rules.some((r) => (r.effect as { type?: string })?.type === 'gamepad')) {
             const g = store.getGameForPack(slug);
             if (!g?.exe || !fs.existsSync(g.exe)) return { ok: false, needGame: true, slug };
         }
@@ -768,26 +776,31 @@ function registerIpc(): void {
         // installé, l'appel échoue -> le 1er test manette guidera l'installation.
         const usesGamepad = activeManifest.rules.some((r) => (r.effect as { type?: string })?.type === 'gamepad');
         if (usesGamepad) {
-            // Jeu de CE pack (garanti présent : vérifié en tête du handler).
-            const game = store.getGameForPack(slug)!;
-            // Re-pose la DLL si elle a disparu (une mise à jour du jeu peut nettoyer son dossier).
-            // Repose SYSTÉMATIQUE (et non « seulement si absent ») : la DLL peut être là mais
-            // PÉRIMÉE après une mise à jour de l'app. `placeProxyDlls` ne réécrit rien quand le
-            // contenu est déjà identique, donc l'appel est gratuit et ne peut plus tomber en
-            // EBUSY dans le cas courant. S'il échoue quand même (jeu ouvert avec une ANCIENNE
-            // version de la DLL), on le DIT dans le journal au lieu d'avaler l'échec : sans ça,
-            // le pack démarre, le journal annonce « fired », et rien ne bouge en jeu.
-            const posee = placeProxyDlls(game.dir);
-            if (!posee.ok) {
-                send('onLog', {
-                    kind: 'error',
-                    text: `Manette : ${posee.reason || 'la préparation du jeu a échoué'}`,
-                });
+            // Jeu de CE pack. ⚠️ N'est garanti présent QUE sur Windows : la vérification en
+            // tête du handler y est conditionnée, parce que Linux n'a ni XInput ni DLL à poser.
+            // Sans ce `?`, un pack manette sous Linux planterait sur `game.dir`.
+            const game = store.getGameForPack(slug);
+            if (game?.dir) {
+                // Repose SYSTÉMATIQUE (et non « seulement si absent ») : la DLL peut être là mais
+                // PÉRIMÉE après une mise à jour de l'app. `placeProxyDlls` ne réécrit rien quand le
+                // contenu est déjà identique, donc l'appel est gratuit et ne peut plus tomber en
+                // EBUSY dans le cas courant. S'il échoue quand même (jeu ouvert avec une ANCIENNE
+                // version de la DLL), on le DIT dans le journal au lieu d'avaler l'échec : sans ça,
+                // le pack démarre, le journal annonce « fired », et rien ne bouge en jeu.
+                const posee = placeProxyDlls(game.dir);
+                if (!posee.ok) {
+                    send('onLog', {
+                        kind: 'error',
+                        text: `Manette : ${posee.reason || 'la préparation du jeu a échoué'}`,
+                    });
+                }
+                store.setFocusTarget({ exe: game.exe, dir: game.dir }); // focus-guard sur CE jeu
             }
-            store.setFocusTarget({ exe: game.exe, dir: game.dir }); // focus-guard sur CE jeu
             try {
                 // targetExe : la DLL ne remappera QUE dans ce jeu (les autres restent intacts).
-                const pt = await sidecar().call('vigem-passthrough', { enable: true, targetExe: game.exe }) as { physicalIndex?: number | null };
+                // Absent hors Windows : il n'y a rien à cibler, la manette virtuelle est vue de
+                // tous les jeux comme un périphérique ordinaire.
+                const pt = await sidecar().call('vigem-passthrough', { enable: true, targetExe: game?.exe }) as { physicalIndex?: number | null };
                 // Retour DISCRIMINANT (texte, pas couleur) : le joueur doit SAVOIR si sa manette
                 // physique est recopiée, ou si seuls les cadeaux piloteront la virtuelle (cas où
                 // il a démarré sans manette branchée -> le mirroring ne se fera pas).
