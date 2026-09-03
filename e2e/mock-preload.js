@@ -80,6 +80,10 @@
         driver: {
             installGamepad: rec('installGamepad', () => R(cfg.installGamepadResult || { ok: true })),
             isGamepadInstalled: () => R({ installed: !!cfg.gamepadDriverInstalled }),
+            gamepadStatus: () => (cfg.gamepadStatusError
+                ? rej('sonde indisponible')
+                : R(cfg.gamepadStatus || { connected: false, engineRunning: false })),
+            releaseGamepad: rec('releaseGamepad', () => R(cfg.releaseGamepadResult || { ok: true })),
         },
         game: {
             detect: () => R(cfg.gameDetected || []),

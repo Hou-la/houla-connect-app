@@ -252,12 +252,31 @@ async function ensureGamepadRemap(effect: unknown): Promise<void> {
         await new Promise((r) => setTimeout(r, 250));
     } catch { /* le test remontera l'échec */ }
 }
-/** Après un test manette HORS pack : débrancher la manette virtuelle.
- *  Sinon elle reste et OCCUPE un emplacement XInput — si c'est le 0, le jeu lit une manette
- *  inerte et celle du joueur « ne marche plus ». Un test ne doit rien laisser derrière lui. */
-async function releaseGamepadAfterTest(effect: unknown): Promise<void> {
-    if ((effect as { type?: string })?.type !== 'gamepad') return;
-    if (engineRunning) return; // un pack tourne : la virtuelle doit rester en place
+/**
+ * Débranche la manette virtuelle. **N'est plus appelé après un test** : voir pourquoi.
+ *
+ * ⚠️ ERREUR DE CONCEPTION CORRIGÉE LE 2026-09-03, diagnostiquée par un utilisateur.
+ * Cette fonction tournait après CHAQUE test : la manette virtuelle était créée puis
+ * détruite dans la foulée. Symptômes rapportés, tous expliqués par ça :
+ *   « ça ajoute puis retire rapidement un périphérique de la liste des contrôleurs
+ *     (le même bruit que brancher/débrancher une clé USB) »
+ *   « je ne vois pas de touche pressée sur ma manette dans l'affichage Windows »
+ *
+ * Pourquoi ça marchait quand même sur un jeu Steam natif : ce jeu lit XInput À L'INSTANT
+ * de l'appel, à travers notre DLL proxy, donc une manette qui n'existe que 300 ms suffit.
+ * Un ÉMULATEUR (Ryujinx, Dolphin, RetroArch), lui, lie le périphérique à l'ÉNUMÉRATION et
+ * le garde : une manette qui clignote lui est tout simplement invisible.
+ *
+ * Le motif d'origine était juste — une manette abandonnée occupe un emplacement XInput et
+ * la manette du joueur « ne marche plus ». Mais le remède était le mauvais : ce problème
+ * est déjà résolu par le PASSTHROUGH, qui recopie en continu la manette physique dans la
+ * virtuelle. Tant qu'il tourne, le joueur pilote à travers elle. Débrancher traitait le
+ * symptôme et cassait la fonction.
+ *
+ * Reste appelé : à l'arrêt d'un pack, au PANIC, et sur demande explicite du joueur. La
+ * fermeture de l'app est couverte par `will-quit` (kill du sidecar) + son `atexit`.
+ */
+async function releaseGamepad(): Promise<void> {
     try { await sidecar().call('release-pad', {}); } catch { /* noop */ }
     gamepadSessionOn = false;
 }
@@ -681,7 +700,10 @@ function registerIpc(): void {
             if (!rule) return { ok: false, reason: 'aucune interaction à tester dans ce pack' };
             await ensureGamepadRemap(rule.effect); // manette : proxy actif pour que le test atteigne le jeu
             const v = withDriverCode(await engine.testFire({ id: rule.id, on: rule.on, effect: rule.effect }, slug));
-            await releaseGamepadAfterTest(rule.effect); // ne rien laisser squatter l'emplacement 0
+            // ⚠️ ON NE DEBRANCHE PLUS APRES UN TEST. La manette virtuelle RESTE branchee :
+            // c'est la seule facon qu'un emulateur (qui lie le peripherique a l'enumeration)
+            // puisse la voir et la garder. Le passthrough recopie la manette physique dedans,
+            // donc le joueur continue de jouer normalement a travers elle.
             return v;
         } catch (e: any) {
             return withDriverCode({ ok: false, reason: e?.message || 'test impossible' });
@@ -895,7 +917,7 @@ function registerIpc(): void {
         if (!rule || typeof rule !== 'object' || !rule.effect) return { ok: false, reason: 'règle invalide' };
         await ensureGamepadRemap(rule.effect); // manette : proxy actif pour que le test atteigne le jeu
         const v = withDriverCode(await engine.testFire({ id: rule.id || 'test', on: rule.on || { type: 'gift' }, effect: rule.effect }, bundleSlug));
-        await releaseGamepadAfterTest(rule.effect); // ne rien laisser squatter l'emplacement 0
+        // Idem : la manette virtuelle reste branchee apres un test (voir releaseGamepad).
         return v;
     });
     ipcMain.handle('engine:test', (_e, slug?: string) => {
@@ -948,6 +970,16 @@ function registerIpc(): void {
     // Connecteurs pour montrer « Pilote installé » au lieu du bouton d'installation. On
     // interroge le SERVICE Windows du pilote : `sc query ViGEmBus` sort 0 s'il existe
     // (donc installé), 1060 sinon. Léger, pas besoin du sidecar. Windows uniquement.
+    // ── Soupape : débrancher la manette virtuelle à la demande ──
+    // Elle reste branchée en permanence (c'est ce qui permet aux émulateurs de la voir), et
+    // c'est voulu. Mais le joueur doit pouvoir la retirer sans quitter l'app : elle occupe un
+    // emplacement XInput, et une manette qu'on ne peut pas débrancher est une manette subie.
+    ipcMain.handle('gamepad:release', async () => {
+        if (engineRunning) return { ok: false, reason: 'Un pack tourne : arrête-le d’abord, sinon ses cadeaux n’agiraient plus.' };
+        await releaseGamepad();
+        return { ok: true };
+    });
+    ipcMain.handle('gamepad:status', () => ({ connected: gamepadSessionOn, engineRunning }));
     ipcMain.handle('driver:isGamepadInstalled', async () => {
         if (process.platform !== 'win32') return { installed: false };
         return await new Promise<{ installed: boolean }>((resolve) => {

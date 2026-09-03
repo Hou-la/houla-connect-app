@@ -3421,6 +3421,7 @@ let gamepadDriverInstalled = null;
 // Jeux liés à des packs manette (la DLL posée dans leur dossier leur fait lire la virtuelle
 // comme Joueur 1 pendant qu'un pack tourne). Liste de { slug, exe, dir, placed }.
 let gamepadGames = [];
+let gamepadPadConnected = false; // manette VIRTUELLE actuellement branchee
 function renderConnectorsList() {
     const box = $('cx-list');
     if (!myConnectors.length) { box.innerHTML = '<p class="muted">Aucun connecteur.</p>'; return; }
@@ -3436,6 +3437,14 @@ function renderConnectorsList() {
         // La manette sert à TOUS les jeux : on ne lie donc pas un jeu au connecteur. Le jeu
         // appartient au PACK (demandé à son installation). Ici on montre juste les jeux liés,
         // pour la visibilité et le ménage.
+        // ── Manette virtuelle BRANCHÉE ? ──
+        // Elle reste branchée en permanence : c'est ce qui permet aux émulateurs (Ryujinx,
+        // Dolphin, RetroArch), qui lient le périphérique à l'énumération, de la voir et de la
+        // garder. Le joueur doit donc SAVOIR qu'elle est là, et pouvoir la retirer : une
+        // manette qu'on ne peut pas débrancher est une manette subie.
+        const padBtn = c.type !== 'gamepad' || !gamepadPadConnected
+            ? ''
+            : '<button class="cx-padoff btn btn--ghost btn--mini" title="La manette virtuelle est branchée. Configure ton jeu ou ton émulateur dessus. Tu peux la débrancher si tu veux libérer son emplacement.">🔌 Branchée · débrancher</button>';
         const n = gamepadGames.length;
         const gameBtn = c.type !== 'gamepad'
             ? ''
@@ -3443,10 +3452,27 @@ function renderConnectorsList() {
         return `<div class="cx-row" data-id="${esc(c.id)}">`
             + `<label class="switch" title="Activer / désactiver"><input type="checkbox" class="cx-enable"${c.enabled ? ' checked' : ''}/><span class="switch__track"><span class="switch__thumb"></span></span></label>`
             + `<span class="cx-type">${esc(connectorTypeLabel(c.type))}</span><b>${esc(c.name)}</b>`
-            + driverBtn + gameBtn
+            + driverBtn + padBtn + gameBtn
             + (isLocal ? '' : `<button class="cx-edit">Éditer</button><button class="cx-del" title="Supprimer">&#10005;</button>`)
             + `</div>`;
     }).join('');
+    box.querySelectorAll('.cx-padoff').forEach((b) => {
+        b.onclick = async () => {
+            setBtnBusy(b, true, 'Débranchement…');
+            try {
+                const r = await api.driver.releaseGamepad();
+                if (r && r.ok) {
+                    showToast('pad', {
+                        kind: 'ok', title: 'Manette virtuelle débranchée',
+                        msg: 'Son emplacement XInput est libéré. Elle se rebranchera au prochain test, ou au démarrage d’un pack manette.',
+                    });
+                    loadConnectorsView();
+                }
+                else showToast('pad', { kind: 'error', title: 'Débranchement impossible', msg: (r && r.reason) || 'Réessaie.' });
+            } catch (e) { showToast('pad', { kind: 'error', title: 'Erreur', msg: friendlyError(e, 'Réessaie.') }); }
+            finally { setBtnBusy(b, false); }
+        };
+    });
     box.querySelectorAll('.cx-row').forEach((row) => {
         const c = myConnectors.find((x) => x.id === row.dataset.id);
         // Pas de re-render au toggle : sinon le DOM est remplacé et le switch « saute »
@@ -3728,6 +3754,10 @@ async function loadConnectorsView() {
     await loadConnectors();
     // Jeux liés à des packs manette (ligne manette : visibilité + ménage).
     try { gamepadGames = (await api.game.listLinked()) || []; } catch { gamepadGames = []; }
+    // Etat de la manette VIRTUELLE : branchee ou non. En cas d'echec on suppose « non »,
+    // ce qui masque simplement le bouton : jamais une action proposee a tort.
+    try { const st = await api.driver.gamepadStatus(); gamepadPadConnected = !!(st && st.connected); }
+    catch { gamepadPadConnected = false; }
     // État du pilote manette AVANT le rendu : décide « Installer le pilote » vs « ✓ installé ».
     try { const s = await api.driver.isGamepadInstalled(); gamepadDriverInstalled = s ? !!s.installed : null; }
     catch { gamepadDriverInstalled = null; }

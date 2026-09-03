@@ -97,6 +97,9 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         installGamepad: () => invoke('driver:installGamepad'),
         // Le pilote est-il déjà installé ? -> { installed: boolean }. Pour l'UI Connecteurs.
         isGamepadInstalled: () => invoke('driver:isGamepadInstalled'),
+        // Manette VIRTUELLE : etat, et debranchement a la demande.
+        gamepadStatus: () => invoke('gamepad:status'),
+        releaseGamepad: () => invoke('gamepad:release'),
     },
     // Jeu piloté PAR PACK : pose la DLL proxy XInput dans le dossier du jeu (le jeu lit la
     // manette virtuelle comme Joueur 1). Le jeu appartient au pack, pas au connecteur manette.
