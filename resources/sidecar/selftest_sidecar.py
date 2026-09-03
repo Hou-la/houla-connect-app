@@ -35,6 +35,7 @@ import subprocess
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+from backends import common  # noqa: E402
 from backends.common import parse_key_spec  # noqa: E402
 
 SIDECAR = os.path.join(HERE, "houla_sidecar.py")
@@ -129,6 +130,49 @@ def test_key_spec_parsing():
           not bad, " ; ".join(bad))
 
 
+def test_cross_platform_contract():
+    """Le contrat que les TROIS backends doivent tenir, vérifiable depuis n'importe
+    quel système.
+
+    C'est possible parce que backends/linux.py et backends/darwin.py n'importent leur
+    pilote qu'à l'INTÉRIEUR de leurs fonctions : leurs tables de correspondance sont
+    donc lisibles depuis Windows, et ce test tourne partout. C'est aussi le contre-
+    témoin de cette conception : si quelqu'un remontait un jour `import evdev` en tête
+    de backends/linux.py, cet import échouerait ici et le test le dirait tout de suite,
+    au lieu de laisser la panne se découvrir sur la machine d'un utilisateur."""
+    from backends import win32, linux, darwin  # noqa: E402
+
+    # 1) Tokens manette : Windows et Linux doivent accepter exactement les mêmes.
+    wt = set(win32._BUTTONS) | set(win32._TRIGGERS)
+    lt = set(linux._PAD_BTN) | set(linux._PAD_HAT) | set(linux._PAD_TRIG)
+    ct = set(common.BUTTON_TOKENS) | set(common.TRIGGER_TOKENS)
+    check("tokens manette identiques Windows / Linux (%d)" % len(ct), wt == lt == ct,
+          "win32-linux=%s linux-win32=%s common-win32=%s" % (sorted(wt - lt), sorted(lt - wt), sorted(ct ^ wt)))
+
+    # 2) Noms de touches du socle portable : Linux et macOS doivent tous les connaître.
+    ml = sorted(n for n in common.PORTABLE_KEY_NAMES if n not in linux._KEY_ALIASES)
+    md = sorted(n for n in common.PORTABLE_KEY_NAMES if n not in darwin._VK)
+    check("Linux connait les %d noms de touches du socle portable" % len(common.PORTABLE_KEY_NAMES),
+          not ml, "manquants: %s" % ml)
+    check("macOS connait les %d noms de touches du socle portable" % len(common.PORTABLE_KEY_NAMES),
+          not md, "manquants: %s" % md)
+
+    # 3) Windows : la référence, c'est interception-python lui-même. On n'échoue pas si
+    # la bibliothèque n'est pas installée (la CI n'a pas les pilotes), on le dit.
+    try:
+        from interception import _keycodes as kc
+        known = set(k for k in kc._MAPPING if isinstance(k, str))
+        mw = sorted(n for n in common.PORTABLE_KEY_NAMES if n not in known)
+        check("Windows (interception-python) connait le socle portable", not mw, "manquants: %s" % mw)
+    except Exception as e:  # noqa: BLE001
+        print("  info: interception-python non inspectable ici (%s), socle Windows non verifie." % e)
+
+    # 4) Les symboles Maj sont couverts des deux côtés, avec la MÊME table.
+    check("tables des symboles Maj identiques Linux / macOS (%d)" % len(linux._SHIFTED),
+          linux._SHIFTED == darwin._SHIFTED,
+          "linux=%s macos=%s" % (sorted(linux._SHIFTED), sorted(darwin._SHIFTED)))
+
+
 def main():
     probe = "--probe" in sys.argv
     print("Plateforme : %s | Python %s" % (sys.platform, sys.version.split()[0]))
@@ -137,6 +181,7 @@ def main():
     print("")
 
     test_key_spec_parsing()
+    test_cross_platform_contract()
 
     c = Client()
     try:

@@ -167,6 +167,7 @@
   "une-touche": "Un tasto",
   "valider": "Conferma",
   "verifier": "Verifica",
+  "version-beta-des-fonctions-sont-encore-incompl": "Versione beta: alcune funzioni sono ancora incomplete o in fase di port.",
   "versions-en-attente-d-une-decision-humaine-tant-": "Versioni in attesa di una decisione umana. Finché una versione non è approvata, il creatore non può pubblicarla e nessun altro può installarla.",
   "visibilite-de-cette-version": "Visibilità di questa versione",
   "websocket": "WebSocket"

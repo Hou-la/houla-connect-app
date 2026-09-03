@@ -116,14 +116,24 @@ _VK = {
     "1": 0x12, "2": 0x13, "3": 0x14, "4": 0x15, "6": 0x16, "5": 0x17,
     "9": 0x19, "7": 0x1A, "8": 0x1C, "0": 0x1D,
     "=": 0x18, "-": 0x1B, "]": 0x1E, "[": 0x21, "'": 0x27, ";": 0x29,
-    "\\": 0x2A, "/": 0x2C, ".": 0x2F, "`": 0x32,
+    "\\": 0x2A, ",": 0x2B, "/": 0x2C, ".": 0x2F, "`": 0x32,
     "enter": 0x24, "return": 0x24, "tab": 0x30, "space": 0x31,
     "backspace": 0x33, "del": 0x75, "delete": 0x75, "esc": 0x35, "escape": 0x35,
     "capslock": 0x39,
     "shift": 0x38, "shiftleft": 0x38, "shiftright": 0x3C,
     "ctrl": 0x3B, "ctrlleft": 0x3B, "ctrlright": 0x3E,
     "alt": 0x3A, "altleft": 0x3A, "altright": 0x3D,
-    "win": 0x37, "winleft": 0x37, "super": 0x37,   # touche Commande
+    # Sur un Mac, la touche Logo EST la touche Commande : « win » et « command » sont
+    # deux noms du même geste. Idem « alt » et « option ». Un pack écrit avec l'un ou
+    # l'autre vocabulaire doit marcher.
+    "win": 0x37, "winleft": 0x37, "super": 0x37,
+    "command": 0x37, "commandleft": 0x37,
+    "winright": 0x36, "commandright": 0x36,
+    "option": 0x3A, "optionleft": 0x3A, "optionright": 0x3D,
+    # macOS n'a ni Inser ni Verr.num : les touches qui occupent CES POSITIONS sur un
+    # clavier Apple sont Aide (0x72) et Effacement du pavé (0x47). C'est le meilleur
+    # équivalent possible, pas une correspondance exacte.
+    "insert": 0x72, "help": 0x72, "numlock": 0x47,
     "home": 0x73, "end": 0x77, "pgup": 0x74, "pageup": 0x74,
     "pgdn": 0x79, "pagedown": 0x79,
     "left": 0x7B, "right": 0x7C, "down": 0x7D, "up": 0x7E,
@@ -134,6 +144,17 @@ _VK = {
     "f7": 0x62, "f8": 0x64, "f9": 0x65, "f10": 0x6D, "f11": 0x67, "f12": 0x6F,
     "f13": 0x69, "f14": 0x6B, "f15": 0x71, "f16": 0x6A, "f17": 0x40, "f18": 0x4F,
     "f19": 0x50, "f20": 0x5A,
+}
+
+# Symboles qui n'ont pas de touche à eux sur un clavier ANSI : ils s'obtiennent avec
+# Maj + une autre touche. interception-python le fait pour nous sous Windows ; ici il
+# faut l'expliciter, sinon '!' serait refusé alors qu'il marche sous Windows.
+# ⚠️ ',' ':' '+' '<' restent inatteignables dans une key-spec, où ils servent de
+# séparateurs (étape, maintien, accord). C'était déjà vrai sous Windows.
+_SHIFTED = {
+    "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7",
+    "*": "8", "(": "9", ")": "0", "_": "-", "+": "=", "{": "[", "}": "]",
+    "|": "\\", ":": ";", '"': "'", "<": ",", ">": ".", "?": "/", "~": "`",
 }
 
 # Modificateurs : sous macOS il ne suffit PAS d'envoyer la touche Maj puis la touche
@@ -154,10 +175,12 @@ _MOD_FLAG_NAMES = {
 
 
 def _vk(name):
-    code = _VK.get(name)
+    """(code virtuel macOS, faut-il ajouter Maj ?), ou ValueError nommant la touche."""
+    shifted = name in _SHIFTED
+    code = _VK.get(_SHIFTED[name] if shifted else name)
     if code is None:
         raise ValueError("touche inconnue: %s" % name)
-    return code
+    return code, shifted
 
 
 def _post(code, down, flags):
@@ -179,21 +202,34 @@ def keys(args):
         raise RuntimeError(ERR_ACCESSIBILITY)
     spec = str(args.get("keys", ""))
     gap = _clamp_ms(args.get("gapMs", 40), 5000) / 1000.0
+    shift_vk = _VK["shift"]
     for names, hold in parse_key_spec(spec):
-        codes = [_vk(n) for n in names]   # tout valider avant d'appuyer quoi que ce soit
+        # Tout résoudre AVANT d'appuyer quoi que ce soit : une faute de frappe au milieu
+        # d'un accord ne doit pas laisser la première touche enfoncée.
+        resolved = [_vk(n) for n in names]
         flags = 0
         for n in names:
             flag_name = _MOD_FLAG_NAMES.get(n)
             if flag_name:
                 flags |= getattr(q, flag_name, 0)
-        for n, c in zip(names, codes):
+        # Un symbole comme '!' se tape Maj + '1' : le flag Maj doit accompagner la touche,
+        # et la touche Maj elle-même doit être envoyée pour les jeux qui lisent l'état brut.
+        seq = []   # (code, est_un_modificateur)
+        if any(sh for _, sh in resolved):
+            flags |= getattr(q, "kCGEventFlagMaskShift", 0)
+            seq.append((shift_vk, True))
+        for (code, _), n in zip(resolved, names):
+            if any(code == c for c, _ in seq):
+                continue   # dédoublonne un 'shift' déjà présent dans l'accord
+            seq.append((code, n in _MOD_FLAG_NAMES))
+        for code, is_mod in seq:
             # Le modificateur lui-même ne porte pas son propre flag : macOS le pose au
             # moment où l'événement est distribué.
-            _post(c, True, 0 if n in _MOD_FLAG_NAMES else flags)
+            _post(code, True, 0 if is_mod else flags)
         if hold:
             time.sleep(min(int(hold), 2000) / 1000.0)
-        for n, c in reversed(list(zip(names, codes))):
-            _post(c, False, 0 if n in _MOD_FLAG_NAMES else flags)
+        for code, is_mod in reversed(seq):
+            _post(code, False, 0 if is_mod else flags)
         time.sleep(gap)
     return {"pressed": spec}
 

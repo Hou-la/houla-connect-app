@@ -707,3 +707,10 @@ button.is-busy::before {
     border-radius: 6px; background: var(--bg-3); font-size: 12px; white-space: pre-wrap; }
 /* Ancien texte dans un diff : barre + libelle « MODIFIE », jamais la couleur seule. */
 .mod-pre--old { opacity: .75; }
+
+/* Badge BETA de la barre de titre. Contour + majuscules : lisible sans dependre de la
+   couleur (le proprietaire est daltonien), et discret pour ne pas manger la marque. */
+.badge-beta { margin-left: 8px; padding: 1px 7px; border: 1px solid var(--accent);
+    border-radius: 999px; color: var(--accent-2); font-size: 10px; font-weight: 700;
+    letter-spacing: .8px; line-height: 16px; vertical-align: 1px; cursor: help;
+    -webkit-app-region: no-drag; }

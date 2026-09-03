@@ -167,6 +167,7 @@
   "une-touche": "Une touche",
   "valider": "Valider",
   "verifier": "Vérifier",
+  "version-beta-des-fonctions-sont-encore-incompl": "Version bêta : des fonctions sont encore incomplètes ou en cours de portage.",
   "versions-en-attente-d-une-decision-humaine-tant-": "Versions en attente d'une décision humaine. Tant qu'une version n'est pas approuvée, son créateur ne peut pas la publier et personne d'autre ne peut l'installer.",
   "visibilite-de-cette-version": "Visibilité de cette version",
   "websocket": "WebSocket"

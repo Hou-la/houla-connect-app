@@ -221,12 +221,29 @@ def _resolve_key(name):
 # Correspondance avec le pilote xpad (manette Xbox 360 filaire), pour que SDL applique
 # son mapping intégré. Attention aux noms du noyau : BTN_NORTH VAUT BTN_X (0x133) et
 # BTN_WEST VAUT BTN_Y (0x134). Ce sont deux noms du MÊME code, pas deux boutons.
+# Chaque token porte PLUSIEURS noms candidats, essayés dans l'ordre : les deux noms
+# désignent le même code, mais selon la version des en-têtes du noyau contre lesquels
+# python-evdev a été généré, l'un des deux peut manquer de sa table. Chercher un nom
+# absent lèverait un KeyError au moment de créer la manette, c'est-à-dire au pire
+# moment : en plein live, sur la machine d'un utilisateur. Le repli coûte une ligne.
 _PAD_BTN = {
-    "A": "BTN_SOUTH", "B": "BTN_EAST", "X": "BTN_NORTH", "Y": "BTN_WEST",
-    "LB": "BTN_TL", "RB": "BTN_TR",
-    "BACK": "BTN_SELECT", "START": "BTN_START",
-    "LS": "BTN_THUMBL", "RS": "BTN_THUMBR",
+    "A": ("BTN_SOUTH", "BTN_A"), "B": ("BTN_EAST", "BTN_B"),
+    "X": ("BTN_NORTH", "BTN_X"), "Y": ("BTN_WEST", "BTN_Y"),
+    "LB": ("BTN_TL",), "RB": ("BTN_TR",),
+    "BACK": ("BTN_SELECT",), "START": ("BTN_START",),
+    "LS": ("BTN_THUMBL",), "RS": ("BTN_THUMBR",),
 }
+
+
+def _btn_code(tok):
+    """Code noyau du bouton, par le premier nom candidat qui existe."""
+    ec = _get_evdev().ecodes
+    for name in _PAD_BTN[tok]:
+        code = ec.ecodes.get(name)
+        if code is not None:
+            return code
+    raise RuntimeError("UINPUT_PAD_FAILED: aucun code noyau pour le bouton %s (candidats %s)"
+                       % (tok, ", ".join(_PAD_BTN[tok])))
 # ⚠️ La croix directionnelle n'est PAS faite de boutons ici. xpad la rapporte en AXES
 # (ABS_HAT0X/Y, valeurs -1/0/+1), contrairement à XInput où ce sont 4 bits. Émettre
 # BTN_DPAD_* donnerait une manette que SDL ne reconnaîtrait plus comme une Xbox 360.
@@ -252,7 +269,7 @@ def _pad_capabilities():
     trig = AbsInfo(value=0, min=0, max=255, fuzz=0, flat=0, resolution=0)
     hat = AbsInfo(value=0, min=-1, max=1, fuzz=0, flat=0, resolution=0)
     return {
-        ec.EV_KEY: [ec.ecodes[n] for n in _PAD_BTN.values()],
+        ec.EV_KEY: [_btn_code(t) for t in _PAD_BTN],
         ec.EV_ABS: [
             (ec.ABS_X, stick), (ec.ABS_Y, stick), (ec.ABS_RX, stick), (ec.ABS_RY, stick),
             (ec.ABS_Z, trig), (ec.ABS_RZ, trig),
@@ -340,7 +357,7 @@ def keys(args):
 # ── État de la manette virtuelle : construit puis écrit d'un bloc ────────────
 def _neutral_report():
     ec = _get_evdev().ecodes
-    btn = {ec.ecodes[n]: 0 for n in _PAD_BTN.values()}
+    btn = {_btn_code(t): 0 for t in _PAD_BTN}
     axes = {ec.ABS_X: 0, ec.ABS_Y: 0, ec.ABS_RX: 0, ec.ABS_RY: 0,
             ec.ABS_Z: 0, ec.ABS_RZ: 0, ec.ABS_HAT0X: 0, ec.ABS_HAT0Y: 0}
     return btn, axes
@@ -372,13 +389,20 @@ def _build_report(phys=None, ov_buttons=(), ov_analog=None):
         axes[ec.ABS_Y] = int(-_clamp_axis(ov_analog.get("ly", 0.0)) * _STICK_MAX)
         axes[ec.ABS_RX] = int(_clamp_axis(ov_analog.get("rx", 0.0)) * _STICK_MAX)
         axes[ec.ABS_RY] = int(-_clamp_axis(ov_analog.get("ry", 0.0)) * _STICK_MAX)
+        # Gâchettes PROPORTIONNELLES, comme le fait le chemin Windows direct
+        # (left_trigger_float). Une gâchette n'est pas un bouton : « accélérer à moitié »
+        # doit rester à moitié, sinon un pack de conduite se comporte autrement ici.
+        if "lt" in ov_analog:
+            axes[ec.ABS_Z] = int(max(0.0, _clamp_axis(ov_analog["lt"])) * _TRIG_MAX)
+        if "rt" in ov_analog:
+            axes[ec.ABS_RZ] = int(max(0.0, _clamp_axis(ov_analog["rt"])) * _TRIG_MAX)
     return btn, axes
 
 
 def _apply_token(btn, axes, tok):
     ec = _get_evdev().ecodes
     if tok in _PAD_BTN:
-        btn[ec.ecodes[_PAD_BTN[tok]]] = 1
+        btn[_btn_code(tok)] = 1
     elif tok in _PAD_HAT:
         axis, val = _PAD_HAT[tok]
         axes[ec.ecodes[axis]] = val
@@ -418,8 +442,12 @@ _ov_analog = None
 # Codes du noyau susceptibles d'arriver d'une manette physique, ramenés à nos tokens.
 # On accepte les DEUX conventions de croix directionnelle : axes (xpad, Xbox) et
 # boutons BTN_DPAD_* (beaucoup de manettes génériques et hid-sony).
+# Les deux noms d'un même code (BTN_SOUTH / BTN_A…) figurent tous les deux : la lecture
+# se fait par `.get`, un nom absent de la table du noyau est simplement ignoré, et les
+# deux mènent au même token donc le doublon est sans effet.
 _PHYS_BTN = {
-    "BTN_SOUTH": "A", "BTN_EAST": "B", "BTN_NORTH": "X", "BTN_WEST": "Y",
+    "BTN_SOUTH": "A", "BTN_A": "A", "BTN_EAST": "B", "BTN_B": "B",
+    "BTN_NORTH": "X", "BTN_X": "X", "BTN_WEST": "Y", "BTN_Y": "Y",
     "BTN_TL": "LB", "BTN_TR": "RB", "BTN_SELECT": "BACK", "BTN_START": "START",
     "BTN_THUMBL": "LS", "BTN_THUMBR": "RS",
     "BTN_DPAD_UP": "UP", "BTN_DPAD_DOWN": "DOWN", "BTN_DPAD_LEFT": "LEFT", "BTN_DPAD_RIGHT": "RIGHT",
@@ -435,7 +463,8 @@ def _is_gamepad(dev):
     caps = dev.capabilities()
     keys_ = set(caps.get(ec.EV_KEY, []))
     axes_ = set(c for c, _ in caps.get(ec.EV_ABS, []))
-    return bool(keys_ & {ec.BTN_SOUTH, ec.BTN_EAST, ec.BTN_NORTH, ec.BTN_WEST}) and ec.ABS_X in axes_
+    action = {_btn_code(t) for t in ("A", "B", "X", "Y")}
+    return bool(keys_ & action) and ec.ABS_X in axes_
 
 
 def _find_physical():
@@ -630,8 +659,11 @@ def passthrough(args):
     recopié (à titre indicatif), `virtualIndex` vaut toujours None : il n'existe pas de
     slot XInput sous Linux."""
     global _pt_running, _pt_thread, _pt_dev
-    _get_pad()   # crée la manette virtuelle, ou lève un message actionnable (droits uinput)
     if bool(args.get("enable")):
+        # Crée la manette virtuelle, ou lève un message actionnable (droits uinput).
+        # UNIQUEMENT à l'activation : à la désactivation il n'y a rien à créer, et un
+        # nettoyage ne doit pas pouvoir échouer sur un manque de droits.
+        _get_pad()
         if _pt_dev is None:
             _pt_dev = _grab_physical()
         if not _pt_running:
@@ -715,7 +747,13 @@ def gamepad(args):
                     globals()["_ov_analog"] = None
                     _ov_buttons.difference_update(trg)
                 return {"analog": True}
-            _write_pad(*_build_report(None, trg, a))
+            # Hors passthrough, les gâchettes passent par leur valeur ANALOGIQUE et non
+            # par les tokens LT/RT tout-ou-rien (voir _build_report).
+            if "lt" in analog:
+                a["lt"] = analog.get("lt", 0)
+            if "rt" in analog:
+                a["rt"] = analog.get("rt", 0)
+            _write_pad(*_build_report(None, (), a))
             time.sleep(hold)
             _write_pad(*_neutral_report())
             return {"analog": True}
@@ -912,7 +950,7 @@ def capabilities(args):
         try:
             _get_kb()
             _get_pad()
-            _release_pad()
+            _cleanup()   # une SONDE ne laisse rien derrière elle : ni manette, ni clavier virtuel
             reason = "Clavier et manette virtuels créés puis retirés : " + UINPUT_DEV + " répond."
         except Exception as e:  # noqa: BLE001
             ok, reason = False, str(e)

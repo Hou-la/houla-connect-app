@@ -167,6 +167,7 @@
   "une-touche": "One key",
   "valider": "Confirm",
   "verifier": "Check",
+  "version-beta-des-fonctions-sont-encore-incompl": "Beta version: some features are still incomplete or being ported.",
   "versions-en-attente-d-une-decision-humaine-tant-": "Versions waiting on a human decision. Until a version is approved, its creator cannot publish it and nobody else can install it.",
   "visibilite-de-cette-version": "Visibility of this version",
   "websocket": "WebSocket"
