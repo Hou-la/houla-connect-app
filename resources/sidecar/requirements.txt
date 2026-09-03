@@ -1,7 +1,32 @@
-# Sidecar Hou.la Connect (Windows). Figé en houla-sidecar.exe via :
+# Sidecar Hou.la Connect : MULTIPLATEFORME (Windows, Linux, macOS).
+# (Était « Windows uniquement » jusqu'au portage du 2026-09-03.)
+#
+# Chaque ligne porte un marqueur d'environnement PEP 508 : `pip install -r` n'installe
+# que les dépendances de la plateforme courante. Sans ces marqueurs, un `pip install`
+# sous Linux tenterait vgamepad (Windows uniquement) et échouerait, ce qui donnerait
+# l'impression que le sidecar n'est pas portable alors que seul ce fichier l'empêchait.
+#
+# Figé en binaire via :
 #   pip install -r requirements.txt pyinstaller
 #   pyinstaller --onefile --name houla-sidecar houla_sidecar.py
-# Le driver ViGEmBus (manette) et/ou Interception (clavier) doivent être installés
-# sur la machine (flux guidé dans l'app). Windows uniquement.
-interception-python>=1.6.1
-vgamepad>=0.1.0
+# Le paquet voisin `backends/` est embarqué automatiquement : backends/__init__.py fait
+# des imports LITTÉRAUX, vus par l'analyse statique de PyInstaller. Sur la machine de
+# build Windows, PyInstaller signalera `evdev` et `Quartz` en « hidden import not
+# found » : c'est un AVERTISSEMENT attendu, ces modules n'étant jamais atteints là-bas.
+
+# --- Windows : clavier au niveau driver + manette virtuelle Xbox 360 ---
+# Les pilotes NOYAU Interception et ViGEmBus doivent être installés sur la machine
+# (flux guidé dans l'app). Voir docs/SIDECAR_BUILD.md.
+interception-python>=1.6.1; sys_platform == "win32"
+vgamepad>=0.1.0; sys_platform == "win32"
+
+# --- Linux : clavier ET manette par uinput (noyau, aucun pilote tiers à installer) ---
+# Friction attendue : /dev/uinput exige une règle udev et l'appartenance au groupe
+# `input`. Le sidecar détecte le cas et renvoie la commande exacte à lancer.
+evdev>=1.6.1; sys_platform == "linux"
+
+# --- macOS : clavier via Quartz (CGEventPost). Manette NON SUPPORTÉE ---
+# Une manette virtuelle exigerait une extension système DriverKit approuvée par Apple.
+# Friction attendue : autorisation d'Accessibilité à accorder une fois dans les Réglages.
+pyobjc-framework-Quartz>=10.0; sys_platform == "darwin"
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"

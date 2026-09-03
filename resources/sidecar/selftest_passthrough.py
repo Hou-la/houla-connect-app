@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Self-test LOCAL de la logique de recopie manette (passthrough).
+"""Self-test LOCAL de la logique de recopie manette (passthrough) : WINDOWS.
 
-But : prouver que le loop `_passthrough_loop` COMBINE bien la manette PHYSIQUE du
+But : prouver que la boucle `_passthrough_loop` COMBINE bien la manette PHYSIQUE du
 joueur et l'overlay des cadeaux dans le MÊME rapport manette (boutons ET gâchettes),
 et relâche l'overlay proprement. C'est le scénario exact qui avait régressé :
 « cadeau pendant que le joueur tient un bouton » -> le bouton ET le cadeau doivent
@@ -10,6 +10,11 @@ sortir ensemble sur la manette virtuelle.
 Astuce : on n'a PAS besoin d'un bus ViGEm sain (lecture/écriture XInput) pour ce test.
 On MOCKE la lecture physique (`_xinput_read`) et on inspecte `pad.report.wButtons` /
 `bLeftTrigger`, qui sont mutés par `press_button`/`left_trigger` AVANT tout `update()`.
+
+⚠️ Depuis le portage multiplateforme (2026-09-03), ce test vise `backends.win32` et
+NON plus `houla_sidecar` : le code Windows a été déplacé là sans être modifié. Le mock
+doit porter sur le module qui contient la boucle, sinon la boucle continue de lire le
+vrai XInput et le test « passe » en ne mesurant rien.
 
 Prérequis : lancé sur une VRAIE machine Windows où `import vgamepad` réussit (pilote
 ViGEmBus présent). Ne tourne PAS en CI (le pilote noyau ne peut pas y être chargé).
@@ -21,7 +26,13 @@ import time
 import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import houla_sidecar as hs  # noqa: E402
+
+if sys.platform != "win32":
+    print("IGNORE: ce self-test est specifique a Windows (ViGEm + XInput).")
+    print("        Sur Linux/macOS, lancer plutot selftest_sidecar.py.")
+    sys.exit(0)
+
+from backends import win32 as hs  # noqa: E402
 
 PHYS_IDX = 7  # index physique fictif renvoyé par notre mock
 

@@ -1,561 +1,100 @@
 #!/usr/bin/env python3
-"""
-Hou.la Connect - sidecar de pilotage bas niveau (Windows).
+"""Hou.la Connect - sidecar de pilotage bas niveau (Windows, Linux, macOS).
 
 Expose des helpers vérifiés, appelés par le process MAIN de l'app via un JSON-RPC
 minimal sur stdio (une requête JSON par ligne sur stdin, une réponse par ligne sur
 stdout). AUCUN eval, AUCUN chemin de script : les bundles restent de la donnée
 inerte, seul ce binaire (fourni par l'app, figé PyInstaller) fait l'I/O driver.
 
+  capabilities      : ce que CETTE machine sait vraiment faire. À appeler AVANT de
+                      proposer une interaction, pour ne pas promettre puis échouer.
   interception-keys : envoie des touches au niveau DRIVER (jeux qui ignorent
-                      l'input synthétique SendInput). key-spec :
+                      l'input synthétique de haut niveau). key-spec :
                         'space' | 'shift+c' | 'c,c,c' | 'space:400'
-  vigem-gamepad     : manette virtuelle Xbox 360 (ViGEm) : press/hold/release.
+  vigem-gamepad     : manette virtuelle Xbox : press/hold/release.
   vigem-passthrough : mode « une seule manette ». Recopie EN CONTINU la manette
-                      PHYSIQUE du joueur (XInput) dans la manette virtuelle, et y
-                      superpose les combos des cadeaux. Ainsi l'émulateur/jeu n'a
-                      qu'à lire la manette virtuelle (Joueur 1) : le joueur conduit
-                      NORMALEMENT et les cadeaux ajoutent leurs effets. Résout le
-                      piège « le jeu lit la physique, pas la virtuelle ».
+                      PHYSIQUE du joueur dans la manette virtuelle, et y superpose
+                      les combos des cadeaux. Ainsi l'émulateur/jeu n'a qu'à lire la
+                      manette virtuelle : le joueur conduit NORMALEMENT et les cadeaux
+                      ajoutent leurs effets. Résout le piège « le jeu lit la physique,
+                      pas la virtuelle ».
+  release-pad       : débranche la manette virtuelle (un test ne doit rien laisser).
+  foreground        : exe de la fenêtre active, pour le focus-guard de l'app.
+  shutdown          : arrêt gracieux (débranche la manette avant la fermeture).
 
-Dépendances (voir requirements.txt) : interception-python, vgamepad.
-Le driver ViGEmBus / Interception doit être installé (flux guidé dans l'app).
+CE FICHIER NE CONTIENT PLUS AUCUN CODE DE PILOTE. Il ne fait que le protocole et
+l'aiguillage vers backends/<plateforme>.py :
+  Windows : Interception (clavier) + ViGEmBus (manette)   -> backends/win32.py
+  Linux   : uinput pour les DEUX                          -> backends/linux.py
+  macOS   : Quartz (clavier). Manette NON SUPPORTÉE       -> backends/darwin.py
+
+Les NOMS DES HELPERS ne changent pas d'une plateforme à l'autre, « interception-keys »
+et « vigem-* » compris, alors qu'ils nomment des pilotes Windows. C'est volontaire :
+l'app Electron n'a aucune raison de savoir sur quel système elle tourne, et renommer
+casserait les bundles déjà publiés, qui sont de la donnée inerte jamais migrée.
+
+Dépendances : voir requirements.txt (elles portent des marqueurs de plateforme, chaque
+système n'installe que les siennes).
 """
-import sys
 import os
+import sys
 import json
-import time
-import ctypes
-import threading
-import atexit
-import gc
 
-# Imports paresseux + dégradation propre si un driver/lib manque.
-_kb = None
-_pad = None
-_vg = None
+# Le paquet `backends` est le dossier voisin. Python met déjà le dossier du script en
+# tête de sys.path quand on lance `python resources/sidecar/houla_sidecar.py`, et
+# PyInstaller embarque le paquet dans l'exe figé. On le remet quand même explicitement :
+# ça ne coûte rien et ça couvre les lancements indirects (exec depuis un autre dossier,
+# import par un self-test), où un ImportError ici tuerait le sidecar au démarrage sans
+# la moindre trace côté app.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import backends  # noqa: E402
 
-def _get_interception():
-    global _kb
-    if _kb is None:
-        import interception  # interception-python
-        interception.auto_capture_devices(keyboard=True, mouse=False)
-        _kb = interception
-    return _kb
+# Backend de CETTE machine, choisi une fois au démarrage. L'import du module de la
+# plateforme a lieu ici et nulle part ailleurs : sur Linux, `import vgamepad` n'est pas
+# rattrapé, il n'a tout simplement pas lieu (voir backends/__init__.py).
+_B = backends.get()
 
 
-def _get_gamepad():
-    global _pad, _vg
-    if _pad is None:
-        try:
-            # ATTENTION : vgamepad se connecte au bus ViGEmBus dès l'IMPORT (VBUS = VBus()
-            # dans son __init__). Sans le driver, l'IMPORT LUI-MÊME lève
-            # (VIGEM_ERROR_BUS_NOT_FOUND) — pas seulement VX360Gamepad(). L'import est donc
-            # DANS le try, pour que TOUT échec (import + alloc) soit taggé VIGEMBUS_MISSING
-            # et que l'app propose l'installation guidée du pilote (MSI fourni).
-            import vgamepad as vg
-            _vg = vg
-            _pad = vg.VX360Gamepad()
-        except Exception as e:  # noqa: BLE001
-            raise RuntimeError("VIGEMBUS_MISSING: " + str(e))
-    return _pad
+def helper_capabilities(args):
+    """Inventaire de ce que la machine sait faire, pour que l'app n'affiche que les
+    interactions qui marcheront vraiment. Réponse :
+        {"platform": "linux", "keyboard": true, "gamepad": true, "reason": "…"}
+    plus quelques clés indicatives (keyboardBackend, gamepadBackend, probed).
+
+    `params.probe = true` demande un test RÉEL (création puis retrait du périphérique
+    virtuel) au lieu d'un simple constat de présence. Le défaut reste le constat, parce
+    qu'un test a des effets de bord et que ce helper est fait pour être appelé au
+    démarrage de l'app. `reason` est toujours rempli, y compris en cas de succès."""
+    return _B.capabilities(args)
 
 
-# ── interception-keys ─────────────────────────────────────────────
 def helper_interception_keys(args):
-    spec = str(args.get("keys", ""))
-    # Délai (ms) entre chaque touche d'une SUITE (rythme de la saisie). Défaut 40.
-    gap = _clamp_ms(args.get("gapMs", 40), 5000) / 1000.0
-    ic = _get_interception()
-    for raw_step in spec.split(","):
-        combo, _, hold = raw_step.partition(":")
-        keys = [k.strip().lower() for k in combo.split("+") if k.strip()]
-        for k in keys:
-            ic.key_down(k)
-        if hold:
-            time.sleep(min(int(hold), 2000) / 1000.0)
-        for k in reversed(keys):
-            ic.key_up(k)
-        time.sleep(gap)
-    return {"pressed": spec}
-
-
-# ── vigem-gamepad : tokens de boutons/gâchettes ────────────────────
-# Boutons numériques (press/release). Les GÂCHETTES LT/RT sont des AXES XInput,
-# pas des boutons : gérées à part (left_trigger/right_trigger).
-_BUTTONS = {
-    "A": "XUSB_GAMEPAD_A", "B": "XUSB_GAMEPAD_B", "X": "XUSB_GAMEPAD_X", "Y": "XUSB_GAMEPAD_Y",
-    "LB": "XUSB_GAMEPAD_LEFT_SHOULDER", "RB": "XUSB_GAMEPAD_RIGHT_SHOULDER",
-    "UP": "XUSB_GAMEPAD_DPAD_UP", "DOWN": "XUSB_GAMEPAD_DPAD_DOWN",
-    "LEFT": "XUSB_GAMEPAD_DPAD_LEFT", "RIGHT": "XUSB_GAMEPAD_DPAD_RIGHT",
-    "START": "XUSB_GAMEPAD_START", "BACK": "XUSB_GAMEPAD_BACK",
-    "LS": "XUSB_GAMEPAD_LEFT_THUMB", "RS": "XUSB_GAMEPAD_RIGHT_THUMB",
-}
-_TRIGGERS = {"LT": "left_trigger", "RT": "right_trigger"}
-
-
-def _clamp_ms(v, hi):
-    try:
-        return max(0, min(int(v), hi))
-    except (TypeError, ValueError):
-        return 0
-
-
-def _clamp_axis(v):
-    try:
-        return max(-1.0, min(float(v), 1.0))
-    except (TypeError, ValueError):
-        return 0.0
-
-
-# ── XInput : LECTURE de la manette physique (pour le passthrough) ───
-_xinput = None
-
-
-def _load_xinput():
-    global _xinput
-    if _xinput is None:
-        for dll in ("xinput1_4", "xinput1_3", "xinput9_1_0"):
-            try:
-                _xinput = ctypes.windll.LoadLibrary(dll)
-                break
-            except Exception:  # noqa: BLE001
-                pass
-    return _xinput
-
-
-class _XGamepad(ctypes.Structure):
-    _fields_ = [
-        ("wButtons", ctypes.c_ushort), ("bLeftTrigger", ctypes.c_ubyte),
-        ("bRightTrigger", ctypes.c_ubyte), ("sThumbLX", ctypes.c_short),
-        ("sThumbLY", ctypes.c_short), ("sThumbRX", ctypes.c_short), ("sThumbRY", ctypes.c_short),
-    ]
-
-
-class _XState(ctypes.Structure):
-    _fields_ = [("dwPacketNumber", ctypes.c_uint), ("Gamepad", _XGamepad)]
-
-
-def _xinput_read(index):
-    """État de la manette XInput #index, ou None si non connectée / index None."""
-    xi = _load_xinput()
-    if xi is None or index is None:
-        return None
-    st = _XState()
-    return st.Gamepad if xi.XInputGetState(index, ctypes.byref(st)) == 0 else None
-
-
-# Masques boutons XInput -> nos tokens.
-_XI_BUTTONS = [
-    (0x0001, "UP"), (0x0002, "DOWN"), (0x0004, "LEFT"), (0x0008, "RIGHT"),
-    (0x0010, "START"), (0x0020, "BACK"), (0x0040, "LS"), (0x0080, "RS"),
-    (0x0100, "LB"), (0x0200, "RB"), (0x1000, "A"), (0x2000, "B"), (0x4000, "X"), (0x8000, "Y"),
-]
-
-
-# ── Proxy XInput : faire lire au JEU la virtuelle comme Joueur 1 ──────
-# Le jeu (Meccha…) lit STRICTEMENT le slot XInput 0. La physique y est ; la virtuelle prend
-# le slot 1 et est IGNORÉE -> les cadeaux n'arrivent jamais en jeu. Ni HidHide (masque la
-# visibilité mais ne libère pas le slot 0) ni pnputil disable/enable (exige un reboot ici) ne
-# règlent ça proprement. Solution retenue et VALIDÉE (Meccha, 2026-09-02) : une DLL proxy
-# `xinput1_4.dll` posée dans le dossier du jeu (chargée avant System32) remappe game-index 0 ->
-# index RÉEL de la virtuelle. On lui communique cet index via un petit fichier de config, relu
-# à chaud par la DLL (-1 = transparent). Voir resources/xinput-proxy/proxy.c.
-_PROXY_CFG = os.path.join(
-    os.environ.get("LOCALAPPDATA", os.path.expanduser(r"~\AppData\Local")),
-    "HoulaConnect", "xinput_proxy.cfg",
-)
-
-
-def _write_proxy_config(virtual_index, target_exe=None):
-    """Écrit, pour la DLL proxy : l'index réel de la virtuelle (ou -1 = transparent) puis,
-    en 2e ligne, le NOM DE L'EXE DU JEU visé par le pack actif.
-
-    Le nom du jeu est essentiel : la DLL ne remappe QUE si elle tourne dans CE jeu. Plusieurs
-    jeux peuvent donc avoir la DLL posée sans jamais se gêner, et un jeu sans pack actif reste
-    un simple passe-plat (aucun verrou pour le joueur).
-    Best-effort : jamais bloquant, jamais fatal (le proxy peut ne pas être posé)."""
-    try:
-        os.makedirs(os.path.dirname(_PROXY_CFG), exist_ok=True)
-        idx = virtual_index if virtual_index is not None else -1
-        name = os.path.basename(str(target_exe)) if target_exe else ""
-        with open(_PROXY_CFG, "w") as f:
-            f.write("%d\n%s\n" % (idx, name))
-    except Exception:  # noqa: BLE001
-        pass
-
-
-# ── Passthrough : physique recopiée dans la virtuelle + overlays cadeaux ──
-_pt_running = False
-_pt_thread = None
-_pt_index = None          # index XInput de la PHYSIQUE à recopier (None = juste les cadeaux)
-_virtual_index = None     # index XInput de NOTRE pad virtuel (identifié par signature)
-_pt_lock = threading.Lock()
-_ov_buttons = set()       # boutons/gâchettes forcés par les cadeaux (tokens majuscules)
-_ov_analog = None         # override sticks {lx,ly,rx,ry} en float, ou None
-
-
-def _identify_virtual_index(pad, vg):
-    """Index XInput RÉEL de notre pad virtuel.
-
-    ⚠️ `pad.get_index()` renvoie l'ordre ViGEm (ordre de branchement au bus), qui n'est
-    PAS l'index utilisateur XInput assigné par Windows. Se fier à `get_index()-1` fait lire
-    la MAUVAISE manette (bug réel : la physique n'était jamais recopiée). On imprime donc une
-    SIGNATURE inédite (LB+RB + 2 gâchettes à fond) sur le pad virtuel et on regarde quel slot
-    XInput la reflète : ce slot EST le nôtre. Combo volontairement improbable au repos d'une
-    vraie manette -> quasi zéro faux positif. Sonde ~50 ms puis on relâche."""
-    try:
-        for _ in range(8):  # le pad ViGEm peut mettre un instant à apparaître dans XInput
-            pad.reset()
-            pad.press_button(button=getattr(vg.XUSB_BUTTON, "XUSB_GAMEPAD_LEFT_SHOULDER"))
-            pad.press_button(button=getattr(vg.XUSB_BUTTON, "XUSB_GAMEPAD_RIGHT_SHOULDER"))
-            pad.left_trigger(value=255)
-            pad.right_trigger(value=255)
-            pad.update()
-            time.sleep(0.05)
-            for i in range(4):
-                gp = _xinput_read(i)
-                if gp is None:
-                    continue
-                if (gp.wButtons & 0x0300) == 0x0300 and gp.bLeftTrigger > 200 and gp.bRightTrigger > 200:
-                    pad.reset(); pad.update()
-                    return i
-        pad.reset(); pad.update()
-    except Exception:  # noqa: BLE001
-        try:
-            pad.reset(); pad.update()
-        except Exception:  # noqa: BLE001
-            pass
-    return None
-
-
-def _find_physical_index(virtual_pad):
-    """Index XInput de la manette PHYSIQUE : la 1re manette connectée qui n'est PAS la nôtre.
-    `_virtual_index` est identifié une fois (par signature) à l'activation du passthrough."""
-    for i in range(4):
-        if i == _virtual_index:
-            continue
-        if _xinput_read(i) is not None:
-            return i
-    return None
-
-
-def _passthrough_loop(pad, vg):
-    """~125 Hz : état virtuel = physique (si présente) + overlays des cadeaux.
-    RE-DÉTECTE la manette physique en continu : une manette Xbox sans fil DORT au repos
-    (disparaît de XInput) et se réveille au 1er appui ; un branchement à chaud arrive aussi.
-    Sans re-scan, une physique absente au démarrage ne serait JAMAIS reprise."""
-    global _pt_index
-    miss = 0
-    ticks = 0
-    while _pt_running:
-        try:
-            if _pt_index is None and ticks % 30 == 0:  # ~0.25 s : cherche une physique (réveil/hot-plug)
-                _pt_index = _find_physical_index(pad)
-            ticks += 1
-            gp = _xinput_read(_pt_index) if _pt_index is not None else None
-            if _pt_index is not None and gp is None:
-                miss += 1
-                if miss > 60:  # ~0.5 s sans réponse -> débranchée/endormie : on re-détecte
-                    _pt_index = None
-                    miss = 0
-            else:
-                miss = 0
-            pad.reset()
-            lt = gp.bLeftTrigger if gp else 0
-            rt = gp.bRightTrigger if gp else 0
-            if gp:
-                for mask, tok in _XI_BUTTONS:
-                    if gp.wButtons & mask:
-                        pad.press_button(button=getattr(vg.XUSB_BUTTON, _BUTTONS[tok]))
-            with _pt_lock:
-                ob = list(_ov_buttons)
-                oa = dict(_ov_analog) if _ov_analog is not None else None
-            for tok in ob:
-                if tok in _BUTTONS:
-                    pad.press_button(button=getattr(vg.XUSB_BUTTON, _BUTTONS[tok]))
-                elif tok == "LT":
-                    lt = 255
-                elif tok == "RT":
-                    rt = 255
-            if lt:
-                pad.left_trigger(value=lt)
-            if rt:
-                pad.right_trigger(value=rt)
-            if oa is not None:  # un cadeau force les sticks -> override
-                pad.left_joystick_float(x_value_float=oa.get("lx", 0.0), y_value_float=oa.get("ly", 0.0))
-                pad.right_joystick_float(x_value_float=oa.get("rx", 0.0), y_value_float=oa.get("ry", 0.0))
-            elif gp:  # sinon on recopie les sticks physiques
-                pad.left_joystick(x_value=gp.sThumbLX, y_value=gp.sThumbLY)
-                pad.right_joystick(x_value=gp.sThumbRX, y_value=gp.sThumbRY)
-            pad.update()
-        except Exception:  # noqa: BLE001
-            pass
-        time.sleep(0.008)
-
-
-def helper_vigem_passthrough(args):
-    """Démarre/arrête le mode « une seule manette » (mirroring physique -> virtuelle)."""
-    global _pt_running, _pt_thread, _pt_index, _virtual_index
-    pad = _get_gamepad()
-    vg = _vg
-    if bool(args.get("enable")):
-        _virtual_index = _identify_virtual_index(pad, vg)  # notre slot XInput (fiable, pas get_index)
-        _pt_index = _find_physical_index(pad)  # (re)détecte la physique (branchement à chaud)
-        if not _pt_running:
-            _pt_running = True
-            _pt_thread = threading.Thread(target=_passthrough_loop, args=(pad, vg), daemon=True)
-            _pt_thread.start()
-        # Dit à la DLL proxy (posée dans le dossier du jeu) de faire lire la VIRTUELLE comme
-        # Joueur 1 (index 0 du jeu -> index réel de la virtuelle), UNIQUEMENT dans le jeu visé
-        # par ce pack (targetExe). Le jeu voit ainsi la physique recopiée + les cadeaux, et
-        # aucun autre jeu n'est affecté. Best-effort : si le proxy n'est pas posé, sans effet.
-        _write_proxy_config(_virtual_index, args.get("targetExe"))
-        return {"passthrough": True, "physicalIndex": _pt_index, "virtualIndex": _virtual_index}
-    # Désactivation : on vide les overlays PUIS on DÉBRANCHE le pad virtuel. Le débrancher est
-    # essentiel : un pad qui reste occupe un emplacement XInput, et s'il tient le 0 le jeu lit
-    # une manette inerte -> « ma manette ne marche plus ». Proxy remis transparent au passage.
-    _pt_running = False
-    with _pt_lock:
-        _ov_buttons.clear()
-    globals()["_ov_analog"] = None
-    _release_pad()
-    return {"passthrough": False}
-
-
-# ── Exécution des effets manette (direct HORS passthrough, overlay PENDANT) ──
-def _set_tokens(pad, vg, tokens, down):
-    """Direct (hors passthrough) : presse/relâche un CHORD sur le pad virtuel.
-    Tous les tokens sont VALIDÉS avant toute mutation (un token inconnu au milieu
-    ne doit pas laisser un bit à moitié pressé)."""
-    norm = [str(t).upper() for t in tokens]
-    for t in norm:
-        if t not in _BUTTONS and t not in _TRIGGERS:
-            raise ValueError(f"bouton inconnu: {t}")
-    for t in norm:
-        if t in _BUTTONS:
-            btn = getattr(vg.XUSB_BUTTON, _BUTTONS[t])
-            (pad.press_button if down else pad.release_button)(button=btn)
-        else:
-            getattr(pad, _TRIGGERS[t])(value=255 if down else 0)
-    pad.update()
-
-
-def _fire_tokens(pad, vg, tokens, hold_ms):
-    if not tokens:
-        return
-    norm = [str(t).upper() for t in tokens]
-    for t in norm:  # valide dans les DEUX modes (rejette un token inconnu)
-        if t not in _BUTTONS and t not in _TRIGGERS:
-            raise ValueError(f"bouton inconnu: {t}")
-    hold = _clamp_ms(hold_ms, 10000) / 1000.0
-    if _pt_running:
-        # PASSTHROUGH : on superpose ces tokens à la physique (le loop les applique),
-        # on les tient hold_ms, puis on les retire. On ne touche PAS le pad directement.
-        with _pt_lock:
-            _ov_buttons.update(norm)
-        time.sleep(hold)
-        with _pt_lock:
-            _ov_buttons.difference_update(norm)
-    else:
-        _set_tokens(pad, vg, norm, True)
-        time.sleep(hold)
-        _set_tokens(pad, vg, norm, False)
+    return _B.keys(args)
 
 
 def helper_vigem_gamepad(args):
-    pad = _get_gamepad()  # importe vgamepad de façon TAGGÉE (VIGEMBUS_MISSING si pilote absent)
-    vg = _vg
-    if args.get("release"):
-        if not _pt_running:
-            pad.reset()
-            pad.update()
-        else:  # en passthrough, « release » = vider les overlays, garder le mirroring
-            with _pt_lock:
-                _ov_buttons.clear()
-            globals()["_ov_analog"] = None
-        return {"released": True}
-
-    # Toute erreur en cours de route doit RELÂCHER les overlays / le pad (pas de touche coincée).
-    try:
-        # 1) Timeline d'ÉTAPES : [{buttons:[...],holdMs} | {waitMs}].
-        steps = args.get("steps")
-        if isinstance(steps, list) and steps:
-            for st in steps:
-                toks = st.get("buttons") or ([st["button"]] if st.get("button") else [])
-                if toks:
-                    _fire_tokens(pad, vg, toks, st.get("holdMs", 120))
-                wait = st.get("waitMs")
-                if wait is not None:
-                    time.sleep(_clamp_ms(wait, 30000) / 1000.0)
-            if not _pt_running:
-                pad.reset()
-                pad.update()
-            return {"steps": len(steps)}
-
-        # 2) ANALOGIQUE : pousser stick(s)/gâchette(s), tenir, relâcher.
-        analog = args.get("analog")
-        if isinstance(analog, dict):
-            hold = _clamp_ms(args.get("holdMs", 300), 10000) / 1000.0
-            if _pt_running:
-                a = {"lx": _clamp_axis(analog.get("lx", 0)), "ly": _clamp_axis(analog.get("ly", 0)),
-                     "rx": _clamp_axis(analog.get("rx", 0)), "ry": _clamp_axis(analog.get("ry", 0))}
-                trg = set()
-                if analog.get("lt"):
-                    trg.add("LT")
-                if analog.get("rt"):
-                    trg.add("RT")
-                with _pt_lock:
-                    globals()["_ov_analog"] = a
-                    _ov_buttons.update(trg)
-                time.sleep(hold)
-                with _pt_lock:
-                    globals()["_ov_analog"] = None
-                    _ov_buttons.difference_update(trg)
-                return {"analog": True}
-            if "lx" in analog or "ly" in analog:
-                pad.left_joystick_float(x_value_float=_clamp_axis(analog.get("lx", 0)), y_value_float=_clamp_axis(analog.get("ly", 0)))
-            if "rx" in analog or "ry" in analog:
-                pad.right_joystick_float(x_value_float=_clamp_axis(analog.get("rx", 0)), y_value_float=_clamp_axis(analog.get("ry", 0)))
-            if "lt" in analog:
-                pad.left_trigger_float(value_float=max(0.0, _clamp_axis(analog.get("lt", 0))))
-            if "rt" in analog:
-                pad.right_trigger_float(value_float=max(0.0, _clamp_axis(analog.get("rt", 0))))
-            pad.update()
-            time.sleep(hold)
-            pad.reset()
-            pad.update()
-            return {"analog": True}
-
-        # 3) CHORD ou bouton simple.
-        tokens = args.get("buttons")
-        if not tokens:
-            b = str(args.get("button", "")).upper()
-            tokens = [b] if b else []
-        if not tokens:
-            raise ValueError("aucune touche à presser")
-        _fire_tokens(pad, vg, tokens, args.get("holdMs", 120))
-        return {"pressed": tokens}
-    except Exception:
-        try:
-            with _pt_lock:
-                _ov_buttons.clear()
-            globals()["_ov_analog"] = None
-            if not _pt_running:
-                pad.reset()
-                pad.update()
-        except Exception:  # noqa: BLE001
-            pass
-        raise
+    return _B.gamepad(args)
 
 
-def _cleanup_pad():
-    """Débranche PROPREMENT la manette virtuelle ViGEm à la sortie du sidecar.
-
-    Sans ça, chaque arrêt laisse une CIBLE ZOMBIE (« Contrôleur XBOX 360 » fantôme) :
-    accumulées, elles finissent par COINCER le bus ViGEmBus (écritures gelées, plus
-    aucun incrément de paquet XInput) jusqu'au REDÉMARRAGE de la machine. vgamepad ne
-    retire la cible que dans son __del__, qui ne tourne pas de façon fiable à la sortie
-    de l'interpréteur -> on le déclenche explicitement ici (couvre la fermeture normale
-    du sidecar quand l'app ferme stdin). Un kill Windows brutal (TerminateProcess) ne
-    l'exécutera pas : l'app doit d'abord fermer stdin pour laisser CE nettoyage tourner."""
-    global _pad, _pt_running
-    _pt_running = False
-    # Filet de sécurité : proxy transparent (le jeu relit la manette normalement) même si le
-    # sidecar s'arrête en cours de pack.
-    try:
-        _write_proxy_config(-1)
-    except Exception:  # noqa: BLE001
-        pass
-    p = _pad
-    _pad = None
-    if p is None:
-        return
-    try:
-        p.reset(); p.update()
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        del p
-        gc.collect()  # refcount 0 -> __del__ vgamepad = vigem_target_remove + free
-    except Exception:  # noqa: BLE001
-        pass
-
-
-atexit.register(_cleanup_pad)
-
-
-def helper_shutdown(args):
-    """Arrêt GRACIEUX demandé par l'app : débranche la manette AVANT que l'app ne ferme
-    stdin / ne tue le process (sinon la cible ViGEm fuit en zombie)."""
-    _cleanup_pad()
-    return {"shutdown": True}
-
-
-def _release_pad():
-    """DÉBRANCHE la manette virtuelle sans arrêter le sidecar.
-
-    ⚠️ CRUCIAL : tant qu'un pad virtuel existe, il OCCUPE un emplacement XInput. S'il prend
-    l'emplacement 0 (celui que les jeux lisent), le jeu lit une manette qui ne bouge pas et
-    la manette du joueur semble « ne plus marcher ». Un simple TEST ne doit donc jamais
-    laisser de pad derrière lui : on le relâche dès qu'aucun pack ne tourne."""
-    global _pad, _pt_running
-    _pt_running = False
-    p = _pad
-    _pad = None
-    _write_proxy_config(-1)
-    if p is None:
-        return
-    try:
-        p.reset(); p.update()
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        del p
-        gc.collect()  # refcount 0 -> __del__ vgamepad = vigem_target_remove + free
-    except Exception:  # noqa: BLE001
-        pass
+def helper_vigem_passthrough(args):
+    return _B.passthrough(args)
 
 
 def helper_release_pad(args):
-    """Appelé par l'app après un test manette hors pack : libère l'emplacement XInput."""
-    _release_pad()
-    return {"released": True}
+    return _B.release_pad(args)
 
 
 def helper_foreground(args):
-    """Chemin de l'exe de la fenêtre au PREMIER PLAN (pour le focus-guard de l'app : ne
-    déclencher les effets manette/clavier que si le JEU cible est actif). Windows only."""
-    try:
-        u = ctypes.windll.user32
-        k = ctypes.windll.kernel32
-        u.GetForegroundWindow.restype = ctypes.c_void_p
-        k.OpenProcess.restype = ctypes.c_void_p
-        k.OpenProcess.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.c_uint]
-        hwnd = u.GetForegroundWindow()
-        if not hwnd:
-            return {"exe": None}
-        pid = ctypes.c_uint(0)
-        u.GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(pid))
-        if not pid.value:
-            return {"exe": None}
-        h = k.OpenProcess(0x1000, False, pid.value)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not h:
-            return {"exe": None}
-        try:
-            buf = ctypes.create_unicode_buffer(1024)
-            size = ctypes.c_uint(1024)
-            if k.QueryFullProcessImageNameW(ctypes.c_void_p(h), 0, buf, ctypes.byref(size)):
-                return {"exe": buf.value}
-        finally:
-            k.CloseHandle(ctypes.c_void_p(h))
-    except Exception:  # noqa: BLE001
-        pass
-    return {"exe": None}
+    return _B.foreground(args)
+
+
+def helper_shutdown(args):
+    return _B.shutdown(args)
 
 
 HELPERS = {
+    "capabilities": helper_capabilities,
     "interception-keys": helper_interception_keys,
     "vigem-gamepad": helper_vigem_gamepad,
     "vigem-passthrough": helper_vigem_passthrough,
@@ -570,6 +109,10 @@ def main():
         line = line.strip()
         if not line:
             continue
+        # `req` est remis à None à chaque tour : si json.loads échoue, on doit répondre
+        # avec un id nul, pas avec l'id de la requête PRÉCÉDENTE (l'app associerait la
+        # réponse au mauvais appel et le vrai appel expirerait sans explication).
+        req = None
         try:
             req = json.loads(line)
             rid = req.get("id")
@@ -581,7 +124,8 @@ def main():
             result = fn(params)
             sys.stdout.write(json.dumps({"id": rid, "result": result}) + "\n")
         except Exception as e:  # noqa: BLE001
-            sys.stdout.write(json.dumps({"id": req.get("id") if "req" in dir() else None, "error": str(e)}) + "\n")
+            rid = req.get("id") if isinstance(req, dict) else None
+            sys.stdout.write(json.dumps({"id": rid, "error": str(e)}) + "\n")
         sys.stdout.flush()
 
 

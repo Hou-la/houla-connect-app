@@ -63,6 +63,10 @@
       "!resources/xinput-proxy/**",
       "docs/conditions-utilisation.html"
     ],
+    "asarUnpack": [
+      "**/*.node",
+      "node_modules/@nut-tree-fork/**"
+    ],
     "extraResources": [
       {
         "from": "resources/sidecar",

@@ -2796,7 +2796,19 @@ async function loadDictionaries() {
 }
 
 // ── Visibilité par version (toggle : position + texte, daltonien-safe) ──
-$('lab-vis').onchange = () => { $('lab-vis-label').textContent = $('lab-vis').checked ? 'Public' : 'Privé'; };
+function syncVisHint() {
+    const pub = $('lab-vis').checked;
+    $('lab-vis-label').textContent = pub ? 'Public' : 'Privé';
+    // On dit la CONSEQUENCE, pas l'etat : « Privé » ne signifie rien pour un créateur qui
+    // attend de voir son pack dans le store.
+    const el = $('lab-vis-hint');
+    if (el) {
+        el.textContent = pub
+            ? '✔ Public : après approbation, ce pack apparaîtra dans le store et tout le monde pourra l’installer.'
+            : '🔒 Privé : ce pack n’apparaîtra PAS dans le store et personne d’autre que toi ne pourra l’installer. Passe-le en Public pour le publier.';
+    }
+}
+$('lab-vis').onchange = syncVisHint;
 
 // ── Bascule création / édition ──
 function setLabMode(mode) {
@@ -2932,7 +2944,7 @@ function enterCreateMode() {
     $('lab-banner-preview').style.backgroundImage = '';
     $('lab-versions').innerHTML = '';
     $('lab-msg').textContent = ''; $('lab-msg2').textContent = '';
-    $('lab-vis').checked = false; $('lab-vis-label').textContent = 'Privé';
+    $('lab-vis').checked = false; syncVisHint();
     renderTags();
     if (labJsonMode) $('lab-manifest').value = JSON.stringify(buildManifest(), null, 2); else renderRules();
     setLabMode('create');
@@ -3501,6 +3513,36 @@ function moderationRowHtml(item) {
     const prive = v.visibility !== 'public';
     const d = modDiff(m, prev && prev.manifestJson);
     const ligneRegle = (r) => `<li><b>${esc(r.label || r.id)}</b> : ${esc(modTriggerSummary(r.on))} → ${esc(modEffectSummary(r.effect))}</li>`;
+    // ── Diff des TEXTES ──
+    // Le diff ne portait QUE sur les interactions : un créateur pouvait changer sa
+    // description ou ses instructions (le texte qui part chez TOUS les joueurs, et qui est
+    // justement la surface de phishing) sans que la modération n'en voie rien. Retour du
+    // propriétaire : « il ne m'a mis aucune information concernant la description ni les
+    // instructions ». C'était vrai, et c'est le plus gênant : le texte est ce qu'un humain
+    // est le mieux placé pour juger.
+    const txtDiff = [];
+    const cmpTexte = (nom, avant, apres) => {
+        const a2 = (avant == null ? '' : String(avant)).trim();
+        const b2 = (apres == null ? '' : String(apres)).trim();
+        if (a2 === b2) return;
+        if (!a2) txtDiff.push({ nom, quoi: 'AJOUTÉ', apres: b2 });
+        else if (!b2) txtDiff.push({ nom, quoi: 'RETIRÉ', avant: a2 });
+        else txtDiff.push({ nom, quoi: 'MODIFIÉ', avant: a2, apres: b2 });
+    };
+    // Les INSTRUCTIONS sont versionnées (snapshot figé avec la version) : vrai diff possible.
+    cmpTexte('Instructions', prev && prev.instructions, v.instructions);
+    // ⚠️ La DESCRIPTION, elle, vit sur le BUNDLE et n'est PAS versionnée : il n'existe aucun
+    // « avant » à comparer. Prétendre la differ afficherait n'importe quoi. On la MONTRE donc
+    // telle quelle, en le disant. (Si on veut un jour la differ, il faut la figer dans la
+    // version, comme on l'a fait pour les instructions.)
+    const txtDiffHtml = txtDiff.length
+        ? `<ul class="mod-diff">` + txtDiff.map((t) =>
+            `<li><span class="mod-tag">${esc(t.quoi)}</span> <b>${esc(t.nom)}</b>`
+            + (t.avant ? `<div class="mod-pre mod-pre--old"><s>${esc(t.avant.slice(0, 1200))}</s></div>` : '')
+            + (t.apres ? `<div class="mod-pre">${esc(t.apres.slice(0, 1200))}</div>` : '')
+            + `</li>`).join('') + `</ul>`
+        : '<p class="muted small">Aucun changement dans les instructions.</p>';
+
     const diffHtml = !prev
         ? '<p class="muted small">Première version de ce pack : rien à comparer.</p>'
         : (!d.ajoutees.length && !d.retirees.length && !d.modifiees.length)
@@ -3525,8 +3567,12 @@ function moderationRowHtml(item) {
         </div>
         ${prive ? `<p class="mod-warn">⚠ Version <b>privée</b> : l’approuver ne la publiera pas dans le store. Seul son créateur peut la passer en publique.</p>` : ''}
         <div class="mod-detail hidden">
-            <h4>Ce qui change</h4>
+            <h4>Ce qui change dans les interactions</h4>
             ${diffHtml}
+            <h4>Ce qui change dans les instructions</h4>
+            ${txtDiffHtml}
+            <h4>Description du pack <span class="muted small">(non versionnée : pas d’historique)</span></h4>
+            <div class="mod-pre">${esc(String(b.description || '').slice(0, 2000)) || '<aucune>'}</div>
             <h4>Toutes les interactions (${regles.length})</h4>
             <ul class="mod-rules">${regles.map(ligneRegle).join('') || '<li class="muted">aucune</li>'}</ul>
             <h4>Ce que le pack peut faire</h4>

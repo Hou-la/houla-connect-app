@@ -705,3 +705,5 @@ button.is-busy::before {
     letter-spacing: .4px; }
 .mod-pre { max-height: 220px; overflow: auto; padding: 8px; border: 1px solid var(--border);
     border-radius: 6px; background: var(--bg-3); font-size: 12px; white-space: pre-wrap; }
+/* Ancien texte dans un diff : barre + libelle « MODIFIE », jamais la couleur seule. */
+.mod-pre--old { opacity: .75; }
