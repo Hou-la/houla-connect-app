@@ -110,7 +110,17 @@ static int mapIdx(DWORD gameIdx, DWORD* realIdx) {
        plusieurs jeux peuvent avoir la DLL sans jamais se gener. */
     if (gTarget[0] && gSelfExe[0] && strcmp(gTarget, gSelfExe) != 0) { *realIdx = gameIdx; return 1; }
     if (gameIdx == 0) { *realIdx = (DWORD)gVIdx; return 1; } /* Joueur 1 = virtuelle */
-    return 0; /* les autres index sont caches au jeu vise */
+    /* ⚠️ On NE MASQUE PLUS les autres emplacements (corrige le 2026-09-03).
+       Avant : `return 0` pour tout index != 0, ce qui declarait « aucune manette » sur les
+       emplacements 1 a 3. Consequence non voulue : la manette PHYSIQUE du joueur, et toute
+       manette supplementaire, DISPARAISSAIENT de la liste du jeu vise. Pour un jeu qui lit
+       betement le slot 0 c'etait sans effet visible ; pour un logiciel qui presente une LISTE
+       (emulateurs, jeux SDL), c'est destructeur : le joueur ne trouve plus sa propre manette.
+       On laisse donc passer, en masquant UNIQUEMENT l'emplacement reel de la virtuelle, sans
+       quoi elle apparaitrait deux fois (une fois en Joueur 1, une fois a sa vraie place). */
+    if (gameIdx == (DWORD)gVIdx) return 0;
+    *realIdx = gameIdx;
+    return 1;
 }
 
 DWORD WINAPI XInputGetState(DWORD idx, XI_STATE* st) {
@@ -150,6 +160,51 @@ DWORD WINAPI XInputGetAudioDeviceIds(DWORD idx, LPWSTR r, UINT* rc, LPWSTR c, UI
     DWORD ri; if (!mapIdx(idx, &ri)) return ERROR_DEVICE_NOT_CONNECTED;
     return rGetAudio ? rGetAudio(ri, r, rc, c, cc) : ERROR_DEVICE_NOT_CONNECTED;
 }
+
+/* ── Ordinaux SANS NOM du vrai xinput1_4.dll ────────────────────────────────────
+   Le vrai DLL exporte 100, 101, 102, 103, 104, 108 et 109 sans nom. Ne pas les exposer
+   n'est PAS neutre : GetProcAddress renverrait NULL la ou Windows renvoie une fonction,
+   et l'appelant se comporterait differemment selon qu'il charge notre DLL ou la vraie.
+
+   @108 = XInputGetCapabilitiesEx. C'est LE point critique : SDL2 et SDL3 le resolvent par
+   ordinal et s'en servent pour lire le VID/PID d'une manette, qui compose son GUID -- donc
+   son identite, donc les affectations de touches enregistrees par le joueur. Sa signature
+   est etablie par l'usage qu'en fait SDL : (a1, userIndex, flags, capsEx), l'index etant le
+   DEUXIEME argument et non le premier. On y applique donc le meme remappage qu'ailleurs,
+   sans quoi le jeu lirait l'identite d'une manette et les entrees d'une autre. */
+typedef DWORD (WINAPI *fnGetCapsEx)(DWORD, DWORD, DWORD, void*);
+DWORD WINAPI XInputGetCapabilitiesEx(DWORD a1, DWORD idx, DWORD flags, void* capsEx) {
+    initReal();
+    static fnGetCapsEx rCapsEx = NULL;
+    if (!rCapsEx && gReal) rCapsEx = (fnGetCapsEx)GetProcAddress(gReal, (LPCSTR)(ULONG_PTR)108);
+    DWORD ri; if (!mapIdx(idx, &ri)) return ERROR_DEVICE_NOT_CONNECTED;
+    return rCapsEx ? rCapsEx(a1, ri, flags, capsEx) : ERROR_DEVICE_NOT_CONNECTED;
+}
+
+/* 101 a 104 et 109 : non documentes, signatures inconnues. On les relaie TELS QUELS, sans
+   remappage (on ignore lequel de leurs arguments serait un index de manette : deviner
+   ferait pire que ne rien faire). Huit arguments de la taille d'un pointeur suffisent a
+   couvrir n'importe quelle signature raisonnable : dans la convention d'appel x64 de
+   Microsoft, les quatre premiers passent par registre et les suivants par la pile, c'est
+   l'APPELANT qui nettoie, donc transmettre des arguments en trop est sans consequence. */
+typedef DWORD_PTR (WINAPI *fnAny8)(DWORD_PTR, DWORD_PTR, DWORD_PTR, DWORD_PTR,
+                                   DWORD_PTR, DWORD_PTR, DWORD_PTR, DWORD_PTR);
+static DWORD_PTR relaisOrdinal(int ord, DWORD_PTR a, DWORD_PTR b, DWORD_PTR c, DWORD_PTR d,
+                               DWORD_PTR e, DWORD_PTR f, DWORD_PTR g, DWORD_PTR h) {
+    initReal();
+    if (!gReal) return (DWORD_PTR)ERROR_DEVICE_NOT_CONNECTED;
+    fnAny8 fn = (fnAny8)GetProcAddress(gReal, (LPCSTR)(ULONG_PTR)ord);
+    return fn ? fn(a, b, c, d, e, f, g, h) : (DWORD_PTR)ERROR_DEVICE_NOT_CONNECTED;
+}
+#define RELAIS(nom, ord) \
+    DWORD_PTR WINAPI nom(DWORD_PTR a, DWORD_PTR b, DWORD_PTR c, DWORD_PTR d, \
+                         DWORD_PTR e, DWORD_PTR f, DWORD_PTR g, DWORD_PTR h) { \
+        return relaisOrdinal((ord), a, b, c, d, e, f, g, h); }
+RELAIS(XInputProxyOrd101, 101)
+RELAIS(XInputProxyOrd102, 102)
+RELAIS(XInputProxyOrd103, 103)
+RELAIS(XInputProxyOrd104, 104)
+RELAIS(XInputProxyOrd109, 109)
 
 /* Marqueur : permet a Hou.la Connect de reconnaitre SES propres DLL (y compris une version
    anterieure, lors d'une mise a jour) et de les remplacer, sans jamais toucher a une DLL

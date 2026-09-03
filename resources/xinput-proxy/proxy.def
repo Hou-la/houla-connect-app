@@ -1,9 +1,46 @@
+; ⚠️ LES ORDINAUX DOIVENT CORRESPONDRE EXACTEMENT A CEUX DU VRAI xinput1_4.dll.
+;
+; BUG GRAVE CORRIGE LE 2026-09-03. Ce fichier declarait des ordinaux INVENTES, decales par
+; rapport a ceux de Windows. Table reelle relevee dans System32\xinput1_4.dll (lecture
+; directe de la table d'exports PE) contre ce que nous exportions AVANT :
+;
+;   ordinal | vrai xinput1_4.dll                | ce que nous exportions
+;   --------|-----------------------------------|-------------------------------
+;      1    | DllMain                           | XInputEnable
+;      5    | XInputEnable                      | (absent)
+;      7    | XInputGetBatteryInformation       | XInputGetKeystroke
+;      8    | XInputGetKeystroke                | (absent)
+;     10    | XInputGetAudioDeviceIds           | (absent)
+;    108    | (sans nom) XInputGetCapabilitiesEx| XInputGetAudioDeviceIds
+;
+; POURQUOI C'EST GRAVE. SDL2 et SDL3 -- donc Ryujinx, Dolphin, RetroArch et un grand nombre
+; de jeux -- resolvent l'ordinal 108 par GetProcAddress(dll, (LPCSTR)108) et l'appellent
+; comme XInputGetCapabilitiesEx pour lire le VID/PID d'une manette, qui compose son GUID.
+; Chez nous, cet ordinal pointait sur XInputGetAudioDeviceIds, de signature totalement
+; differente. Consequences : identite de manette cassee (les affectations enregistrees ne
+; correspondent plus, la manette apparait mais ne pilote rien) et, hors pack actif, un appel
+; a la vraie fonction audio avec un pointeur de compteur NULL, donc un plantage plausible du
+; JEU, uniquement parce que notre fichier trainait dans son dossier.
+;
+; Re-verification (sans Visual Studio) : lire la table d'exports PE des deux fichiers et
+; comparer ordinal par ordinal. Les ordinaux 101 a 104 et 109 ne sont pas documentes ; on
+; les expose quand meme en simple relais, parce qu'un GetProcAddress qui renvoie NULL est
+; deja un ecart de comportement avec le vrai DLL.
+;
+; DllMain (@1) n'est volontairement PAS exporte : c'est le point d'entree de la DLL, et rien
+; d'observable ne l'appelle par ordinal.
 EXPORTS
-    XInputEnable @1
-    XInputGetState @2
-    XInputSetState @3
-    XInputGetCapabilities @4
-    XInputGetBatteryInformation @6
-    XInputGetKeystroke @7
-    XInputGetStateEx @100 NONAME
-    XInputGetAudioDeviceIds @108
+    XInputGetState                  @2
+    XInputSetState                  @3
+    XInputGetCapabilities           @4
+    XInputEnable                    @5
+    XInputGetBatteryInformation     @7
+    XInputGetKeystroke              @8
+    XInputGetAudioDeviceIds         @10
+    XInputGetStateEx                @100 NONAME
+    XInputProxyOrd101               @101 NONAME
+    XInputProxyOrd102               @102 NONAME
+    XInputProxyOrd103               @103 NONAME
+    XInputProxyOrd104               @104 NONAME
+    XInputGetCapabilitiesEx         @108 NONAME
+    XInputProxyOrd109               @109 NONAME
