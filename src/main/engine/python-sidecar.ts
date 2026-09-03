@@ -7,7 +7,12 @@ import { createInterface, Interface } from 'readline';
 // C'est ce qui permet le pilotage bas niveau (Meccha) tout en gardant les bundles
 // comme donnée inerte.
 
-export type SidecarHelper = 'interception-keys' | 'vigem-gamepad' | 'vigem-passthrough' | 'release-pad' | 'foreground' | 'shutdown';
+// `capabilities` : ce que CETTE machine sait réellement faire (clavier ? manette ?), pour
+// n'afficher que ce qui marche au lieu de promettre puis échouer.
+// ⚠️ Les helpers gardent leurs préfixes Windows d'origine (`interception-`, `vigem-`) alors
+// qu'ils visent uinput sous Linux et Quartz sous macOS. Les renommer casserait tous les
+// bundles déjà publiés, qui sont de la donnée inerte et ne sont jamais migrés.
+export type SidecarHelper = 'interception-keys' | 'vigem-gamepad' | 'vigem-passthrough' | 'release-pad' | 'foreground' | 'shutdown' | 'capabilities';
 
 interface Pending {
     resolve: (v: any) => void;

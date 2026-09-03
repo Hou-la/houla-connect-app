@@ -203,9 +203,22 @@ function startFocusPoll(): void {
         if (!target?.exe) { gameFocused = true; return; } // pas de jeu lié -> ne rien bloquer
         try {
             const r = await sidecar().call('foreground', {}, 3000);
-            const fg = String((r && (r as { exe?: string }).exe) || '').toLowerCase();
+            const brut = (r as { exe?: string | null } | null)?.exe;
+            // ⚠️ FENÊTRE ACTIVE INCONNUE = PERMISSIF, jamais bloquant.
+            // Sous Wayland (GNOME, KDE), aucune API ne donne la fenêtre au premier plan : le
+            // sidecar renvoie donc `exe: null`, ce qui est un cas NORMAL, pas une panne. La
+            // version précédente transformait ce null en chaîne vide, les comparaisons
+            // échouaient, et TOUS les effets étaient bloqués EN SILENCE : le pack tournait, le
+            // journal annonçait « fired », et rien n'arrivait dans le jeu.
+            // Le focus-guard sert à éviter de taper des touches dans Discord, pas à interdire
+            // le produit sur tout un système : quand on ne sait pas, on laisse passer.
+            if (brut == null || brut === '') { gameFocused = true; return; }
+            const fg = String(brut).toLowerCase();
             const base = path.basename(target.exe).toLowerCase();
-            gameFocused = fg === target.exe.toLowerCase() || fg.endsWith('\\' + base);
+            // Les DEUX séparateurs sont testés : un « \ » codé en dur ne matchait jamais
+            // /usr/bin/jeu ni /Applications/Jeu.app/Contents/MacOS/Jeu.
+            gameFocused = fg === target.exe.toLowerCase()
+                || fg.endsWith('\\' + base) || fg.endsWith('/' + base);
         } catch { /* garder l'état précédent */ }
     }, 350);
 }
