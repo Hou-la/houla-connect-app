@@ -368,3 +368,21 @@ Commits **locaux non poussés** (dev d'abord, prod après validation) :
 - `api` (master) : `visualBundleId` dans le manifeste, nom/art d'animation, version/changelog/créateur dans
   les listes.
 Rappel : **push = déploiement**. Ne pousser que sur autorisation explicite, après validation en dev.
+
+### Pourquoi `build.mac.target` contient `zip` en plus de `dmg` (2026-09-03)
+
+`electron-updater` **ne sait pas mettre à jour depuis un `.dmg`**. Sans cible `zip`, le
+`latest-mac.yml` publié ne référence que le dmg et **tout contrôle de mise à jour macOS
+finit en erreur** dès qu'une version plus récente existe. Constaté sur `v0.1.62` :
+
+```
+$ curl -s .../v0.1.62/latest-mac.yml
+files: [ { url: Houla-Connect-0.1.62.dmg, ... } ]      # aucun .zip
+```
+
+⚠️ Ne PAS remettre de clé de commentaire (`_commentaire_*`) dans le champ `build` de
+`package.json` : electron-builder valide ce bloc contre un schéma STRICT et refuse toute
+propriété inconnue (`configuration.mac has an unknown property`). Le build échoue,
+localement **et en CI**. Les explications vont ici, pas dans le JSON.
+
+Re-vérification : télécharger `latest-mac.yml` de la dernière release ; il doit lister un `.zip`.

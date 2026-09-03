@@ -1,7 +1,7 @@
 {
   "name": "houla-connect-app",
   "productName": "Hou.la Connect",
-  "version": "0.1.62",
+  "version": "0.1.63",
   "description": "Hou.la Connect",
   "author": "Hou.la",
   "license": "Apache-2.0",
@@ -86,7 +86,6 @@
       "installerHeaderIcon": "resources/icon.ico"
     },
     "mac": {
-      "_commentaire_target": "zip OBLIGATOIRE en plus du dmg : electron-updater ne sait PAS mettre a jour depuis un .dmg. Sans lui, latest-mac.yml ne reference que le dmg et TOUT controle de mise a jour macOS finit sur une erreur des qu'une version plus recente existe. Constate sur v0.1.62 (latest-mac.yml ne listait que le .dmg) et corrige le 2026-09-03. Re-verification : telecharger latest-mac.yml de la derniere release, il doit lister un .zip.",
       "target": [
         "dmg",
         "zip"
