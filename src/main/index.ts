@@ -81,8 +81,38 @@ function isOurProxy(file: string): boolean {
 }
 /** Pose nos DLL proxy dans le dossier d'un jeu. Refuse d'écraser une DLL xinput ÉTRANGÈRE
  *  (certains jeux livrent la leur) : on préfère renoncer et l'expliquer. */
+/**
+ * Le programme visé lit-il ses manettes via SDL ?
+ *
+ * ⚠️ CRITÈRE DÉCISIF, et bien meilleur qu'une liste de noms d'émulateurs : il couvre aussi
+ * les nombreux JEUX bâtis sur SDL. Un programme SDL n'a AUCUN besoin de notre DLL proxy —
+ * il présente une LISTE de manettes et laisse l'utilisateur choisir, il n'y a pas de
+ * « slot 0 » à détourner. Pire, notre DLL lui NUIT : SDL résout l'ordinal 108 pour lire le
+ * VID/PID qui compose l'identité d'une manette, et la moindre divergence casse les
+ * affectations enregistrées par le joueur.
+ * Vérifié le 2026-09-04 : `SDL3.dll` est livré à côté de `Ryujinx.exe`.
+ */
+function usesSdl(dir: string): boolean {
+    try {
+        return fs.readdirSync(dir).some((f) => /^SDL[23]?(\.dll)$|^SDL[23]_/i.test(f));
+    } catch { return false; }
+}
+
 function placeProxyDlls(dir: string): { ok: boolean; reason?: string; code?: string } {
     const src = proxyDllDir();
+    // ── Jeu/émulateur SDL : on ne pose RIEN, et on nettoie ce qu'on aurait posé avant ──
+    // Poser la DLL ici serait au mieux inutile, au pire destructeur. Et une version
+    // antérieure de l'app a pu en déposer : on les retire, sinon le joueur hérite d'un
+    // fichier nuisible qu'il ne sait pas avoir.
+    if (usesSdl(dir)) {
+        removeProxyDlls(dir);
+        return {
+            ok: true,
+            code: 'SDL_NO_PROXY',
+            reason: 'Ce jeu lit les manettes via SDL : aucun fichier à poser. '
+                + 'Choisis simplement la manette Hou.la dans ses propres réglages de contrôleur.',
+        };
+    }
     const foreign = PROXY_DLL_NAMES.find((n) => {
         const dst = path.join(dir, n);
         return fs.existsSync(dst) && !isOurProxy(dst);
@@ -1032,7 +1062,10 @@ function registerIpc(): void {
         }
         if (!placed.ok) return placed;
         store.setGameForPack(slug, { exe, dir });
-        return { ok: true, exe, dir };
+        // Jeu SDL (émulateurs, et beaucoup de jeux) : rien n'a été posé, et c'est normal.
+        // On remonte le code pour que l'écran dise la VRAIE marche à suivre au lieu de
+        // « Jeu prêt », qui laisserait croire qu'il n'y a plus rien à faire.
+        return { ok: true, exe, dir, sdl: placed.code === 'SDL_NO_PROXY', reason: placed.reason };
     });
     ipcMain.handle('game:packStatus', (_e, slug: string) => {
         const g = slug ? store.getGameForPack(slug) : null;

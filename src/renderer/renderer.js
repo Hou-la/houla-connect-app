@@ -921,10 +921,19 @@ async function promptPackGame(slug) {
                     kind: 'error', title: 'Ferme le jeu, puis relance-le',
                     msg: "Ton jeu est bien enregistré, mais il est ouvert : Windows empêche de remplacer un fichier qu'il utilise. Ferme-le complètement puis rouvre-le, et démarre le pack. C'est la seule manipulation nécessaire.",
                 }
-                : {
-                    kind: 'ok', title: 'Jeu prêt',
-                    msg: "Relance le jeu une fois pour qu'il prenne le réglage en compte. Ensuite, à chaque démarrage de ce pack, c'est automatique.",
-                });
+                // Jeu ou ÉMULATEUR qui lit ses manettes via SDL : aucun fichier n'a été posé,
+                // et il ne faut pas en poser. Annoncer « Jeu prêt » serait faux : il reste
+                // une manipulation, mais dans les réglages DU JEU, pas ici.
+                : r.sdl
+                    ? {
+                        kind: 'ok', title: 'Jeu enregistré — un réglage à faire dans le jeu',
+                        msg: "Ce jeu choisit sa manette lui-même : ouvre ses réglages de contrôleur et sélectionne « Xbox 360 Controller » (c'est la manette Hou.la) pour le Joueur 1. Ne laisse pas ta manette physique sur le même joueur : Hou.la la recopie déjà, et les cadeaux s'y ajoutent.",
+                        persist: true,
+                    }
+                    : {
+                        kind: 'ok', title: 'Jeu prêt',
+                        msg: "Relance le jeu une fois pour qu'il prenne le réglage en compte. Ensuite, à chaque démarrage de ce pack, c'est automatique.",
+                    });
             return true;
         }
         if (r && r.reason) showToast('game', { kind: 'error', title: 'Impossible de préparer le jeu', msg: r.reason });
