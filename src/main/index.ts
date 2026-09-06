@@ -525,6 +525,10 @@ function registerIpc(): void {
         try { return { ok: true, items: await api.moderationQueue() }; }
         catch (e: any) { return { ok: false, reason: e?.message || 'File indisponible.' }; }
     });
+    ipcMain.handle('moderation:count', async () => {
+        try { return { ok: true, ...(await api.moderationCount()) }; }
+        catch { return { ok: false, count: 0, oldestDays: null }; }
+    });
     ipcMain.handle('moderation:approve', async (_e, versionId: string) => {
         try { await api.moderationApprove(versionId); return { ok: true }; }
         catch (e: any) { return { ok: false, reason: e?.message || 'Approbation impossible.' }; }

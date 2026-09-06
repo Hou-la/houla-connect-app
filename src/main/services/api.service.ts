@@ -43,6 +43,13 @@ export class ApiService {
         if (!res.ok) throw new Error(`File de modération indisponible (${res.status}).`);
         return (await res.json()) as any[];
     }
+    /** Compteur seul, pour la pastille du menu. Route minuscule : on ne fait pas transiter
+     *  toute la file (manifestes, instructions, diffs) juste pour afficher un nombre. */
+    async moderationCount(): Promise<{ count: number; oldestDays: number | null }> {
+        const res = await this.authFetch('/api/admin/bundles/moderation/queue/count');
+        if (!res.ok) throw new Error(`Compteur indisponible (${res.status}).`);
+        return (await res.json()) as { count: number; oldestDays: number | null };
+    }
     async moderationApprove(versionId: string): Promise<void> {
         const res = await this.authFetch(`/api/admin/bundles/moderation/${encodeURIComponent(versionId)}/approve`, { method: 'PATCH' });
         if (!res.ok) throw new Error(`Approbation refusée (${res.status}).`);

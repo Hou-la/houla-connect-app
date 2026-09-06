@@ -507,6 +507,7 @@ async function showApp() {
         await loadWorkspaces();
         await loadInstalled();
         void revealAdminNav(); // onglet Modération : admin uniquement, sans bloquer l'affichage
+        void refreshStoreBadge(); // mises a jour disponibles, sans bloquer non plus
         switchView('capture');
     } catch (e) {
         // API injoignable au démarrage : on garde l'app ouverte mais on NE laisse PAS
@@ -986,6 +987,7 @@ async function installBundle(slug, btn) {
         if (btn) btn.textContent = 'Installé ✓';
         await loadInstalled(); // rafraîchit le menu Capture
         await loadStore(); // rafraîchit l'état installé/mise à jour des cartes
+        void refreshStoreBadge(); // le nombre de mises à jour vient de changer
     } catch { if (btn) btn.textContent = 'Échec'; }
 }
 // Modale de CHOIX générique : renvoie la clé du bouton cliqué (ou null si fermée).
@@ -3607,6 +3609,14 @@ function moderationRowHtml(item) {
     // public n'est posé que pour une version `public` (bundle-moderation.service.ts). Sans
     // ce message, on approuve, il ne se passe rien, et on cherche le bug ailleurs. C'est
     // exactement ce qui est arrivé aux 10 versions du pack Mario Kart.
+    // ── VERDICT DE L'IA, en tete de ligne ──
+    // ⚠️ Constat du 2026-09-06 : deux versions ont ete approuvees a la main alors que l'IA
+    // les avait REFUSEES (« les instructions invitent l'utilisateur a telecharger »). Rien a
+    // l'ecran ne le disait. Une revue humaine qui ne voit pas l'analyse automatique n'est
+    // pas une revue, c'est une signature a l'aveugle.
+    const revues = (item && item.reviews) || [];
+    const refusIA = revues.filter((r) => r.reviewerType === 'ai' && r.status === 'rejected');
+    const alerteIA = (item && item.aiRejected) || refusIA.length > 0;
     const prive = v.visibility !== 'public';
     const d = modDiff(m, prev && prev.manifestJson);
     const ligneRegle = (r) => `<li><b>${esc(r.label || r.id)}</b> : ${esc(modTriggerSummary(r.on))} → ${esc(modEffectSummary(r.effect))}</li>`;
@@ -3662,8 +3672,16 @@ function moderationRowHtml(item) {
             <button class="btn btn--ghost mod-reject" title="Refuser cette version, avec un motif envoyé au créateur">✖ Refuser</button>
             <button class="btn btn--primary mod-approve" title="Approuver cette version">✔ Approuver</button>
         </div>
+        ${alerteIA ? `<p class="mod-warn mod-warn--ia">⛔ <b>L’IA a REFUSÉ cette version.</b> ${refusIA.map((r) => esc(r.rejectionReason || 'motif non précisé')).join(' · ')} — lis le motif avant d’approuver.</p>` : ''}
         ${prive ? `<p class="mod-warn">⚠ Version <b>privée</b> : l’approuver ne la publiera pas dans le store. Seul son créateur peut la passer en publique.</p>` : ''}
         <div class="mod-detail hidden">
+            <h4>Ce qu’a dit l’analyse automatique</h4>
+            ${revues.length
+                ? `<ul class="mod-rules">` + revues.map((r) =>
+                    `<li><b>Essai ${esc(String(r.attemptNumber))}</b> · ${esc(r.reviewerType === 'ai' ? 'IA' : 'humain')} · `
+                    + `${esc(moderationLabel(r.status))}${r.confidenceScore != null ? ` (confiance ${esc(String(r.confidenceScore))})` : ''}`
+                    + `${r.rejectionReason ? ` : ${esc(r.rejectionReason)}` : ''}</li>`).join('') + `</ul>`
+                : '<p class="muted small">Aucune analyse enregistrée pour cette version.</p>'}
             <h4>Ce qui change dans les interactions</h4>
             ${diffHtml}
             <h4>Ce qui change dans les instructions</h4>
@@ -3754,8 +3772,69 @@ $('mod-refresh').onclick = () => loadModerationQueue();
 /** Révèle l'onglet Modération pour un compte admin (le serveur reste seul juge). */
 async function revealAdminNav() {
     try {
-        if (await api.isAdmin()) $('nav-moderation').classList.remove('hidden');
+        if (await api.isAdmin()) {
+            $('nav-moderation').classList.remove('hidden');
+            refreshModerationBadge();
+            // Une file peut se remplir pendant que l'app est ouverte. Sans ce rafraîchissement,
+            // il faudrait relancer l'app pour voir qu'il y a du travail : c'est exactement le
+            // reproche fait le 2026-09-06 (« je ne vois pas s'il y a de nouveaux bundles »).
+            setInterval(refreshModerationBadge, 120000);
+        }
     } catch { /* non admin, ou hors ligne : l'onglet reste caché */ }
+}
+/** Pose (ou retire) une pastille de comptage sur un onglet de la navigation. */
+function setNavBadge(id, n, title, stale) {
+    const el = $(id);
+    if (!el) return;
+    // Zéro = on RETIRE la pastille. Une pastille « 0 » est un bruit permanent qu'on finit
+    // par ne plus voir, et qui rendrait inutile celle qui compte vraiment.
+    if (!n) { el.classList.add('hidden'); el.textContent = ''; el.removeAttribute('title'); return; }
+    el.classList.remove('hidden');
+    el.textContent = n > 99 ? '99+' : String(n);
+    el.title = title || '';
+    el.classList.toggle('nav-badge--stale', !!stale);
+}
+/**
+ * Pastille du Store : le nombre de MISES À JOUR disponibles.
+ *
+ * Volontairement PAS le nombre de packs installés, ni le nombre de packs du store : ces
+ * deux nombres ne demandent aucune action, donc une pastille qui les affiche ne fait
+ * qu'ajouter du bruit. Une pastille doit dire « il y a quelque chose à faire ».
+ *
+ * Limite assumée : on compare aux 100 premiers packs du store. Au-delà, une mise à jour
+ * pourrait être manquée par la pastille (la carte du pack, elle, l'affiche toujours).
+ * Le catalogue en compte 8 aujourd'hui ; ce sera à revoir bien avant d'y arriver.
+ */
+async function refreshStoreBadge() {
+    try {
+        const [installes, publics] = await Promise.all([
+            api.store.installed(),
+            api.store.list({ limit: '100' }),
+        ]);
+        const parSlug = new Map(((publics || [])).map((b) => [b.slug, b]));
+        let n = 0;
+        for (const inst of installes || []) {
+            const pub = parSlug.get(inst.slug);
+            if (pub && pub.version && inst.version && pub.version !== inst.version) n++;
+        }
+        setNavBadge('badge-store', n,
+            n === 1 ? '1 pack installé a une mise à jour' : `${n} packs installés ont une mise à jour`);
+    } catch { setNavBadge('badge-store', 0); }
+}
+async function refreshModerationBadge() {
+    try {
+        const r = await api.moderation.count();
+        if (!r || !r.ok) { setNavBadge('badge-moderation', 0); return; }
+        const j = r.oldestDays;
+        // Le RETARD est écrit dans l'infobulle, en toutes lettres : la pastille dit combien,
+        // l'infobulle dit depuis quand. Aucune information ne repose sur la couleur.
+        const titre = j == null
+            ? `${r.count} version(s) en attente de ta décision`
+            : j >= 2
+                ? `${r.count} version(s) en attente — la plus ancienne depuis ${j} jours`
+                : `${r.count} version(s) en attente de ta décision`;
+        setNavBadge('badge-moderation', r.count, titre, (j || 0) >= 2);
+    } catch { setNavBadge('badge-moderation', 0); }
 }
 
 async function loadConnectorsView() {

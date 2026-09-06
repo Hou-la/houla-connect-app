@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('houlaConnect', {
     // Modération des packs (ADMIN) : la file, et les deux décisions possibles.
     moderation: {
         queue: () => invoke('moderation:queue'),
+        count: () => invoke('moderation:count'),
         approve: (versionId: string) => invoke('moderation:approve', versionId),
         reject: (versionId: string, reason: string) => invoke('moderation:reject', versionId, reason),
     },

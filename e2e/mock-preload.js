@@ -21,6 +21,7 @@
         isAdmin: () => R(!!cfg.isAdmin),
         moderation: {
             queue: rec('modQueue', () => R(cfg.moderationQueue || { ok: true, items: [] })),
+            count: () => R(cfg.moderationCount || { ok: true, count: 0, oldestDays: null }),
             approve: rec('modApprove', () => R(cfg.moderationApproveResult || { ok: true })),
             reject: rec('modReject', () => R({ ok: true })),
         },

@@ -728,3 +728,21 @@ button.is-busy::before {
 }
 /* Les actions gardent leur propre geste : le curseur doit le dire. */
 .bundle-card--clickable .card-actions button { cursor: pointer; }
+
+/* Pastille de comptage dans la navigation.
+   ⚠️ Elle porte un NOMBRE, pas une simple couleur : le propriétaire est daltonien, et un
+   point coloré ne dirait ni « combien » ni « quoi ». Elle disparaît quand il n'y a rien à
+   signaler : une pastille « 0 » est un bruit permanent qu'on finit par ne plus voir. */
+.nav-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; margin-left: 8px; padding: 0 5px;
+    border-radius: 9px; background: var(--accent); color: #fff;
+    font-size: 11px; font-weight: 700; line-height: 1;
+    font-variant-numeric: tabular-nums; vertical-align: 1px;
+}
+/* File qui traîne : le chiffre est doublé d'un contour épais et d'un point d'exclamation
+   dans l'infobulle. Jamais la couleur seule. */
+.nav-badge--stale { box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--accent); }
+/* Refus de l'IA : bordure épaisse + symbole ⛔ + le mot « REFUSÉ » en capitales.
+   Trois signaux non colorés, parce que c'est l'avertissement qu'il ne faut pas rater. */
+.mod-warn--ia { border-left-width: 6px; font-weight: 600; }
