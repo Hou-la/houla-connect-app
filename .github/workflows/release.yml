@@ -199,7 +199,17 @@ jobs:
           # « helper non verifie », et comme la sortie n'etait pas controlee, ce test
           # ne pouvait rien attraper d'autre qu'un binaire incapable de demarrer.
           # On envoie desormais la bonne forme, et on EXIGE un `result`.
-          REP=$(echo '{"id":1,"method":"capabilities","params":{}}' | timeout 30 "$BIN" | head -c 600)
+          # ⚠️ `timeout` N'EXISTE PAS SUR macOS : userland BSD, pas GNU coreutils.
+          # La commande sortait donc en 127 (« command not found ») et faisait
+          # echouer TOUT le build macOS. Le defaut preexistait, masque par
+          # l'echec de pip qui survenait plus tot.
+          # Aucun garde-fou n'est perdu sans lui : le sidecar lit stdin jusqu'a
+          # EOF, et `echo | binaire` ferme stdin, donc il ne peut pas rester
+          # suspendu.
+          if command -v timeout >/dev/null 2>&1; then TO="timeout 30"
+          elif command -v gtimeout >/dev/null 2>&1; then TO="gtimeout 30"
+          else TO=""; fi
+          REP=$(echo '{"id":1,"method":"capabilities","params":{}}' | $TO "$BIN" | head -c 600)
           echo "$REP"
           case "$REP" in
             *'"result"'*) : ;;
