@@ -1707,6 +1707,7 @@ function eventFieldHtml(r) {
         return `<input type="text" class="r-name" placeholder="Nom du cadeau (ex. Torches)" value="${esc(r.label || '')}" title="Nom affiché au viewer" />`
             + `<select class="r-giftslug">${slotOptions(r.event.giftSlug)}</select>`
             + `<select class="r-coincost" title="Prix payé par le spectateur. Liste fermée : le montant part sur le chemin de l'argent réel, il ne se saisit pas librement. Deux cadeaux peuvent porter le même prix.">${coinTierOptions(ruleCoins(r))}</select>`
+            + `<input type="text" class="r-group" maxlength="24" placeholder="Groupe (ex. Cœurs)" value="${esc(r.event.group || '')}" title="Regroupe les cadeaux dans la bibliothèque du spectateur. Avec un pack de plusieurs dizaines de cadeaux tous au même prix, c'est ce qui permet de s'y retrouver : toi seul sais que « cœur rose » et « cœur bleu » vont ensemble. Laisse vide si tu n'en veux pas.">`
             + `<span class="r-icon" title="icône du cadeau" style="${ic}"></span>`
             + `<button type="button" class="r-iconbtn">Icône…</button>`
             + `<button type="button" class="r-iconguide" title="Comment réaliser l'icône ?">i</button>`
@@ -1791,6 +1792,12 @@ function readRule(el, r) {
         if (q('.r-coincost')) {
             const c = Number(q('.r-coincost').value);
             r.event.coinCost = INTERACTIVE_COIN_TIERS.indexOf(c) !== -1 ? c : undefined;
+        }
+        // Groupe d'affichage. Vide = pas de groupe : on ne pose rien plutôt que
+        // de créer un filtre sans nom chez le spectateur.
+        if (q('.r-group')) {
+            const g = q('.r-group').value.replace(/\s+/g, ' ').trim().slice(0, 24);
+            r.event.group = g || undefined;
         }
         // accentColor (couleur de bordure PERSO, ou undefined = auto rareté) est géré EN DIRECT
         // par les handlers du picker / du ↺ reset ci-dessous — rien à relire depuis le DOM ici
@@ -2214,6 +2221,9 @@ function buildRule(r, i) {
     // pour le créateur.
     if (r.event.type === 'gift-custom' && INTERACTIVE_COIN_TIERS.indexOf(r.event.coinCost) !== -1) {
         on.coinCost = r.event.coinCost;
+    }
+    if (r.event.type === 'gift-custom' && typeof r.event.group === 'string' && r.event.group.trim()) {
+        on.group = r.event.group.trim().slice(0, 24);
     }
     // Le MODE choisi (et non la simple présence d'un champ) décide ce qui part :
     // les deux saisies (contient/tous les N, palier/tous les N) coexistent en mémoire.

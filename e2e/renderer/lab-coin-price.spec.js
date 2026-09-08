@@ -79,7 +79,23 @@ test('DEUX emplacements différents peuvent porter le MÊME prix', async ({ page
     expect(new Set(prix)).toEqual(new Set(['5'])); // …un seul prix.
 });
 
-test('CONTRE-TÉMOIN : un cadeau du CATALOGUE n’a pas de sélecteur de prix', async ({ page }) => {
+test('le créateur peut GROUPER ses cadeaux', async ({ page }) => {
+    // Les onglets empêchent les cadeaux du pack d'enterrer les classiques ; les
+    // groupes les empêchent de s'enterrer entre eux. Avec des dizaines de
+    // cadeaux au même prix, le tri par prix ne sépare plus rien et les noms
+    // sont tronqués sur la tuile : le créateur est le seul à savoir que
+    // « cœur rose » et « cœur bleu » vont ensemble.
+    await ouvrirLab(page);
+    await passerEnCadeauPersonnalise(page);
+
+    const groupe = page.locator('#view-lab .r-group').first();
+    await expect(groupe).toBeVisible();
+    await expect(groupe).toHaveAttribute('maxlength', '24');
+    await groupe.fill('Cœurs');
+    await expect(groupe).toHaveValue('Cœurs');
+});
+
+test('CONTRE-TÉMOIN : un cadeau du CATALOGUE n’a ni prix ni groupe', async ({ page }) => {
     // Sans lui, « le sélecteur est là » ne prouverait rien : il pourrait être
     // affiché pour tous les types d'interaction. Seul un emplacement réservé
     // porte un prix déclaré par le pack ; un cadeau du catalogue a le sien.
@@ -87,4 +103,5 @@ test('CONTRE-TÉMOIN : un cadeau du CATALOGUE n’a pas de sélecteur de prix', 
     await page.locator('#view-lab .r-event').first().selectOption('gift');
     await expect(page.locator('#view-lab .r-giftslug').first()).toBeVisible();
     await expect(page.locator('#view-lab .r-coincost')).toHaveCount(0);
+    await expect(page.locator('#view-lab .r-group')).toHaveCount(0);
 });
