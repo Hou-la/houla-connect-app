@@ -45,5 +45,36 @@ et les empaquette. Le bouton **« Installer le pilote »** (vue Connecteurs) dev
 les interactions « Manette » pilotent le jeu (après que l'utilisateur a installé le pilote).
 
 ## Refaire le build
-Seulement si `resources/sidecar/houla_sidecar.py` change, ou pour monter de version vgamepad :
-reprends les étapes, puis `gh release upload sidecar-bin-v1 ... --clobber`.
+
+> ### ⚠️ DÈS QUE **N'IMPORTE QUEL** FICHIER DE `resources/sidecar/` CHANGE.
+>
+> Cette section disait « seulement si `houla_sidecar.py` change ». **C'était faux
+> depuis le découpage multiplateforme** : le vrai code des pilotes vit dans
+> `resources/sidecar/backends/*.py`, et `houla_sidecar.py` n'est plus qu'un
+> aiguillage. Corrigé le 2026-09-09.
+>
+> Ce que ça a failli coûter : le passage du sidecar à **8 manettes** touchait
+> `backends/win32.py`, pas `houla_sidecar.py`. En suivant cette phrase, on
+> publiait une app dont l'interface appelle `vigem-pads` sur un exécutable qui
+> ne connaît pas ce helper. Le symptôme aurait été un « Appliquer et publier »
+> qui échoue chez l'utilisateur, pour une fonctionnalité annoncée comme livrée.
+>
+> **La CI ne reconstruit RIEN** : `release.yml` télécharge l'exe pré-construit
+> depuis la release `sidecar-bin-v1`. Un `.py` modifié et non re-figé ne part
+> donc jamais, et rien ne le signale.
+
+Reprends les étapes, puis :
+```powershell
+gh release upload sidecar-bin-v1 dist/houla-sidecar.exe --clobber
+```
+
+### Vérifier que le nouvel exe est bien le bon
+Ne cherche PAS une chaîne dans le binaire : PyInstaller compresse son archive,
+et un `grep` sur `vigem-gamepad` répond « absent » alors que le helper existe.
+Le seul contrôle qui vaut est de **l'interroger** :
+
+```powershell
+'{"id":1,"method":"vigem-pads","params":{}}' | .\dist\houla-sidecar.exe
+# attendu : {"id": 1, "result": {"pads": [], "max": 8, ...}}
+# si tu lis  {"id": 1, "error": "helper non vérifié: vigem-pads"}  -> c'est l'ANCIEN exe.
+```
