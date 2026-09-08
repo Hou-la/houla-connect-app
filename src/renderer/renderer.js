@@ -1604,18 +1604,45 @@ let pendingEditSlug = null; // pack à ouvrir en édition quand on arrive sur le
 let pendingBannerFile = null; // bannière choisie avant la création du pack (upload différé)
 let giftCatalog = []; // [{slug,name,thumbnailUrl,coinCost,isInteractiveSlot}] depuis GET /api/gifts
 
-// Échelle FIXE des 30 slots interactifs (coins) — miroir de la config plateforme
-// (les slots interactifs ne sont pas exposés dans /api/gifts, on porte l'échelle ici).
-// Le PRIX est lié au NUMÉRO de slot : ranger un cadeau dans un slot moins cher = moins cher.
-const INTERACTIVE_SLOT_COINS = [5, 10, 15, 20, 30, 45, 60, 80, 100, 125, 155, 190, 230, 280, 340, 410, 490, 580, 680, 790, 900, 1010, 1120, 1230, 1340, 1440, 1530, 1600, 1660, 1700];
+// PALIERS DE PRIX (coins). Miroir de `api/src/coin/constants/interactive-coin-tiers.ts`,
+// que le serveur applique : toute valeur hors de cette liste est REFUSÉE à la
+// soumission. Les slots interactifs n'étant pas exposés dans /api/gifts, on porte
+// la liste ici.
+//
+// ⚠️ CE N'EST PLUS UNE ÉCHELLE PAR SLOT. Jusqu'au 2026-09-08 le PRIX était lié au
+// NUMÉRO du slot : 30 slots, 30 prix distincts, donc impossible de proposer deux
+// cadeaux différents au même tarif. Le créateur choisit désormais librement un
+// palier, et autant de fois qu'il veut.
+const INTERACTIVE_COIN_TIERS = [5, 10, 15, 20, 30, 45, 60, 80, 100, 125, 155, 190, 230, 280, 340, 410, 490, 580, 680, 790, 900, 1010, 1120, 1230, 1340, 1440, 1530, 1600, 1660, 1700];
+const INTERACTIVE_SLOT_COUNT = 99;
 const COIN_EUR_CENTS = 1.3; // ~1,3 cent / coin (packs de coins 0,99 €/70 … 99,99 €/8500)
 function slotIndex(slug) { const m = /^ix_slot_(\d{2})$/.exec(slug || ''); return m ? (+m[1] - 1) : -1; }
-function slotCoins(slug) { const i = slotIndex(slug); return i >= 0 ? INTERACTIVE_SLOT_COINS[i] : null; }
-function slotPriceLabel(slug) {
-    const c = slotCoins(slug);
+/** Prix de REPLI si la règle n'en déclare pas : miroir exact du serveur
+ *  (échelle historique pour 01..30, palier le plus bas au-delà). */
+function slotFallbackCoins(slug) {
+    const i = slotIndex(slug);
+    if (i < 0) return null;
+    return i < INTERACTIVE_COIN_TIERS.length ? INTERACTIVE_COIN_TIERS[i] : INTERACTIVE_COIN_TIERS[0];
+}
+/** Prix EFFECTIF d'une règle : ce que le viewer paiera réellement. */
+function ruleCoins(r) {
+    const declare = r && r.event ? r.event.coinCost : undefined;
+    if (INTERACTIVE_COIN_TIERS.indexOf(declare) !== -1) return declare;
+    return slotFallbackCoins(r && r.event ? r.event.giftSlug : null);
+}
+function coinsPriceLabel(c) {
     if (c == null) return '';
     const eur = (c * COIN_EUR_CENTS) / 100;
     return `${c} coins ≈ ${eur.toFixed(2).replace('.', ',')} €`;
+}
+function slotPriceLabel(slug) { return coinsPriceLabel(slotFallbackCoins(slug)); }
+/** Le menu déroulant des prix admis. Pas de saisie libre : le montant part sur
+ *  le chemin de l'argent réel (coins -> étoiles -> euros payables). */
+function coinTierOptions(selected) {
+    const val = INTERACTIVE_COIN_TIERS.indexOf(selected) !== -1 ? selected : null;
+    return INTERACTIVE_COIN_TIERS.map((c) =>
+        `<option value="${c}"${c === val ? ' selected' : ''}>${coinsPriceLabel(c)}</option>`,
+    ).join('');
 }
 
 async function loadGiftCatalog() {
@@ -1632,12 +1659,15 @@ function giftOptionsGeneric(selected) {
     const fallback = selected && !known ? `<option value="${esc(selected)}" selected>${esc(selected)}</option>` : '';
     return fallback + (opts || '<option value="">(catalogue indisponible)</option>');
 }
-// « Cadeau personnalisé » = un SLOT réservé (ix_slot_01..30), art custom (icône obligatoire).
+// « Cadeau personnalisé » = un SLOT réservé (ix_slot_01..99), art custom (icône obligatoire).
+// Le slot est une PLACE, plus un prix : son libellé ne porte donc plus de montant,
+// qui se choisit à côté. 99 et pas 100 : à trois chiffres, `ix_slot_100` cesse
+// d'être reconnu par les regex `\d{2}` de cette page et le champ ICÔNE disparaît.
 function slotOptions(selected) {
     let s = '';
-    for (let i = 1; i <= 30; i++) {
+    for (let i = 1; i <= INTERACTIVE_SLOT_COUNT; i++) {
         const v = `ix_slot_${String(i).padStart(2, '0')}`;
-        s += `<option value="${v}"${v === selected ? ' selected' : ''}>Slot ${i} · ${INTERACTIVE_SLOT_COINS[i - 1]} coins</option>`;
+        s += `<option value="${v}"${v === selected ? ' selected' : ''}>Emplacement ${i}</option>`;
     }
     return s;
 }
@@ -1651,25 +1681,32 @@ function defaultSlot() { return 'ix_slot_01'; }
 // pas de couleur). Paliers par prix croissant — variés en TEINTE *et* en clarté
 // (le propriétaire est daltonien : la rareté reste lisible par la luminosité + le
 // prix affiché à côté, jamais par la seule teinte).
-function slotRarityHex(slug) {
-    const n = parseInt(String(slug || '').replace('ix_slot_', ''), 10) || 1;
+// ⚠️ Dérive du PRIX, plus du NUMÉRO de slot (changement du 2026-09-08). Tant que
+// le numéro FAISAIT le prix, les deux revenaient au même. Ce n'est plus vrai :
+// un cadeau posé sur l'emplacement 42 mais vendu 5 coins serait apparu
+// « épique » alors qu'il est le moins cher du pack.
+function rarityHexForCoins(coins) {
+    const i = INTERACTIVE_COIN_TIERS.indexOf(coins);
+    const n = i >= 0 ? i + 1 : 1;
     if (n <= 6) return '#9aa4b2';   //  commun    — gris clair
     if (n <= 12) return '#46c37b';  //  peu commun — vert
     if (n <= 18) return '#3d8bff';  //  rare       — bleu
     if (n <= 24) return '#a855f7';  //  épique     — violet
     return '#f5a623';               //  légendaire — or (le plus lumineux)
 }
+function slotRarityHex(slug) { return rarityHexForCoins(slotFallbackCoins(slug)); }
 function eventFieldHtml(r) {
     if (r.event.type === 'gift') return `<select class="r-giftslug">${giftOptionsGeneric(r.event.giftSlug)}</select>`;
     if (r.event.type === 'gift-custom') {
         const src = r.event.iconUrl || r.event._iconPreview;
-        const accent = r.event.accentColor || slotRarityHex(r.event.giftSlug);
+        const accent = r.event.accentColor || rarityHexForCoins(ruleCoins(r));
         const hasAccent = !!r.event.accentColor;
         // Aperçu : la vignette porte déjà le halo (auto par rareté, ou choisi).
         const ic = (src ? `background-image:url('${esc(src)}');` : '')
             + `box-shadow:0 0 0 2px ${esc(accent)}, 0 0 8px ${esc(accent)};`;
         return `<input type="text" class="r-name" placeholder="Nom du cadeau (ex. Torches)" value="${esc(r.label || '')}" title="Nom affiché au viewer" />`
             + `<select class="r-giftslug">${slotOptions(r.event.giftSlug)}</select>`
+            + `<select class="r-coincost" title="Prix payé par le spectateur. Liste fermée : le montant part sur le chemin de l'argent réel, il ne se saisit pas librement. Deux cadeaux peuvent porter le même prix.">${coinTierOptions(ruleCoins(r))}</select>`
             + `<span class="r-icon" title="icône du cadeau" style="${ic}"></span>`
             + `<button type="button" class="r-iconbtn">Icône…</button>`
             + `<button type="button" class="r-iconguide" title="Comment réaliser l'icône ?">i</button>`
@@ -1748,6 +1785,13 @@ function readRule(el, r) {
     if (r.event.type === 'gift-custom') {
         // Nom affiché au viewer (le label de la règle). Sans ça -> « Interactif N ».
         if (q('.r-name')) r.label = q('.r-name').value;
+        // Prix choisi. La valeur vient d'une liste fermée : si elle n'y est pas
+        // (DOM trafiqué, ancien état), on ne pose RIEN et le serveur retombera
+        // sur le prix du slot réservé, plutôt que de porter un montant douteux.
+        if (q('.r-coincost')) {
+            const c = Number(q('.r-coincost').value);
+            r.event.coinCost = INTERACTIVE_COIN_TIERS.indexOf(c) !== -1 ? c : undefined;
+        }
         // accentColor (couleur de bordure PERSO, ou undefined = auto rareté) est géré EN DIRECT
         // par les handlers du picker / du ↺ reset ci-dessous — rien à relire depuis le DOM ici
         // (relire la valeur du picker la ferait passer pour « perso » même quand c'est l'auto).
@@ -2107,7 +2151,7 @@ function renderRules() {
             if (col) col.addEventListener('input', () => { r.event.accentColor = col.value; paint(col.value); if (reset) reset.disabled = false; });
             if (reset) reset.addEventListener('click', () => {
                 r.event.accentColor = undefined;
-                const c = slotRarityHex(r.event.giftSlug);
+                const c = rarityHexForCoins(ruleCoins(r));
                 if (col) col.value = c;
                 paint(c);
                 reset.disabled = true;
@@ -2164,6 +2208,13 @@ function buildRule(r, i) {
     if (onType === 'gift') on.giftSlug = r.event.giftSlug || r.event.slot;
     if (r.event.type === 'gift-custom' && r.event.iconUrl) on.iconUrl = r.event.iconUrl;
     if (r.event.type === 'gift-custom' && r.event.accentColor) on.accentColor = r.event.accentColor;
+    // Prix déclaré. On ne l'écrit QUE s'il appartient à la liste fermée : le
+    // validateur serveur refuse tout le manifeste sur une valeur hors échelle,
+    // et un pack entier rejeté pour un prix parasite serait incompréhensible
+    // pour le créateur.
+    if (r.event.type === 'gift-custom' && INTERACTIVE_COIN_TIERS.indexOf(r.event.coinCost) !== -1) {
+        on.coinCost = r.event.coinCost;
+    }
     // Le MODE choisi (et non la simple présence d'un champ) décide ce qui part :
     // les deux saisies (contient/tous les N, palier/tous les N) coexistent en mémoire.
     if (r.event.type === 'comment') {
