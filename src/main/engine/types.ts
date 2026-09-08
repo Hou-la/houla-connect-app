@@ -155,6 +155,19 @@ export interface FireContext {
     vars: Record<string, string | number>;
     /** Connecteur résolu pour CET effet (endpoint + identifiants), si lié. */
     connector?: { type: string; config: Record<string, string> } | null;
+    /**
+     * Joueur visé par le spectateur (1..8), quand plusieurs jouent sur la même
+     * machine. `undefined` = pas de cible : l'effet part sur la manette par
+     * défaut, ce qui est le comportement des versions antérieures et celui de
+     * tous les packs à un seul joueur.
+     *
+     * ⚠️ Sans que l'EXÉCUTEUR le lise, une cible choisie par le spectateur
+     * n'aurait AUCUN effet observable : tous les cadeaux continueraient
+     * d'arriver sur la même manette. L'échec serait indiscernable du succès,
+     * donc toute recette doit porter sur deux joueurs qui réagissent
+     * DIFFÉREMMENT, jamais sur un seul qui réagit.
+     */
+    targetPlayer?: number;
 }
 
 /** Un exécuteur transforme un effet déclaratif en I/O réelle (dans le process MAIN). */

@@ -51,8 +51,17 @@ export class GamepadExecutor implements Executor {
         }
     }
 
-    async fire(effect: BundleEffect, _ctx: FireContext): Promise<void> {
+    async fire(effect: BundleEffect, ctx: FireContext): Promise<void> {
         const e = effect as GamepadEffect;
+        // JOUEUR VISÉ. Ce paramètre était le `_ctx` ignoré : l'exécuteur ne
+        // savait rien de la cible, donc tous les cadeaux arrivaient sur la même
+        // manette quoi que choisisse le spectateur. C'était le dernier maillon
+        // manquant, et son absence produisait un échec indiscernable d'un
+        // succès. Absent -> le sidecar prend le joueur 1, exactement comme avant
+        // le multi-manettes.
+        const cible = ctx?.targetPlayer;
+        const pour = <T extends object>(args: T): T & { player?: number } =>
+            (cible ? { ...args, player: cible } : args);
         const hold = Math.min(Math.max(e.holdMs ?? 120, 0), 10000);
         const gap = Math.min(Math.max(e.gapMs ?? 150, 0), 30000);
         // Répétition optionnelle (X fois, avec un intervalle entre chaque passe) —
@@ -64,7 +73,7 @@ export class GamepadExecutor implements Executor {
         if (e.analog && typeof e.analog === 'object') {
             const analogHold = e.holdMs ?? 300;
             for (let r = 0; r < repeat; r++) {
-                await this.sidecar().call('vigem-gamepad', { analog: e.analog, holdMs: analogHold }, analogHold);
+                await this.sidecar().call('vigem-gamepad', pour({ analog: e.analog, holdMs: analogHold }), analogHold);
                 if (r < repeat - 1 && repeatGap > 0) await new Promise((res) => setTimeout(res, repeatGap));
             }
             return;
@@ -100,7 +109,7 @@ export class GamepadExecutor implements Executor {
         // le timeout doit couvrir sa durée totale.
         const budget = steps.reduce((s, st) => s + (st.holdMs ?? hold) + (st.waitMs ?? 0), 0);
         for (let r = 0; r < repeat; r++) {
-            await this.sidecar().call('vigem-gamepad', { steps }, budget);
+            await this.sidecar().call('vigem-gamepad', pour({ steps }), budget);
             if (r < repeat - 1 && repeatGap > 0) await new Promise((res) => setTimeout(res, repeatGap));
         }
     }

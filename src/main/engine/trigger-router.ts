@@ -1,6 +1,21 @@
 import { Engine } from './engine';
 import { BundleManifest, BundleRule, FireContext } from './types';
 
+/** Nombre maximal de joueurs ciblables. Miroir de `MAX_JOUEURS` du sidecar. */
+export const MAX_JOUEURS = 8;
+
+/**
+ * Numéro de joueur exploitable, ou `undefined`.
+ *
+ * Le serveur a déjà validé la cible (elle existe, sa manette répond), mais ce
+ * nombre finit en INDEX DE MANETTE : une valeur hors plage vaut mieux ignorée
+ * (l'effet part au joueur par défaut, comportement d'avant) que devinée.
+ */
+export function joueurVise(v: unknown): number | undefined {
+    const n = Number(v);
+    return Number.isInteger(n) && n >= 1 && n <= MAX_JOUEURS ? n : undefined;
+}
+
 // Route les événements live (SDK @houla/live-connector) vers les règles du
 // manifeste, construit le FireContext, et délègue au moteur. Réutilise le même
 // pipeline dedup/cooldown/gate pour TOUS les triggers (pas seulement les cadeaux).
@@ -78,6 +93,11 @@ export class TriggerRouter {
                     quantity: gift.gift?.quantity ?? 1,
                     coins: gift.gift?.totalCoins ?? gift.gift?.coinCost ?? 0,
                     giftName: gift.gift?.name || '',
+                    // Joueur visé par le spectateur. Le serveur l'a déjà validé
+                    // (il existe, sa manette répond) ; on borne quand même ici,
+                    // parce que ce nombre finit en index de manette et qu'une
+                    // valeur farfelue vaudrait mieux ignorée que devinée.
+                    targetPlayer: joueurVise(gift?.targetPlayer),
                 },
                 gift.transactionId,
             );
