@@ -85,6 +85,20 @@ def helper_release_pad(args):
     return _B.release_pad(args)
 
 
+def helper_vigem_pads(args):
+    """Déclare / inventorie les manettes virtuelles, une par joueur.
+
+    Un backend qui ne sait pas faire de multi-joueur (macOS, plateforme inconnue)
+    n'expose pas ce helper : on le DIT au lieu de laisser croire à une réussite.
+    Un « pas de réponse » se confondrait ici avec « zéro manette »."""
+    fn = getattr(_B, "pads", None)
+    if fn is None:
+        raise RuntimeError(
+            "MULTIPAD_UNSUPPORTED: ce systeme ne sait pas creer plusieurs manettes virtuelles",
+        )
+    return fn(args)
+
+
 def helper_foreground(args):
     return _B.foreground(args)
 
@@ -98,6 +112,7 @@ HELPERS = {
     "interception-keys": helper_interception_keys,
     "vigem-gamepad": helper_vigem_gamepad,
     "vigem-passthrough": helper_vigem_passthrough,
+    "vigem-pads": helper_vigem_pads,
     "release-pad": helper_release_pad,
     "foreground": helper_foreground,
     "shutdown": helper_shutdown,
