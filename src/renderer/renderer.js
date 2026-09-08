@@ -3428,6 +3428,103 @@ $('env-select').onchange = async () => {
 api.autoLaunch().then((v) => ($('autolaunch').checked = !!v));
 $('autolaunch').onchange = () => api.autoLaunch($('autolaunch').checked);
 
+// ── MANETTES DES JOUEURS ────────────────────────────────────────────────────
+// Le diffuseur déclare qui joue, et sous quel nom. Sans ça, le sélecteur
+// « À qui ? » n'apparaît JAMAIS chez le spectateur : c'est cette carte qui
+// donne son existence à toute la fonctionnalité de ciblage.
+let labelsManettes = JSON.parse(localStorage.getItem('houla.padLabels') || '{}');
+
+function rendreManettes() {
+    const n = Number($('pads-count').value) || 0;
+    const hote = $('pads-list');
+    if (!hote) return;
+    if (n === 0) {
+        hote.innerHTML = '';
+        return;
+    }
+    let html = '';
+    for (let i = 1; i <= n; i++) {
+        const v = labelsManettes[i] || '';
+        // Le placeholder EST le repli réel côté serveur : le diffuseur voit donc
+        // exactement ce que verront ses spectateurs s'il ne saisit rien.
+        html += `<div class="row between"><span class="muted">Manette ${i}</span>`
+            + `<input type="text" class="pad-label" data-pad="${i}" maxlength="24" `
+            + `placeholder="Contrôleur ${i}" value="${esc(v)}" `
+            + `title="Le pseudo du joueur. C'est ce que verront tous les spectateurs." /></div>`;
+    }
+    hote.innerHTML = html;
+    hote.querySelectorAll('.pad-label').forEach((el) => {
+        el.oninput = () => {
+            labelsManettes[el.dataset.pad] = el.value;
+            localStorage.setItem('houla.padLabels', JSON.stringify(labelsManettes));
+        };
+    });
+}
+
+if ($('pads-count')) {
+    $('pads-count').value = String(Number(localStorage.getItem('houla.padCount') || 0));
+    $('pads-kind').value = localStorage.getItem('houla.padKind') || 'x360';
+    rendreManettes();
+
+    $('pads-count').onchange = () => {
+        const n = Number($('pads-count').value) || 0;
+        localStorage.setItem('houla.padCount', String(n));
+        // Au-delà de 2, le Xbox 360 ne peut PAS marcher (4 emplacements XInput
+        // partagés avec les manettes physiques). On bascule le choix nous-mêmes
+        // plutôt que de laisser le diffuseur se heurter au refus du sidecar.
+        if (n > 2 && $('pads-kind').value !== 'ds4') {
+            $('pads-kind').value = 'ds4';
+            localStorage.setItem('houla.padKind', 'ds4');
+            $('pads-status').textContent =
+                'Passé en DualShock 4 : au-delà de 2 joueurs, les manettes Xbox 360 virtuelles seraient invisibles du jeu.';
+        }
+        rendreManettes();
+    };
+    $('pads-kind').onchange = () => localStorage.setItem('houla.padKind', $('pads-kind').value);
+
+    $('pads-apply').onclick = async () => {
+        const statut = $('pads-status');
+        const n = Number($('pads-count').value) || 0;
+        statut.textContent = 'Application…';
+        try {
+            if (n === 0) {
+                // Zéro joueur = on RETIRE la liste : le sélecteur disparaît chez
+                // le spectateur au lieu de rester avec des noms périmés.
+                await api.driver.gamepadPads({ count: 1, kind: $('pads-kind').value });
+                const r = await api.driver.publishPlayers([]);
+                statut.textContent = r?.ok
+                    ? 'Aucun joueur déclaré : les spectateurs n’auront pas de choix de cible.'
+                    : `Non publié : ${r?.reason || 'raison inconnue'}`;
+                return;
+            }
+            const pads = await api.driver.gamepadPads({ count: n, kind: $('pads-kind').value });
+            if (!pads?.ok) {
+                statut.textContent = pads?.reason || 'Les manettes n’ont pas pu être créées.';
+                return;
+            }
+            // On publie ce qui EXISTE vraiment, pas ce qui a été demandé : si
+            // Windows n'a énuméré que 3 manettes sur 4, annoncer 4 joueurs aux
+            // spectateurs leur ferait payer un cadeau qui n'agirait nulle part.
+            const reels = (pads.pads || []).map((p) => ({
+                id: p.player,
+                label: (labelsManettes[p.player] || '').trim(),
+                connected: true,
+            }));
+            const r = await api.driver.publishPlayers(reels);
+            if (!r?.ok) {
+                statut.textContent = `Manettes créées, mais NON publiées : ${r?.reason || 'raison inconnue'}`;
+                return;
+            }
+            const manque = typeof pads.devices === 'number' && pads.devices < reels.length;
+            statut.textContent = manque
+                ? `${reels.length} manette(s) déclarée(s), mais Windows n’en publie que ${pads.devices} pour l’instant : attends quelques secondes et réapplique.`
+                : `${reels.length} joueur(s) publié(s) : les spectateurs peuvent maintenant choisir leur cible.`;
+        } catch (e) {
+            statut.textContent = String(e?.message || e);
+        }
+    };
+}
+
 // ══════════ Connecteurs (composant partagé : modale + Réglages + Lab) ══════════
 /** Construit le formulaire d'un connecteur dans `container`. Réutilisé partout. */
 function buildConnectorForm(container, connector, presetType) {

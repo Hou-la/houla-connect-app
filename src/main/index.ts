@@ -1014,6 +1014,61 @@ function registerIpc(): void {
         return { ok: true };
     });
     ipcMain.handle('gamepad:status', () => ({ connected: gamepadSessionOn, engineRunning }));
+
+    // ── MANETTES MULTI-JOUEURS ────────────────────────────────────────────
+    // Le renderer n'envoie que du DÉCLARATIF : un nombre de joueurs, un type,
+    // des libellés. Jamais rien d'exécutable, jamais un index de périphérique
+    // brut. C'est main qui parle au sidecar.
+    ipcMain.handle('gamepad:pads', async (_e, req: { count?: number; kind?: string } | undefined) => {
+        try {
+            const args: Record<string, unknown> = {};
+            if (req && typeof req.count === 'number') {
+                // Borné ici AUSSI, pas seulement dans le sidecar : le renderer
+                // est la surface la moins fiable de l'app.
+                args.count = Math.max(1, Math.min(8, Math.round(req.count)));
+            }
+            if (req?.kind === 'ds4' || req?.kind === 'x360') args.kind = req.kind;
+            const r = await sidecar().call('vigem-pads', args, 30000);
+            return { ok: true, ...(r as object) };
+        } catch (e: any) {
+            const msg = String(e?.message || e);
+            // On TRADUIT les deux refus attendus. Un message brut du sidecar ne
+            // dirait rien au diffuseur, et « ça n'a pas marché » l'enverrait
+            // chercher le problème dans son pack.
+            if (msg.includes('XINPUT_SLOTS_EXHAUSTED')) {
+                return {
+                    ok: false,
+                    reason:
+                        'Windows n\'a que 4 emplacements de manette Xbox, partagés avec tes manettes physiques. '
+                        + 'Au-delà de 2 joueurs, passe les manettes virtuelles en DualShock 4 : '
+                        + 'les émulateurs les voient, mais un jeu qui ne lit que XInput ne les verra pas.',
+                };
+            }
+            if (msg.includes('VIGEMBUS_MISSING')) {
+                return { ok: false, reason: 'Le pilote ViGEmBus est absent : installe-le depuis Réglages.', code: 'VIGEMBUS_MISSING' };
+            }
+            if (msg.includes('MULTIPAD_UNSUPPORTED')) {
+                return { ok: false, reason: 'Ce système ne sait pas créer plusieurs manettes virtuelles.' };
+            }
+            return { ok: false, reason: msg };
+        }
+    });
+
+    ipcMain.handle('gamepad:publishPlayers', async (_e, players: unknown) => {
+        // Nettoyage AVANT l'envoi : ces libellés s'afficheront chez tous les
+        // spectateurs. Le serveur re-nettoie de son côté, la garde est double.
+        const propres = (Array.isArray(players) ? players : [])
+            .map((p: any) => ({
+                id: Number(p?.id),
+                label: typeof p?.label === 'string'
+                    ? p.label.replace(/\s+/g, ' ').trim().slice(0, 24)
+                    : '',
+                connected: p?.connected !== false,
+            }))
+            .filter((p) => Number.isInteger(p.id) && p.id >= 1 && p.id <= 8)
+            .slice(0, 8);
+        return await api.setInteractivePlayers(propres);
+    });
     ipcMain.handle('driver:isGamepadInstalled', async () => {
         if (process.platform !== 'win32') return { installed: false };
         return await new Promise<{ installed: boolean }>((resolve) => {

@@ -85,6 +85,24 @@
                 ? rej('sonde indisponible')
                 : R(cfg.gamepadStatus || { connected: false, engineRunning: false })),
             releaseGamepad: rec('releaseGamepad', () => R(cfg.releaseGamepadResult || { ok: true })),
+            // Multi-joueurs. Par defaut on rend exactement le nombre demande :
+            // un test qui veut simuler une enumeration incomplete passe
+            // `cfg.gamepadPadsResult`.
+            gamepadPads: rec('gamepadPads', (req) => R(
+                cfg.gamepadPadsResult || {
+                    ok: true,
+                    max: 8,
+                    devices: (req && req.count) || 1,
+                    pads: Array.from({ length: (req && req.count) || 1 }, (_, i) => ({
+                        player: i + 1,
+                        kind: (req && req.kind) || 'x360',
+                        xinputIndex: null,
+                        passthrough: false,
+                        physicalIndex: null,
+                    })),
+                },
+            )),
+            publishPlayers: rec('publishPlayers', () => R(cfg.publishPlayersResult || { ok: true })),
         },
         game: {
             detect: () => R(cfg.gameDetected || []),

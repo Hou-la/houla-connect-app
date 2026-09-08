@@ -222,6 +222,40 @@ export class ApiService {
     }
 
     /**
+     * Publie la liste des JOUEURS ciblables du direct.
+     *
+     * Elle atterrit dans le blob que le spectateur lit réellement (payload de
+     * jonction + push LiveKit), pas sur la ligne de clé : la liste vit PAR
+     * DIRECT, pas par clé.
+     *
+     * Best-effort comme le pack actif, mais on REND le résultat : l'interface
+     * doit pouvoir dire « pas publié » plutôt que de laisser croire que c'est
+     * fait, sinon le diffuseur renommerait ses manettes dans le vide.
+     */
+    async setInteractivePlayers(
+        players: Array<{ id: number; label?: string; connected?: boolean }>,
+    ): Promise<{ ok: boolean; reason?: string }> {
+        const keyId = await this.resolveEventKeyId();
+        if (!keyId) {
+            return { ok: false, reason: 'Aucune clé d\'événement : connecte-toi et démarre un pack.' };
+        }
+        try {
+            const r = await this.authFetch(
+                `/api/manager/event-key/${encodeURIComponent(keyId)}/players`,
+                {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ players }),
+                },
+            );
+            if (!r.ok) return { ok: false, reason: `Le serveur a refusé (${r.status}).` };
+            return { ok: true };
+        } catch (e: any) {
+            return { ok: false, reason: e?.message || 'Réseau indisponible.' };
+        }
+    }
+
+    /**
      * Signale une installation de pack à l'API (compteur `installCount` du store).
      *
      * ⚠️ CONSTAT PROD (2026-09-03) : `install_count` valait **0 sur les 8 packs**, alors que

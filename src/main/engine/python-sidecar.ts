@@ -12,7 +12,7 @@ import { createInterface, Interface } from 'readline';
 // ⚠️ Les helpers gardent leurs préfixes Windows d'origine (`interception-`, `vigem-`) alors
 // qu'ils visent uinput sous Linux et Quartz sous macOS. Les renommer casserait tous les
 // bundles déjà publiés, qui sont de la donnée inerte et ne sont jamais migrés.
-export type SidecarHelper = 'interception-keys' | 'vigem-gamepad' | 'vigem-passthrough' | 'release-pad' | 'foreground' | 'shutdown' | 'capabilities';
+export type SidecarHelper = 'interception-keys' | 'vigem-gamepad' | 'vigem-passthrough' | 'vigem-pads' | 'release-pad' | 'foreground' | 'shutdown' | 'capabilities';
 
 interface Pending {
     resolve: (v: any) => void;

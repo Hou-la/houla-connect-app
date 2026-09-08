@@ -20,7 +20,7 @@
                  decouvrir par un message furieux. Le badge porte du TEXTE, pas une
                  couleur : le proprietaire est daltonien. -->
             <span class="badge-beta" data-i18n-title="version-beta-des-fonctions-sont-encore-incompl"
-                  title="Version bêta : des fonctions sont encore incomplètes ou en cours de portage.">BÊTA</span>
+                  title="Version bêta : des fonctions sont encore incomplètes ou en cours de portage." data-i18n="beta">BÊTA</span>
         </div>
         <div class="titlebar__drag"></div>
         <div class="titlebar__controls">
@@ -306,6 +306,40 @@
                             <option value="dev" data-i18n="dev-localhost-53001">Dev (localhost:53001)</option>
                         </select>
                         <p class="hint" data-i18n="change-l-api-ciblee-te-deconnecte-reconnecte-toi">Change l'API ciblée. Te déconnecte (reconnecte-toi sur le nouvel environnement).</p>
+                    </div>
+                    <!-- MANETTES : détection, nommage, publication aux spectateurs.
+                         Sans cette carte, le sélecteur « À qui ? » n'apparaît
+                         jamais chez le spectateur : c'est ici qu'on déclare qui
+                         joue. -->
+                    <div class="card" id="pads-card">
+                        <label data-i18n="manettes-des-joueurs">Manettes des joueurs</label>
+                        <p class="hint" data-i18n="plusieurs-personnes-jouent-sur-cette-machine-decl">Plusieurs personnes jouent sur cette machine ? Déclare-les ici : les spectateurs pourront choisir à qui envoyer leur cadeau. Donne-leur le pseudo du joueur, c'est ce qui s'affichera.</p>
+                        <div class="row between">
+                            <span class="muted" data-i18n="nombre-de-joueurs">Nombre de joueurs</span>
+                            <select id="pads-count">
+                                <option value="0" data-i18n="aucun-un-seul-joueur">Aucun (un seul joueur)</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                            </select>
+                        </div>
+                        <div class="row between">
+                            <span class="muted" data-i18n="type-de-manette-virtuelle">Type de manette virtuelle</span>
+                            <select id="pads-kind">
+                                <option value="x360" data-i18n="xbox-360-compatible-partout-2-joueurs-maximum">Xbox 360 — compatible partout, 2 joueurs maximum</option>
+                                <option value="ds4" data-i18n="dualshock-4-jusqu-a-8-joueurs-emulateurs">DualShock 4 — jusqu'à 8 joueurs (émulateurs)</option>
+                            </select>
+                        </div>
+                        <p class="hint" data-i18n="windows-n-a-que-4-emplacements-de-manette-xbox-pa">Windows n'a que 4 emplacements de manette Xbox, partagés avec tes manettes physiques : au-delà de 2 joueurs il faut passer en DualShock 4. Les émulateurs les voient ; un jeu qui ne lit que XInput, non.</p>
+                        <div id="pads-list"></div>
+                        <div class="row">
+                            <button id="pads-apply" class="btn" data-i18n="appliquer-et-publier">Appliquer et publier</button>
+                        </div>
+                        <p class="hint" id="pads-status"></p>
                     </div>
                     <div class="card">
                         <label data-i18n="langue">Langue</label>
