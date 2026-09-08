@@ -171,11 +171,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install --upgrade pip pyinstaller
+          # ENVIRONNEMENT VIRTUEL, et pas le Python systeme.
+          # Les images macOS recentes marquent leur Python « externally managed »
+          # (PEP 668) : `pip install` y est REFUSE, et le build macOS echouait
+          # entierement la-dessus alors que Linux passait encore. Un venv est la
+          # reponse portable, et elle ne depend pas de l'humeur de l'image.
+          python3 -m venv "$RUNNER_TEMP/pyenv"
+          PY="$RUNNER_TEMP/pyenv/bin/python"
+          "$PY" -m pip install --upgrade pip pyinstaller
           # Les marqueurs PEP 508 de requirements.txt n'installent que ce qui concerne
           # CETTE plateforme (evdev sur Linux, pyobjc sur macOS, rien de Windows).
-          python3 -m pip install -r resources/sidecar/requirements.txt
-          python3 -m PyInstaller --onefile --name houla-sidecar             --distpath resources/sidecar --workpath "$RUNNER_TEMP/pyi-build"             --specpath "$RUNNER_TEMP/pyi-spec"             resources/sidecar/houla_sidecar.py
+          "$PY" -m pip install -r resources/sidecar/requirements.txt
+          "$PY" -m PyInstaller --onefile --name houla-sidecar             --distpath resources/sidecar --workpath "$RUNNER_TEMP/pyi-build"             --specpath "$RUNNER_TEMP/pyi-spec"             resources/sidecar/houla_sidecar.py
           BIN=resources/sidecar/houla-sidecar
           if [ ! -s "$BIN" ]; then
             echo "::error::Sidecar non construit sur ${{ matrix.os }} : $BIN absent ou vide."
@@ -184,10 +191,20 @@ jobs:
           fi
           chmod +x "$BIN"
           echo "OK  $BIN  ($(wc -c < "$BIN") octets)"
-          # Le binaire doit au moins DEMARRER et repondre : un fichier present ne prouve
+          # Le binaire doit DEMARRER et REPONDRE JUSTE : un fichier present ne prouve
           # pas qu'il s'execute (dependance native manquante, architecture incompatible).
-          echo '{"id":1,"helper":"capabilities","args":{}}' | timeout 30 "$BIN" | head -c 400
-          echo
+          #
+          # ⚠️ La requete envoyait `{"helper":...,"args":...}` alors que le protocole
+          # attend `{"method":...,"params":...}` : le sidecar repondait donc TOUJOURS
+          # « helper non verifie », et comme la sortie n'etait pas controlee, ce test
+          # ne pouvait rien attraper d'autre qu'un binaire incapable de demarrer.
+          # On envoie desormais la bonne forme, et on EXIGE un `result`.
+          REP=$(echo '{"id":1,"method":"capabilities","params":{}}' | timeout 30 "$BIN" | head -c 600)
+          echo "$REP"
+          case "$REP" in
+            *'"result"'*) : ;;
+            *) echo "::error::Le sidecar demarre mais ne repond pas correctement : $REP"; exit 1 ;;
+          esac
       # Signature de code, UNIQUEMENT si les secrets sont configurés (sinon build non
       # signé, toujours téléchargeable ; SmartScreen/Gatekeeper alerteront) :
       #   - Windows : Azure Trusted Signing (secrets AZURE_*)
