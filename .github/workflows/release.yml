@@ -272,6 +272,7 @@ jobs:
             fi
             rm -f "$RUNNER_TEMP/cert.p12"
 
+            SIGNE_OK=0
             if [ "$SIGNABLE" = "1" ]; then
               echo "Signature Developer ID + notarisation macOS (clé API App Store Connect)"
               export CSC_LINK="$APPLE_CSC_LINK"
@@ -280,9 +281,16 @@ jobs:
               echo "$APPLE_API_KEY_B64" | base64 -d > "$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8"
               export APPLE_API_KEY="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8"
               # APPLE_API_KEY_ID + APPLE_API_ISSUER sont déjà dans l'env (bloc env: ci-dessus).
-              npx electron-builder --publish always -c.mac.notarize=true
-            else
-              echo "::warning::Certificat Apple INUTILISABLE (import refusé par le trousseau) : build macOS NON SIGNÉE."
+              # ⚠️ `|| true` VOLONTAIRE. La sonde ci-dessus prouve que le
+              # certificat s'importe, mais electron-builder refait SON propre
+              # import et peut echouer autrement (trousseau temporaire, mot de
+              # passe de trousseau). Sans ce repli, macOS ne produisait AUCUNE
+              # build : mieux vaut une app non signee qu'une plateforme absente.
+              if npx electron-builder --publish always -c.mac.notarize=true; then SIGNE_OK=1; fi
+              unset CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY
+            fi
+            if [ "$SIGNE_OK" != "1" ]; then
+              echo "::warning::Signature macOS impossible (certificat Apple refusé) : build NON SIGNÉE publiée à la place."
               {
                 echo "## ⚠️ macOS publié SANS signature"
                 echo ""
