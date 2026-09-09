@@ -313,33 +313,42 @@
                          joue. -->
                     <div class="card" id="pads-card">
                         <label data-i18n="manettes-des-joueurs">Manettes des joueurs</label>
-                        <p class="hint" data-i18n="plusieurs-personnes-jouent-sur-cette-machine-decl">Plusieurs personnes jouent sur cette machine ? Déclare-les ici : les spectateurs pourront choisir à qui envoyer leur cadeau. Donne-leur le pseudo du joueur, c'est ce qui s'affichera.</p>
-                        <div class="row between">
-                            <span class="muted" data-i18n="nombre-de-joueurs">Nombre de joueurs</span>
-                            <select id="pads-count">
-                                <option value="0" data-i18n="aucun-un-seul-joueur">Aucun (un seul joueur)</option>
-                                <option value="2">2</option>
-                                <option value="3">3</option>
-                                <option value="4">4</option>
-                                <option value="5">5</option>
-                                <option value="6">6</option>
-                                <option value="7">7</option>
-                                <option value="8">8</option>
-                            </select>
+                        <p class="card-intro" data-i18n="plusieurs-personnes-jouent-sur-cette-machine-decl">Plusieurs personnes jouent sur cette machine ? Déclare-les ici : les spectateurs pourront choisir à qui envoyer leur cadeau.</p>
+
+                        <div class="form">
+                            <div class="form__row">
+                                <label class="form__lbl" for="pads-count" data-i18n="nombre-de-joueurs">Nombre de joueurs</label>
+                                <select id="pads-count" class="form__ctl">
+                                    <option value="0" data-i18n="aucun-un-seul-joueur">Aucun (un seul joueur)</option>
+                                    <option value="2">2</option>
+                                    <option value="3">3</option>
+                                    <option value="4">4</option>
+                                    <option value="5">5</option>
+                                    <option value="6">6</option>
+                                    <option value="7">7</option>
+                                    <option value="8">8</option>
+                                </select>
+                            </div>
+                            <div class="form__row">
+                                <label class="form__lbl" for="pads-kind" data-i18n="type-de-manette-virtuelle">Type de manette</label>
+                                <select id="pads-kind" class="form__ctl">
+                                    <option value="x360" data-i18n="xbox-360-compatible-partout-2-joueurs-maximum">Xbox 360 — compatible partout, 2 joueurs maximum</option>
+                                    <option value="ds4" data-i18n="dualshock-4-jusqu-a-8-joueurs-emulateurs">DualShock 4 — jusqu'à 8 joueurs (émulateurs)</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="row between">
-                            <span class="muted" data-i18n="type-de-manette-virtuelle">Type de manette virtuelle</span>
-                            <select id="pads-kind">
-                                <option value="x360" data-i18n="xbox-360-compatible-partout-2-joueurs-maximum">Xbox 360 — compatible partout, 2 joueurs maximum</option>
-                                <option value="ds4" data-i18n="dualshock-4-jusqu-a-8-joueurs-emulateurs">DualShock 4 — jusqu'à 8 joueurs (émulateurs)</option>
-                            </select>
+
+                        <p class="note" data-i18n="windows-n-a-que-4-emplacements-de-manette-xbox-pa">Windows n'a que 4 emplacements de manette Xbox, partagés avec tes manettes physiques : au-delà de 2 joueurs il faut passer en DualShock 4. Les émulateurs les voient ; un jeu qui ne lit que XInput, non.</p>
+
+                        <div id="pads-names" class="form form--names hidden">
+                            <p class="form__legend" data-i18n="nom-affiche-aux-spectateurs">Nom affiché aux spectateurs</p>
+                            <div id="pads-list"></div>
                         </div>
-                        <p class="hint" data-i18n="windows-n-a-que-4-emplacements-de-manette-xbox-pa">Windows n'a que 4 emplacements de manette Xbox, partagés avec tes manettes physiques : au-delà de 2 joueurs il faut passer en DualShock 4. Les émulateurs les voient ; un jeu qui ne lit que XInput, non.</p>
-                        <div id="pads-list"></div>
-                        <div class="row">
-                            <button id="pads-apply" class="btn" data-i18n="appliquer-et-publier">Appliquer et publier</button>
+
+                        <div class="form__actions">
+                            <button id="pads-apply" class="btn btn--primary" data-i18n="appliquer-et-publier">Appliquer et publier</button>
+                            <p class="status hidden" id="pads-status"></p>
                         </div>
-                        <p class="hint" id="pads-status"></p>
                     </div>
                     <div class="card">
                         <label data-i18n="langue">Langue</label>

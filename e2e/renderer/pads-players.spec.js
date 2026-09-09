@@ -53,6 +53,35 @@ test('CONTRE-TÉMOIN : à 2 joueurs, aucune bascule', async ({ page }) => {
     await expect(page.locator('#pads-kind')).toHaveValue('x360');
 });
 
+test('zéro joueur : le groupe de noms est CACHÉ, pas vide', async ({ page }) => {
+    // Avant, l'intitulé restait affiché au-dessus du néant.
+    await ouvrirReglages(page);
+    await page.locator('#pads-count').selectOption('0');
+    await expect(page.locator('#pads-names')).toBeHidden();
+    await expect(page.locator('#pads-list .pad-label')).toHaveCount(0);
+});
+
+test('tous les contrôles de la carte ont la MÊME largeur', async ({ page }) => {
+    // Le defaut visuel signale le 2026-09-09 : le libelle etait comprime a ~25 %
+    // et se cassait en deux lignes (« Manette » puis « 1 ») pendant que le
+    // controle mangeait le reste. Une grille commune rend toutes les largeurs
+    // identiques.
+    await ouvrirReglages(page);
+    await page.locator('#pads-count').selectOption('2');
+
+    const largeurs = await page.locator('#pads-card .form__ctl').evaluateAll(
+        (els) => els.map((e) => Math.round(e.getBoundingClientRect().width)),
+    );
+    expect(largeurs.length).toBeGreaterThanOrEqual(4); // 2 selects + 2 champs
+    expect(new Set(largeurs).size).toBe(1);
+
+    // Et aucun libelle ne se casse en deux lignes.
+    const hauteurs = await page.locator('#pads-card .form__lbl').evaluateAll(
+        (els) => els.map((e) => Math.round(e.getBoundingClientRect().height)),
+    );
+    expect(Math.max(...hauteurs) - Math.min(...hauteurs)).toBeLessThanOrEqual(2);
+});
+
 test('publier : les noms saisis partent, avec le bon numéro de joueur', async ({ page }) => {
     await ouvrirReglages(page);
     await page.locator('#pads-count').selectOption('2');

@@ -746,3 +746,72 @@ button.is-busy::before {
 /* Refus de l'IA : bordure épaisse + symbole ⛔ + le mot « REFUSÉ » en capitales.
    Trois signaux non colorés, parce que c'est l'avertissement qu'il ne faut pas rater. */
 .mod-warn--ia { border-left-width: 6px; font-weight: 600; }
+
+/* ═══════════════════════════════════════════════════════════════
+   FORMULAIRE EN LIGNES : libellé à gauche, contrôle à droite
+   ═══════════════════════════════════════════════════════════════
+   Avant, ces champs étaient des `.row.between` avec un `select` en
+   `width: 100%` : le contrôle mangeait ~75 % de la carte et le libellé,
+   comprimé, se cassait en deux lignes (« Manette » puis « 1 »). Et tous les
+   textes d'aide portaient la même classe que les titres, si bien qu'on ne
+   savait plus lire ce qui était un intitulé et ce qui était une explication.
+
+   Ici : UNE grille, deux colonnes. Tous les contrôles ont donc exactement la
+   même largeur, alignés au pixel, et un libellé ne peut plus se casser. */
+.form { display: grid; gap: 10px; margin: 4px 0 14px; }
+.form__row {
+    display: grid;
+    /* 40 % pour le libellé, 60 % pour le contrôle : le libellé le plus long
+       (« Type de manette virtuelle ») tient sur une ligne, et les valeurs
+       longues des listes déroulantes restent lisibles. */
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    align-items: center;
+    gap: 14px;
+}
+.form__lbl {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text);
+    /* Un libellé ne se casse JAMAIS en deux lignes : c'est ce qui rendait la
+       carte illisible. S'il déborde, il s'abrège. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* Les contrôles perdent la marge basse globale : c'est la grille qui espace. */
+.form__ctl, .form__row select, .form__row input { margin: 0; width: 100%; }
+
+/* Sous-titre d'un groupe de champs (ex. « Nom affiché aux spectateurs »).
+   Distinct d'un titre de carte ET d'un texte d'aide. */
+.form__legend {
+    margin: 2px 0 10px; font-size: 12px; font-weight: 600;
+    color: var(--text); letter-spacing: .2px;
+}
+.form--names { padding-top: 12px; border-top: 1px solid var(--border); }
+
+.form__actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+
+/* Texte d'intro d'une carte : une phrase, sous le titre. */
+.card-intro { margin: 0 0 14px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+/* CONTRAINTE ou avertissement : visuellement distinct d'un intitulé comme
+   d'une simple aide, grâce à un filet à gauche. La couleur ne porte AUCUNE
+   information à elle seule (le propriétaire est daltonien) : c'est le filet et
+   le retrait qui signalent « ceci est une explication », pas la teinte. */
+.note {
+    margin: 0 0 14px; padding: 8px 0 8px 12px;
+    border-left: 3px solid var(--border);
+    font-size: 12px; color: var(--muted); line-height: 1.5;
+}
+
+/* Résultat d'une action. Précédé d'un chevron pour qu'on le lise comme une
+   réponse de l'app, pas comme un paragraphe d'aide de plus. */
+.status { margin: 0; font-size: 12.5px; color: var(--text); line-height: 1.45; }
+.status::before { content: "› "; color: var(--muted); }
+
+/* Fenêtre étroite : la grille passe sur une colonne plutôt que d'écraser les
+   contrôles. */
+@media (max-width: 720px) {
+    .form__row { grid-template-columns: 1fr; gap: 6px; }
+    .form__lbl { white-space: normal; }
+}

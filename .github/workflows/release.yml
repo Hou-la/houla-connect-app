@@ -247,14 +247,57 @@ jobs:
               -c.win.azureSignOptions.codeSigningAccountName="${{ secrets.AZURE_SIGN_ACCOUNT }}" \
               -c.win.azureSignOptions.certificateProfileName="${{ secrets.AZURE_SIGN_PROFILE }}"
           elif [ "${{ matrix.os }}" = "macos-latest" ] && [ -n "$APPLE_CSC_LINK" ]; then
-            echo "Signature Developer ID + notarisation macOS (clé API App Store Connect)"
-            export CSC_LINK="$APPLE_CSC_LINK"
-            export CSC_KEY_PASSWORD="$APPLE_CSC_KEY_PASSWORD"
-            # Décode la clé API .p8 dans un fichier (electron-builder attend un CHEMIN).
-            echo "$APPLE_API_KEY_B64" | base64 -d > "$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8"
-            export APPLE_API_KEY="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8"
-            # APPLE_API_KEY_ID + APPLE_API_ISSUER sont déjà dans l'env (bloc env: ci-dessus).
-            npx electron-builder --publish always -c.mac.notarize=true
+            # ── Le certificat est-il seulement UTILISABLE ? ────────────────
+            # electron-builder importe le .p12 dans un trousseau temporaire.
+            # Quand le certificat ou son mot de passe ne va pas, il echoue sur
+            # `security set-key-partition-list` APRES avoir empaquete, et le job
+            # entier tombe : plus AUCUNE build macOS n'est publiee. Constate le
+            # 2026-09-09, ou macOS etait la seule plateforme manquante.
+            #
+            # On teste donc l'import AVANT, dans un trousseau jetable. S'il
+            # passe, on signe et on notarise. S'il echoue, on publie une build
+            # NON SIGNEE plutot que rien : Gatekeeper avertira l'utilisateur,
+            # mais l'app existe et se telecharge.
+            echo "$APPLE_CSC_LINK" | base64 -d > "$RUNNER_TEMP/cert.p12" 2>/dev/null || true
+            KC="$RUNNER_TEMP/probe.keychain-db"
+            SIGNABLE=0
+            if [ -s "$RUNNER_TEMP/cert.p12" ]; then
+              security create-keychain -p probe "$KC" 2>/dev/null || true
+              security unlock-keychain -p probe "$KC" 2>/dev/null || true
+              if security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$APPLE_CSC_KEY_PASSWORD" -T /usr/bin/codesign >/dev/null 2>&1 \
+                 && security set-key-partition-list -S apple-tool:,apple: -s -k probe "$KC" >/dev/null 2>&1; then
+                SIGNABLE=1
+              fi
+              security delete-keychain "$KC" 2>/dev/null || true
+            fi
+            rm -f "$RUNNER_TEMP/cert.p12"
+
+            if [ "$SIGNABLE" = "1" ]; then
+              echo "Signature Developer ID + notarisation macOS (clé API App Store Connect)"
+              export CSC_LINK="$APPLE_CSC_LINK"
+              export CSC_KEY_PASSWORD="$APPLE_CSC_KEY_PASSWORD"
+              # Décode la clé API .p8 dans un fichier (electron-builder attend un CHEMIN).
+              echo "$APPLE_API_KEY_B64" | base64 -d > "$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8"
+              export APPLE_API_KEY="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8"
+              # APPLE_API_KEY_ID + APPLE_API_ISSUER sont déjà dans l'env (bloc env: ci-dessus).
+              npx electron-builder --publish always -c.mac.notarize=true
+            else
+              echo "::warning::Certificat Apple INUTILISABLE (import refusé par le trousseau) : build macOS NON SIGNÉE."
+              {
+                echo "## ⚠️ macOS publié SANS signature"
+                echo ""
+                echo "Le secret \`APPLE_CSC_LINK\` est bien présent, mais le certificat"
+                echo "(ou \`APPLE_CSC_KEY_PASSWORD\`) est refusé à l'import dans le trousseau."
+                echo "La build est publiée quand même, **non signée** : Gatekeeper affichera"
+                echo "un avertissement à l'ouverture, et il n'y a pas de notarisation."
+                echo ""
+                echo "Pour retrouver une build signée : réexporter le certificat Developer ID"
+                echo "en \`.p12\`, le ré-encoder en base64, et remettre à jour les deux secrets."
+              } >> "$GITHUB_STEP_SUMMARY"
+              # `CSC_IDENTITY_AUTO_DISCOVERY=false` : sans lui, electron-builder
+              # repart chercher une identite dans le trousseau et rejoue l'echec.
+              CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --publish always
+            fi
           else
             # Windows/macOS sans secrets, ou Linux (AppImage : pas de signature de code
             # côté desktop Linux) : build non signé, toujours téléchargeable.
