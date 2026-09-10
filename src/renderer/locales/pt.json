@@ -33,7 +33,6 @@
   "chronologie": "Cronologia",
   "clavier": "Teclado",
   "clavier-normal": "teclado normal",
-  "code-en-ligne": "Código em linha",
   "code-en-ligne-un-mot": "Código em linha (uma palavra)",
   "combo-ensemble": "Combo (em conjunto)",
   "combo-simultane": "Combo simultâneo",
@@ -172,5 +171,16 @@
   "version-beta-des-fonctions-sont-encore-incompl": "Versão beta: algumas funcionalidades ainda estão incompletas ou a ser adaptadas.",
   "versions-en-attente-d-une-decision-humaine-tant-": "Versões à espera de uma decisão humana. Enquanto uma versão não for aprovada, o criador não a pode publicar e mais ninguém a pode instalar.",
   "visibilite-de-cette-version": "Visibilidade desta versão",
-  "websocket": "WebSocket"
+  "websocket": "WebSocket",
+  "manettes-de-la-machine": "Comandos da máquina",
+  "combien-de-manettes-ce-poste-sait-fournir-qui-joue": "Quantos comandos este posto consegue fornecer. É uma propriedade do teu equipamento: QUEM joga, e com que nome, define-se pack a pack em Captura.",
+  "manettes-disponibles": "Comandos disponíveis",
+  "aucune-un-seul-joueur": "Nenhum (um só jogador)",
+  "type-de-manette-virtuelle": "Tipo de comando",
+  "xbox-360-compatible-partout-2-joueurs-maximum": "Xbox 360 — compatível em todo o lado, 2 jogadores no máximo",
+  "dualshock-4-jusqu-a-8-joueurs-emulateurs": "DualShock 4 — até 8 jogadores (emuladores)",
+  "windows-n-a-que-4-emplacements-de-manette-xbox-pa": "O Windows só tem 4 lugares de comando Xbox, partilhados com os teus comandos físicos: acima de 2 jogadores é preciso passar para DualShock 4. Os emuladores veem-nos; um jogo que só lê XInput, não.",
+  "qui-joue-sur-ce-pack": "Quem joga neste pack",
+  "nombre-de-joueurs": "Número de jogadores",
+  "ces-noms-s-affichent-chez-tes-spectateurs-et-sont": "Estes nomes aparecem aos teus espectadores e ficam guardados para este pack: vais encontrá-los tal e qual da próxima vez que o lançares."
 }

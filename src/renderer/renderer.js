@@ -686,9 +686,17 @@ async function loadInstalled(toMine) {
     try {
         const st = await api.engine.status();
         if (st && st.connected && engineState === 'idle') { engineState = 'running'; setBadge('on', 'Connecté'); }
+        // Présélectionne le pack QUI TOURNE : sans ça, revenir sur Capture en plein
+        // direct montrerait l'effectif d'un autre pack que celui qui reçoit les
+        // cadeaux, et le diffuseur éditerait la mauvaise liste.
+        if (st && st.activeSlug && hasPack) sel.value = st.activeSlug;
     } catch { /* noop */ }
     setEngineButton();
+    await chargerEffectif(); // l'effectif suit le pack sélectionné
 }
+
+// L'effectif appartient au PACK : changer de pack change la liste affichée.
+if ($('active-bundle')) $('active-bundle').onchange = () => { void chargerEffectif(); };
 
 $('btn-start').onclick = async () => {
     // Toggle : connecté ou en cours de connexion -> on coupe.
@@ -3428,48 +3436,22 @@ $('env-select').onchange = async () => {
 api.autoLaunch().then((v) => ($('autolaunch').checked = !!v));
 $('autolaunch').onchange = () => api.autoLaunch($('autolaunch').checked);
 
-// ── MANETTES DES JOUEURS ────────────────────────────────────────────────────
-// Le diffuseur déclare qui joue, et sous quel nom. Sans ça, le sélecteur
-// « À qui ? » n'apparaît JAMAIS chez le spectateur : c'est cette carte qui
-// donne son existence à toute la fonctionnalité de ciblage.
-let labelsManettes = JSON.parse(localStorage.getItem('houla.padLabels') || '{}');
+// ── MANETTES : CAPACITÉ (machine) vs EFFECTIF (pack) ────────────────────────
+// Deux réglages, deux durées de vie, et c'est tout le problème résolu ici.
+//
+//   CAPACITÉ (Réglages, globale) : combien de manettes ce poste sait fournir,
+//   et de quel type. C'est une propriété du MATÉRIEL, elle ne bouge presque
+//   jamais.
+//
+//   EFFECTIF (Capture, par pack) : qui joue ce soir, sous quel nom. C'est une
+//   propriété de la PARTIE. Un streamer joue à Tomb Raider à deux avec toujours
+//   les mêmes personnes, puis à Mario Kart à quatre le lendemain avec d'autres.
+//
+// Avant, tout était global et publié à la main : huit manettes déclarées une
+// fois, puis un pack solo, et le spectateur se voyait proposer huit cibles. Il
+// en choisissait une, PAYAIT, et rien ne bougeait en jeu.
 
-function rendreManettes() {
-    const n = Number($('pads-count').value) || 0;
-    const hote = $('pads-list');
-    const bloc = $('pads-names');
-    if (!hote) return;
-    // Zéro joueur : on CACHE tout le groupe, sous-titre compris. Le laisser
-    // afficher un intitulé sans champ en dessous donnait une carte qui semblait
-    // cassée.
-    if (bloc) bloc.classList.toggle('hidden', n === 0);
-    if (n === 0) {
-        hote.innerHTML = '';
-        return;
-    }
-    let html = '';
-    for (let i = 1; i <= n; i++) {
-        const v = labelsManettes[i] || '';
-        // Même grille que les champs du dessus : tous les contrôles ont donc
-        // exactement la même largeur, et « Manette 1 » ne se casse plus en deux
-        // lignes.
-        //
-        // Le placeholder EST le repli réel côté serveur : le diffuseur voit
-        // exactement ce que verront ses spectateurs s'il ne saisit rien.
-        html += `<div class="form__row">`
-            + `<label class="form__lbl" for="pad-label-${i}">Manette ${i}</label>`
-            + `<input id="pad-label-${i}" type="text" class="form__ctl pad-label" data-pad="${i}" maxlength="24" `
-            + `placeholder="Contrôleur ${i}" value="${esc(v)}" `
-            + `title="Le pseudo du joueur. C'est ce que verront tous les spectateurs." /></div>`;
-    }
-    hote.innerHTML = html;
-    hote.querySelectorAll('.pad-label').forEach((el) => {
-        el.oninput = () => {
-            labelsManettes[el.dataset.pad] = el.value;
-            localStorage.setItem('houla.padLabels', JSON.stringify(labelsManettes));
-        };
-    });
-}
+let capaciteManettes = { count: 0, kind: 'x360' };
 
 /** Affiche le résultat d'une action, ou masque la ligne s'il n'y a rien à dire. */
 function statutManettes(texte) {
@@ -3478,66 +3460,176 @@ function statutManettes(texte) {
     el.textContent = texte || '';
     el.classList.toggle('hidden', !texte);
 }
+function statutEffectif(texte) {
+    const el = $('roster-status');
+    if (!el) return;
+    el.textContent = texte || '';
+    el.classList.toggle('hidden', !texte);
+}
+
+async function chargerCapacite() {
+    capaciteManettes = (await api.driver.capacity()) || { count: 0, kind: 'x360' };
+    $('pads-count').value = String(capaciteManettes.count);
+    $('pads-kind').value = capaciteManettes.kind;
+}
 
 if ($('pads-count')) {
-    $('pads-count').value = String(Number(localStorage.getItem('houla.padCount') || 0));
-    $('pads-kind').value = localStorage.getItem('houla.padKind') || 'x360';
-    rendreManettes();
+    chargerCapacite();
 
-    $('pads-count').onchange = () => {
-        const n = Number($('pads-count').value) || 0;
-        localStorage.setItem('houla.padCount', String(n));
+    $('pads-count').onchange = async () => {
+        const voulu = $('pads-kind').value;
+        capaciteManettes = await api.driver.capacity({
+            count: Number($('pads-count').value) || 0,
+            kind: voulu,
+        });
         // Au-delà de 2, le Xbox 360 ne peut PAS marcher (4 emplacements XInput
-        // partagés avec les manettes physiques). On bascule le choix nous-mêmes
-        // plutôt que de laisser le diffuseur se heurter au refus du sidecar.
-        if (n > 2 && $('pads-kind').value !== 'ds4') {
-            $('pads-kind').value = 'ds4';
-            localStorage.setItem('houla.padKind', 'ds4');
-            statutManettes('Passé en DualShock 4 : au-delà de 2 joueurs, les manettes Xbox 360 virtuelles seraient invisibles du jeu.');
-        }
-        rendreManettes();
+        // partagés avec les manettes physiques). Le main corrige ; on le DIT ici
+        // plutôt que de laisser le diffuseur découvrir un choix changé en silence.
+        $('pads-kind').value = capaciteManettes.kind;
+        statutManettes(capaciteManettes.kind !== voulu
+            ? 'Passé en DualShock 4 : au-delà de 2 manettes, les Xbox 360 virtuelles seraient invisibles du jeu.'
+            : '');
+        await chargerEffectif(); // la capacité borne l'effectif de chaque pack
     };
-    $('pads-kind').onchange = () => localStorage.setItem('houla.padKind', $('pads-kind').value);
 
-    $('pads-apply').onclick = async () => {
-        const n = Number($('pads-count').value) || 0;
-        statutManettes('Application…');
-        try {
-            if (n === 0) {
-                // Zéro joueur = on RETIRE la liste : le sélecteur disparaît chez
-                // le spectateur au lieu de rester avec des noms périmés.
-                await api.driver.gamepadPads({ count: 1, kind: $('pads-kind').value });
-                const r = await api.driver.publishPlayers([]);
-                statutManettes(r?.ok
-                    ? 'Aucun joueur déclaré : les spectateurs n’auront pas de choix de cible.'
-                    : `Non publié : ${r?.reason || 'raison inconnue'}`);
-                return;
-            }
-            const pads = await api.driver.gamepadPads({ count: n, kind: $('pads-kind').value });
-            if (!pads?.ok) {
-                statutManettes(pads?.reason || 'Les manettes n’ont pas pu être créées.');
-                return;
-            }
-            // On publie ce qui EXISTE vraiment, pas ce qui a été demandé : si
-            // Windows n'a énuméré que 3 manettes sur 4, annoncer 4 joueurs aux
-            // spectateurs leur ferait payer un cadeau qui n'agirait nulle part.
-            const reels = (pads.pads || []).map((p) => ({
-                id: p.player,
-                label: (labelsManettes[p.player] || '').trim(),
-                connected: true,
-            }));
-            const r = await api.driver.publishPlayers(reels);
-            if (!r?.ok) {
-                statutManettes(`Manettes créées, mais NON publiées : ${r?.reason || 'raison inconnue'}`);
-                return;
-            }
-            const manque = typeof pads.devices === 'number' && pads.devices < reels.length;
-            statutManettes(manque
-                ? `${reels.length} manette(s) déclarée(s), mais Windows n’en publie que ${pads.devices} pour l’instant : attends quelques secondes et réapplique.`
-                : `${reels.length} joueur(s) publié(s) : les spectateurs peuvent maintenant choisir leur cible.`);
-        } catch (e) {
-            statutManettes(String(e?.message || e));
+    $('pads-kind').onchange = async () => {
+        capaciteManettes = await api.driver.capacity({
+            count: Number($('pads-count').value) || 0,
+            kind: $('pads-kind').value,
+        });
+        $('pads-kind').value = capaciteManettes.kind;
+    };
+}
+
+// ── EFFECTIF DU PACK ACTIF (vue Capture) ────────────────────────────────────
+let effectifSlug = '';
+let effectifJoueurs = []; // [{ id, label }] : QUI joue
+// COMMENT chaque manette s'appelle sur ce pack, jouante ou non. Réduire
+// l'effectif de 4 à 2 ne doit pas effacer le nom des joueurs 3 et 4 : le
+// diffuseur devrait les ressaisir à chaque partie complète.
+let effectifNoms = {};
+
+/** Dessine le sélecteur de nombre + une ligne de nom par joueur. */
+function rendreEffectif(capacite) {
+    const selN = $('roster-count');
+    const hote = $('roster-list');
+    if (!selN || !hote) return;
+
+    const n = effectifJoueurs.length;
+    let opts = '';
+    for (let k = 0; k <= capacite; k++) {
+        // On saute 1 : à un seul joueur il n'y a rien à viser, c'est le même cas
+        // que « aucun ». Proposer les deux ferait un choix sans différence.
+        if (k === 1) continue;
+        const lbl = k === 0 ? 'Aucun (pas de choix de cible)' : `${k} joueurs`;
+        opts += `<option value="${k}"${k === n ? ' selected' : ''}>${lbl}</option>`;
+    }
+    selN.innerHTML = opts;
+    selN.value = String(n);
+
+    let html = '';
+    for (const j of effectifJoueurs) {
+        // Même grille que les autres champs : le libellé garde sa largeur et
+        // « Manette 1 » ne se casse plus en deux lignes.
+        //
+        // Le placeholder EST le repli réel côté serveur : le diffuseur voit
+        // exactement ce que verront ses spectateurs s'il ne saisit rien.
+        html += `<div class="form__row">`
+            + `<label class="form__lbl" for="roster-label-${j.id}">Manette ${j.id}</label>`
+            + `<input id="roster-label-${j.id}" type="text" class="form__ctl roster-label" data-pad="${j.id}" maxlength="24" `
+            + `placeholder="Contrôleur ${j.id}" value="${esc(j.label || '')}" `
+            + `title="Le pseudo du joueur. C'est ce que verront tous les spectateurs." /></div>`;
+    }
+    hote.innerHTML = html;
+    hote.querySelectorAll('.roster-label').forEach((el) => {
+        el.oninput = () => {
+            const j = effectifJoueurs.find((x) => String(x.id) === el.dataset.pad);
+            if (j) j.label = el.value;
+            effectifNoms[el.dataset.pad] = el.value;
+        };
+        // Enregistré à la SORTIE du champ, pas à chaque frappe : écrire sur le
+        // disque et republier au serveur à chaque lettre n'apporterait rien.
+        el.onchange = enregistrerEffectif;
+        el.onblur = enregistrerEffectif;
+    });
+}
+
+/** Lit l'effectif mémorisé pour le pack sélectionné et l'affiche. */
+async function chargerEffectif() {
+    const bloc = $('roster-block');
+    if (!bloc) return;
+    const slug = ($('active-bundle') || {}).value || '';
+    effectifSlug = slug;
+    if (!slug) {
+        bloc.classList.add('hidden');
+        return;
+    }
+    let r;
+    try {
+        r = await api.driver.roster(slug);
+    } catch {
+        bloc.classList.add('hidden');
+        return;
+    }
+    // `usesGamepad === false` : pack clavier / RCON / OBS. Rien ne s'adresse à un
+    // joueur en particulier, donc aucune cible à proposer. `null` = indéterminé
+    // (hors ligne, jamais ouvert) : on montre quand même, plutôt que de cacher
+    // une configuration existante sans rien dire.
+    if (r.usesGamepad === false) {
+        bloc.classList.add('hidden');
+        return;
+    }
+    bloc.classList.remove('hidden');
+    capaciteManettes = { count: r.capacity, kind: r.kind };
+    if (!r.capacity) {
+        // Capacité à zéro : il n'y a rien à répartir. On le DIT au lieu
+        // d'afficher un sélecteur vide, qui donnerait une carte qui semble cassée.
+        $('roster-count').innerHTML = '<option value="0">Aucun</option>';
+        $('roster-list').innerHTML = '';
+        statutEffectif('Aucune manette déclarée sur cette machine : ouvre Réglages > Manettes de la machine pour dire combien ce poste peut en fournir.');
+        return;
+    }
+    effectifNoms = Object.assign({}, r.labels || {});
+    effectifJoueurs = (r.players || []).map((p) => ({
+        id: p.id,
+        label: p.label || effectifNoms[String(p.id)] || '',
+    }));
+    rendreEffectif(r.capacity);
+    statutEffectif(r.configured
+        ? ''
+        : `Jamais réglé pour ce pack : on propose tes ${r.capacity} manettes. Ajuste si tu joues à moins.`);
+}
+
+/** Écrit l'effectif du pack. Republie tout de suite si le pack tourne. */
+async function enregistrerEffectif() {
+    if (!effectifSlug) return;
+    try {
+        const r = await api.driver.setRoster(effectifSlug, effectifJoueurs);
+        if (r && r.published) {
+            statutEffectif(r.ok
+                ? `Publié : ${r.players} joueur(s) ciblable(s) chez tes spectateurs.`
+                : `NON publié : ${r.reason || 'raison inconnue'}`);
+        } else {
+            statutEffectif('Mémorisé pour ce pack. Ce sera appliqué au démarrage.');
         }
+    } catch (e) {
+        statutEffectif(String((e && e.message) || e));
+    }
+}
+
+if ($('roster-count')) {
+    $('roster-count').onchange = async () => {
+        const n = Number($('roster-count').value) || 0;
+        // On repart de la MÉMOIRE des noms, pas de la liste affichée : passer de 4
+        // à 2 puis revenir à 4 doit rendre les noms des joueurs 3 et 4, alors
+        // qu'ils ne sont plus dans la liste courante.
+        effectifJoueurs.forEach((j) => { if (j.label) effectifNoms[String(j.id)] = j.label; });
+        effectifJoueurs = Array.from({ length: n }, (_v, k) => ({
+            id: k + 1,
+            label: effectifNoms[String(k + 1)] || '',
+        }));
+        rendreEffectif(capaciteManettes.count);
+        await enregistrerEffectif();
     };
 }
 

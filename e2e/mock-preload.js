@@ -13,6 +13,9 @@
     // État d'installation MUTABLE : install(slug) ajoute le pack, uninstall le retire ->
     // les cartes du Store reflètent la transition (Installer <-> Installé ✓) en E2E.
     const installedState = (cfg.installed || []).slice();
+    // CAPACITE machine + EFFECTIF par pack : etat MUTABLE, comme le vrai stockage.
+    const padCap = Object.assign({ count: 0, kind: 'x360' }, cfg.padCapacity || {});
+    const rosters = Object.assign({}, cfg.rosters || {});
     const verOf = (slug) => ((cfg.store || []).find((p) => p.slug === slug) || {}).version || '1.0.0';
 
     window.houlaConnect = {
@@ -85,24 +88,37 @@
                 ? rej('sonde indisponible')
                 : R(cfg.gamepadStatus || { connected: false, engineRunning: false })),
             releaseGamepad: rec('releaseGamepad', () => R(cfg.releaseGamepadResult || { ok: true })),
-            // Multi-joueurs. Par defaut on rend exactement le nombre demande :
-            // un test qui veut simuler une enumeration incomplete passe
-            // `cfg.gamepadPadsResult`.
-            gamepadPads: rec('gamepadPads', (req) => R(
-                cfg.gamepadPadsResult || {
-                    ok: true,
-                    max: 8,
-                    devices: (req && req.count) || 1,
-                    pads: Array.from({ length: (req && req.count) || 1 }, (_, i) => ({
-                        player: i + 1,
-                        kind: (req && req.kind) || 'x360',
-                        xinputIndex: null,
-                        passthrough: false,
-                        physicalIndex: null,
-                    })),
-                },
-            )),
-            publishPlayers: rec('publishPlayers', () => R(cfg.publishPlayersResult || { ok: true })),
+            // CAPACITE (machine, globale) : mutable, avec la MEME regle que le
+            // main -- au-dela de 2 manettes le type bascule en ds4, parce que
+            // Windows n'a que 4 emplacements XInput. Un mock qui ne la porterait
+            // pas laisserait passer une regression invisible en test.
+            capacity: rec('capacity', (req) => {
+                if (req && typeof req.count === 'number') {
+                    padCap.count = Math.max(0, Math.min(8, Math.round(req.count)));
+                    if (req.kind === 'x360' || req.kind === 'ds4') padCap.kind = req.kind;
+                }
+                if (padCap.count > 2) padCap.kind = 'ds4';
+                return R({ count: padCap.count, kind: padCap.kind });
+            }),
+            // EFFECTIF (par pack) : memorise en memoire pour la duree du test,
+            // pour que « je regle, je change de pack, je reviens » se teste.
+            roster: rec('roster', (slug) => {
+                const memo = rosters[slug];
+                return R({
+                    slug,
+                    capacity: padCap.count,
+                    kind: padCap.kind,
+                    usesGamepad: cfg.rosterUsesGamepad === undefined ? true : cfg.rosterUsesGamepad,
+                    configured: memo !== undefined,
+                    players: memo === undefined
+                        ? Array.from({ length: padCap.count }, (_, i) => ({ id: i + 1 }))
+                        : memo,
+                });
+            }),
+            setRoster: rec('setRoster', (slug, players) => {
+                rosters[slug] = (players || []).map((p) => ({ id: p.id, label: p.label || '' }));
+                return R(cfg.setRosterResult || { ok: true, published: false });
+            }),
         },
         game: {
             detect: () => R(cfg.gameDetected || []),

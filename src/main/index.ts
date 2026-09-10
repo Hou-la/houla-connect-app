@@ -8,6 +8,7 @@ import { ApiService } from './services/api.service';
 import { AuthService } from './services/auth.service';
 import { ConnectionService, ConnState } from './services/connection.service';
 import { TriggerRouter } from './engine/trigger-router';
+import { MAX_JOUEURS } from './engine/joueurs';
 import { Engine, AuditEntry } from './engine/engine';
 import { PythonSidecar } from './engine/python-sidecar';
 import { BundleManifest } from './engine/types';
@@ -311,6 +312,99 @@ async function releaseGamepad(): Promise<void> {
     gamepadSessionOn = false;
 }
 
+/**
+ * Crée / inventorie les manettes virtuelles, et TRADUIT les refus attendus.
+ *
+ * Un message brut du sidecar ne dirait rien au diffuseur, et « ça n'a pas
+ * marché » l'enverrait chercher le problème dans son pack.
+ */
+async function creerManettes(
+    count: number,
+    kind: string,
+): Promise<{ ok: boolean; reason?: string; code?: string; pads?: Array<{ player: number }>; devices?: number }> {
+    try {
+        const args: Record<string, unknown> = {
+            // Borné ici AUSSI, pas seulement dans le sidecar.
+            count: Math.max(1, Math.min(MAX_JOUEURS, Math.round(count))),
+        };
+        if (kind === 'ds4' || kind === 'x360') args.kind = kind;
+        const r = await sidecar().call('vigem-pads', args, 30000);
+        return { ok: true, ...(r as object) };
+    } catch (e: unknown) {
+        const msg = String((e as Error)?.message || e);
+        if (msg.includes('XINPUT_SLOTS_EXHAUSTED')) {
+            return {
+                ok: false,
+                reason:
+                    "Windows n'a que 4 emplacements de manette Xbox, partagés avec tes manettes physiques. "
+                    + 'Au-delà de 2 joueurs, passe les manettes virtuelles en DualShock 4 dans les Réglages : '
+                    + "les émulateurs les voient, mais un jeu qui ne lit que XInput ne les verra pas.",
+            };
+        }
+        if (msg.includes('VIGEMBUS_MISSING')) {
+            return { ok: false, code: 'VIGEMBUS_MISSING', reason: 'Le pilote ViGEmBus est absent : installe-le depuis Réglages.' };
+        }
+        if (msg.includes('MULTIPAD_UNSUPPORTED')) {
+            return { ok: false, reason: 'Ce système ne sait pas créer plusieurs manettes virtuelles.' };
+        }
+        return { ok: false, reason: msg };
+    }
+}
+
+/**
+ * EFFECTIF PAR DÉFAUT d'un pack jamais configuré : tout ce que la machine sait
+ * fournir. Le diffuseur voit ce nombre AVANT de démarrer et le corrige d'un
+ * clic ; proposer zéro rendrait la fonctionnalité invisible à ceux qui ne
+ * savent pas qu'elle existe.
+ */
+function effectifParDefaut(capacite: number): Array<{ id: number; label?: string }> {
+    return Array.from({ length: Math.max(0, capacite) }, (_v, i) => ({ id: i + 1 }));
+}
+
+/**
+ * Crée les manettes de CE pack, puis publie la liste des cibles aux spectateurs.
+ *
+ * LE TROU QUE ÇA BOUCHE. L'effectif vivait par MACHINE et se publiait à la main :
+ * huit manettes déclarées une fois, puis un pack Minecraft joué en solo, et le
+ * spectateur se voyait encore proposer huit cibles. Il en choisissait une,
+ * PAYAIT, et le cadeau partait sur une manette que le jeu ne lit pas.
+ *
+ * Désormais l'effectif appartient au pack, et c'est le DÉMARRAGE DU PACK qui le
+ * publie : plus aucun geste à ne pas oublier.
+ *
+ * On publie ce qui EXISTE : si les manettes n'ont pas pu être créées, on efface
+ * la liste plutôt que d'annoncer des cibles inertes.
+ */
+async function appliquerEffectif(
+    slug: string,
+    piloteManette: boolean,
+): Promise<{ ok: boolean; reason?: string; players: number }> {
+    const effacer = async (raison?: string) => {
+        const r = await api.setInteractivePlayers([]);
+        return { ok: !!r?.ok, reason: raison ?? r?.reason, players: 0 };
+    };
+    // Pack CLAVIER / RCON / OBS : rien ne s'adresse à un joueur en particulier.
+    // Un clavier envoie ses touches à la fenêtre active, pas à une personne.
+    if (!piloteManette) return await effacer();
+
+    const cap = store.getPadCapacity();
+    const configure = store.getPackPlayers(slug);
+    const effectif = configure ?? effectifParDefaut(cap.count);
+    if (!effectif.length) return await effacer();
+
+    const pads = await creerManettes(effectif.length, cap.kind);
+    if (!pads.ok) return await effacer(pads.reason);
+    // On n'annonce que les manettes RÉELLEMENT énumérées par le système : promettre
+    // une cible que Windows n'a pas créée ferait payer un cadeau pour rien.
+    const vivantes = new Set((pads.pads || []).map((x) => x.player));
+    const cibles = effectif
+        .filter((p) => vivantes.has(p.id))
+        .map((p) => ({ id: p.id, label: (p.label || '').trim(), connected: true }));
+    if (!cibles.length) return await effacer("Aucune manette virtuelle n'a pu être créée.");
+    const r = await api.setInteractivePlayers(cibles);
+    return { ok: !!r?.ok, reason: r?.reason, players: cibles.length };
+}
+
 // Traduit un verdict de test en message ACTIONNABLE + un CODE que le renderer utilise pour
 // proposer l'installation du bon pilote, au lieu d'un message technique opaque.
 //  - 'vigembus' : manette virtuelle -> pilote ViGEmBus absent (installable in-app).
@@ -610,6 +704,14 @@ function registerIpc(): void {
         const usesGamepad = profiles.length
             ? gamepadProfiles.length > 0
             : (manifest.rules || []).some((r: any) => r?.effect?.type === 'gamepad');
+        // Mémorisé sur l'entrée installée : c'est le repli hors ligne de l'éditeur
+        // d'effectif, qui doit savoir si ce pack sait viser un joueur.
+        const majListe = store.getInstalled();
+        const entree = majListe.find((b) => b.slug === slug);
+        if (entree) {
+            entree.usesGamepad = usesGamepad;
+            store.setInstalled(majListe);
+        }
         return {
             ok: true,
             capabilities: d.capabilities,
@@ -845,9 +947,16 @@ function registerIpc(): void {
         // local (numéro + hash) pour que le menu Capture reflète ce qui tourne vraiment.
         const installed = store.getInstalled();
         const entry = installed.find((b) => b.slug === slug);
-        if (entry && (entry.version !== d.version || entry.contentHash !== d.contentHash)) {
+        // UNE seule fois : `activeManifest` plus bas EST cet `overlaid`.
+        const usesGamepad = overlaid.rules.some((r) => (r.effect as { type?: string })?.type === 'gamepad');
+        if (entry && (entry.version !== d.version || entry.contentHash !== d.contentHash
+            || entry.usesGamepad !== usesGamepad)) {
             entry.version = d.version;
             entry.contentHash = d.contentHash;
+            // Le joueur a pu changer de configuration de commandes depuis l'installation
+            // (clavier -> manette). Le repli hors ligne doit suivre, sinon l'éditeur
+            // d'effectif resterait caché sur un pack devenu ciblable.
+            entry.usesGamepad = usesGamepad;
             store.setInstalled(installed);
         }
         // Applique le CALQUE local (perso streamer) : désactive des interactions,
@@ -859,7 +968,6 @@ function registerIpc(): void {
         // Le joueur règle Joueur 1 = manette virtuelle UNE fois, conduit normalement, et les
         // cadeaux s'ajoutent (résout « le jeu lit la physique, pas la virtuelle »). Sans pilote
         // installé, l'appel échoue -> le 1er test manette guidera l'installation.
-        const usesGamepad = activeManifest.rules.some((r) => (r.effect as { type?: string })?.type === 'gamepad');
         if (usesGamepad) {
             // Jeu de CE pack. ⚠️ N'est garanti présent QUE sur Windows : la vérification en
             // tête du handler y est conditionnée, parce que Linux n'a ni XInput ni DLL à poser.
@@ -913,6 +1021,33 @@ function registerIpc(): void {
         // socket, la passerelle lit ce bundleId et l'active côté viewer (le viewer voit
         // CE pack). setKeyBundle invalide le cache de validation -> lu frais au connect.
         await api.setActivePackBundle(d.visualBundleId ?? null).catch(() => {});
+        // EFFECTIF DE CE PACK.
+        //
+        // ⚠️ ORDRE IMPOSANT, à NE PAS « optimiser » : ceci passe APRÈS le démarrage du
+        // passthrough. Le passthrough crée le joueur 1 SANS préciser de type, donc en
+        // Xbox 360 — et c'est lui que la DLL proxy fait passer pour la manette du jeu,
+        // un mécanisme purement XInput. Créer les manettes d'abord avec kind='ds4'
+        // ferait naître le joueur 1 en DualShock 4, que le proxy ne saurait pas
+        // présenter : le jeu ne lirait plus rien, sans le moindre message.
+        //
+        // Publié à chaque démarrage, y compris quand il est VIDE :
+        // c'est ce qui efface les cibles du pack précédent. Un diffuseur qui enchaine
+        // Mario Kart à 4 puis un pack solo laissait sinon quatre cibles au spectateur,
+        // qui en choisissait une, PAYAIT, et ne voyait rien bouger.
+        try {
+            const eff = await appliquerEffectif(slug, usesGamepad);
+            send('onLog', {
+                ts: Date.now(), ruleId: 'JOUEURS', trigger: 'gamepad', sender: '', executor: 'gamepad',
+                allowed: eff.ok,
+                reason: !eff.ok
+                    ? `Joueurs NON publiés : ${eff.reason || 'raison inconnue'}. Les spectateurs ne verront pas de choix de cible.`
+                    : eff.players
+                      ? `${eff.players} joueur(s) ciblable(s) sur ce pack : les spectateurs peuvent choisir à qui envoyer.`
+                      : "Aucun joueur ciblable sur ce pack : les cadeaux agissent sans choix de cible.",
+            });
+        } catch (e) {
+            console.error('[effectif] start:', (e as Error)?.message || e);
+        }
         // workspaceId : pour le poll de fallback du compte de viewers (endpoint public).
         conn.connect(key, store.getWorkspaceId() || undefined);
         engineRunning = true;
@@ -931,6 +1066,9 @@ function registerIpc(): void {
         gamepadSessionOn = false; // la virtuelle a disparu : le prochain test devra re-patienter
         // Retire le pack visuel côté viewer : plus de pack actif -> plus rien à montrer.
         await api.setActivePackBundle(null).catch(() => {});
+        // … et les CIBLES avec lui. Les laisser survivrait au pack : le spectateur
+        // continuerait à voir « À qui ? » alors que plus rien n'écoute.
+        await api.setInteractivePlayers([]).catch(() => {});
         return { ok: true };
     });
     ipcMain.handle('engine:panic', async () => {
@@ -961,7 +1099,14 @@ function registerIpc(): void {
         conn.simulateGift(s);
         return { ok: true, slug: s };
     });
-    ipcMain.handle('engine:status', () => ({ running: engineRunning, connected: conn.connected }));
+    // `activeSlug` : le pack qui TOURNE. Le menu Capture le présélectionne, sinon
+    // revenir sur la vue en plein direct afficherait l'effectif d'un autre pack
+    // que celui qui reçoit réellement les cadeaux.
+    ipcMain.handle('engine:status', () => ({
+        running: engineRunning,
+        connected: conn.connected,
+        activeSlug: engineRunning ? store.getActiveBundleSlug() || '' : '',
+    }));
 
     // Installe le pilote ViGEmBus (manette virtuelle) depuis son MSI empaqueté, AVEC
     // élévation UAC. Appelé quand un test manette signale le pilote manquant (code
@@ -1019,55 +1164,64 @@ function registerIpc(): void {
     // Le renderer n'envoie que du DÉCLARATIF : un nombre de joueurs, un type,
     // des libellés. Jamais rien d'exécutable, jamais un index de périphérique
     // brut. C'est main qui parle au sidecar.
-    ipcMain.handle('gamepad:pads', async (_e, req: { count?: number; kind?: string } | undefined) => {
-        try {
-            const args: Record<string, unknown> = {};
-            if (req && typeof req.count === 'number') {
-                // Borné ici AUSSI, pas seulement dans le sidecar : le renderer
-                // est la surface la moins fiable de l'app.
-                args.count = Math.max(1, Math.min(8, Math.round(req.count)));
-            }
-            if (req?.kind === 'ds4' || req?.kind === 'x360') args.kind = req.kind;
-            const r = await sidecar().call('vigem-pads', args, 30000);
-            return { ok: true, ...(r as object) };
-        } catch (e: any) {
-            const msg = String(e?.message || e);
-            // On TRADUIT les deux refus attendus. Un message brut du sidecar ne
-            // dirait rien au diffuseur, et « ça n'a pas marché » l'enverrait
-            // chercher le problème dans son pack.
-            if (msg.includes('XINPUT_SLOTS_EXHAUSTED')) {
-                return {
-                    ok: false,
-                    reason:
-                        'Windows n\'a que 4 emplacements de manette Xbox, partagés avec tes manettes physiques. '
-                        + 'Au-delà de 2 joueurs, passe les manettes virtuelles en DualShock 4 : '
-                        + 'les émulateurs les voient, mais un jeu qui ne lit que XInput ne les verra pas.',
-                };
-            }
-            if (msg.includes('VIGEMBUS_MISSING')) {
-                return { ok: false, reason: 'Le pilote ViGEmBus est absent : installe-le depuis Réglages.', code: 'VIGEMBUS_MISSING' };
-            }
-            if (msg.includes('MULTIPAD_UNSUPPORTED')) {
-                return { ok: false, reason: 'Ce système ne sait pas créer plusieurs manettes virtuelles.' };
-            }
-            return { ok: false, reason: msg };
-        }
+    // ── CAPACITÉ (machine, globale) vs EFFECTIF (par pack) ──────────────────
+    // Deux réglages, deux durées de vie. La CAPACITÉ décrit le matériel : combien de
+    // manettes ce poste sait fournir, et de quel type. Elle ne bouge quasiment jamais,
+    // donc elle vit dans les Réglages. L'EFFECTIF décrit la PARTIE : qui joue ce soir,
+    // sous quel nom. Il change avec le jeu, donc il vit sur le PACK et s'y mémorise.
+    ipcMain.handle('gamepad:capacity', (_e, req?: { count?: number; kind?: string }) => {
+        if (req && typeof req.count === 'number') return store.setPadCapacity(req.count, req.kind);
+        return store.getPadCapacity();
     });
-
-    ipcMain.handle('gamepad:publishPlayers', async (_e, players: unknown) => {
-        // Nettoyage AVANT l'envoi : ces libellés s'afficheront chez tous les
-        // spectateurs. Le serveur re-nettoie de son côté, la garde est double.
-        const propres = (Array.isArray(players) ? players : [])
-            .map((p: any) => ({
-                id: Number(p?.id),
-                label: typeof p?.label === 'string'
-                    ? p.label.replace(/\s+/g, ' ').trim().slice(0, 24)
-                    : '',
-                connected: p?.connected !== false,
-            }))
-            .filter((p) => Number.isInteger(p.id) && p.id >= 1 && p.id <= 8)
-            .slice(0, 8);
-        return await api.setInteractivePlayers(propres);
+    ipcMain.handle('gamepad:roster', async (_e, slug: string) => {
+        const cap = store.getPadCapacity();
+        const configure = store.getPackPlayers(slug);
+        // Le pack pilote-t-il une manette ? Seule une manette s'adresse à un joueur
+        // donné ; un clavier envoie ses touches à la fenêtre active. On interroge le
+        // manifeste SIGNÉ et sa configuration de commandes ACTIVE : un pack qui propose
+        // clavier ET manette n'est ciblable que si le joueur a choisi la manette.
+        let piloteManette: boolean | null = null;
+        try {
+            const d = await api.fetchVerifiedManifest(slug);
+            const m = applyPackOverlay(d.manifest as BundleManifest, store.getPackOverlay(slug));
+            piloteManette = m.rules.some((r) => (r.effect as { type?: string })?.type === 'gamepad');
+            const list = store.getInstalled();
+            const e = list.find((b) => b.slug === slug);
+            // Mémorisé pour pouvoir répondre HORS LIGNE : sans ce repli, ouvrir l'app
+            // sans réseau cacherait l'effectif au lieu de le montrer.
+            if (e && e.usesGamepad !== piloteManette) {
+                e.usesGamepad = piloteManette;
+                store.setInstalled(list);
+            }
+        } catch {
+            const e = store.getInstalled().find((b) => b.slug === slug);
+            piloteManette = typeof e?.usesGamepad === 'boolean' ? e.usesGamepad : null;
+        }
+        return {
+            slug,
+            capacity: cap.count,
+            kind: cap.kind,
+            usesGamepad: piloteManette,
+            // `configured: false` = jamais réglé pour ce pack. On propose alors toute
+            // la capacité, mais on le DIT, pour que le diffuseur sache que ce nombre
+            // est une proposition et pas un choix qu'il aurait déjà fait.
+            configured: configure !== null,
+            players: configure ?? effectifParDefaut(cap.count),
+            // Noms des manettes NON jouantes : le renderer les restaure quand le
+            // diffuseur réélargit son effectif, au lieu de lui faire tout ressaisir.
+            labels: store.getPackPlayerLabels(slug),
+        };
+    });
+    ipcMain.handle('gamepad:setRoster', async (_e, slug: string, players: unknown) => {
+        store.setPackPlayers(slug, (Array.isArray(players) ? players : []) as Array<{ id: number; label?: string }>);
+        // Pack en cours d'exécution : on republie TOUT DE SUITE. Renommer un joueur en
+        // plein direct doit se voir chez les spectateurs sans redémarrer le pack.
+        if (engineRunning && store.getActiveBundleSlug() === slug) {
+            const e = store.getInstalled().find((b) => b.slug === slug);
+            const r = await appliquerEffectif(slug, e?.usesGamepad !== false);
+            return { ok: r.ok, reason: r.reason, players: r.players, published: true };
+        }
+        return { ok: true, published: false };
     });
     ipcMain.handle('driver:isGamepadInstalled', async () => {
         if (process.platform !== 'win32') return { installed: false };

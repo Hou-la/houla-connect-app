@@ -101,14 +101,19 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         // Manette VIRTUELLE : etat, et debranchement a la demande.
         gamepadStatus: () => invoke('gamepad:status'),
         releaseGamepad: () => invoke('gamepad:release'),
-        // Multi-joueurs. Le renderer ne transmet que du déclaratif : un nombre
-        // de joueurs, un type de manette, des libellés. Jamais un index de
-        // périphérique, jamais rien d'exécutable.
-        gamepadPads: (req?: { count?: number; kind?: 'x360' | 'ds4' }) =>
-            invoke('gamepad:pads', req),
-        publishPlayers: (
-            players: Array<{ id: number; label?: string; connected?: boolean }>,
-        ) => invoke('gamepad:publishPlayers', players),
+        // Multi-joueurs. Le renderer ne transmet que du DÉCLARATIF : un nombre de
+        // joueurs, un type de manette, des libellés. Jamais un index de
+        // périphérique, jamais rien d'exécutable. C'est le main qui crée les
+        // manettes et publie les cibles, au démarrage du pack.
+        // CAPACITÉ de la machine (globale) : combien de manettes ce poste sait
+        // fournir, et de quel type. Sans argument = lecture.
+        capacity: (req?: { count?: number; kind?: 'x360' | 'ds4' }) =>
+            invoke('gamepad:capacity', req),
+        // EFFECTIF d'un pack : qui joue, sous quel nom. Mémorisé par pack, parce
+        // qu'il suit le JEU (Tomb Raider à 2, Mario Kart à 4) et pas le matériel.
+        roster: (slug: string) => invoke('gamepad:roster', slug),
+        setRoster: (slug: string, players: Array<{ id: number; label?: string }>) =>
+            invoke('gamepad:setRoster', slug, players),
     },
     // Jeu piloté PAR PACK : pose la DLL proxy XInput dans le dossier du jeu (le jeu lit la
     // manette virtuelle comme Joueur 1). Le jeu appartient au pack, pas au connecteur manette.

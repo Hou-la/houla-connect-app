@@ -33,7 +33,6 @@
   "chronologie": "Timeline",
   "clavier": "Keyboard",
   "clavier-normal": "normal keyboard",
-  "code-en-ligne": "Inline code",
   "code-en-ligne-un-mot": "Inline code (one word)",
   "combo-ensemble": "Combo (together)",
   "combo-simultane": "Simultaneous combo",
@@ -172,5 +171,16 @@
   "version-beta-des-fonctions-sont-encore-incompl": "Beta version: some features are still incomplete or being ported.",
   "versions-en-attente-d-une-decision-humaine-tant-": "Versions waiting on a human decision. Until a version is approved, its creator cannot publish it and nobody else can install it.",
   "visibilite-de-cette-version": "Visibility of this version",
-  "websocket": "WebSocket"
+  "websocket": "WebSocket",
+  "manettes-de-la-machine": "Machine controllers",
+  "combien-de-manettes-ce-poste-sait-fournir-qui-joue": "How many controllers this machine can provide. That's a property of your hardware: WHO plays, and under what name, is set per pack in Capture.",
+  "manettes-disponibles": "Available controllers",
+  "aucune-un-seul-joueur": "None (single player)",
+  "type-de-manette-virtuelle": "Controller type",
+  "xbox-360-compatible-partout-2-joueurs-maximum": "Xbox 360 — works everywhere, 2 players max",
+  "dualshock-4-jusqu-a-8-joueurs-emulateurs": "DualShock 4 — up to 8 players (emulators)",
+  "windows-n-a-que-4-emplacements-de-manette-xbox-pa": "Windows only has 4 Xbox controller slots, shared with your physical pads: past 2 players you must switch to DualShock 4. Emulators see them; a game that only reads XInput does not.",
+  "qui-joue-sur-ce-pack": "Who plays on this pack",
+  "nombre-de-joueurs": "Number of players",
+  "ces-noms-s-affichent-chez-tes-spectateurs-et-sont": "These names show up for your viewers and are remembered for this pack: you will find them unchanged next time you launch it."
 }

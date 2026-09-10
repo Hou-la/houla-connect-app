@@ -1,20 +1,10 @@
 import { Engine } from './engine';
 import { BundleManifest, BundleRule, FireContext } from './types';
+import { joueurVise } from './joueurs';
 
-/** Nombre maximal de joueurs ciblables. Miroir de `MAX_JOUEURS` du sidecar. */
-export const MAX_JOUEURS = 8;
-
-/**
- * Numéro de joueur exploitable, ou `undefined`.
- *
- * Le serveur a déjà validé la cible (elle existe, sa manette répond), mais ce
- * nombre finit en INDEX DE MANETTE : une valeur hors plage vaut mieux ignorée
- * (l'effet part au joueur par défaut, comportement d'avant) que devinée.
- */
-export function joueurVise(v: unknown): number | undefined {
-    const n = Number(v);
-    return Number.isInteger(n) && n >= 1 && n <= MAX_JOUEURS ? n : undefined;
-}
+// Définis dans `./joueurs` (module feuille) pour que le stockage puisse les lire
+// sans dépendre du moteur. Ré-exportés ici : c'est l'adresse historique.
+export { MAX_JOUEURS, joueurVise } from './joueurs';
 
 // Route les événements live (SDK @houla/live-connector) vers les règles du
 // manifeste, construit le FireContext, et délègue au moteur. Réutilise le même

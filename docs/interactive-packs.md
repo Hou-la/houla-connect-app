@@ -1,6 +1,6 @@
 # Hou.la Connect — Packs interactifs (référence)
 
-> État au **2026-08-28** (manette v2 + Instructions + test hors live : voir §13). Doc de référence de la fonctionnalité « Pack Bundle interactif » :
+> État au **2026-09-11** (multi-manettes : capacité machine vs effectif par pack, voir §18 ; configurations de commandes §17 ; manette v2 + Instructions + test hors live §13). Doc de référence de la fonctionnalité « Pack Bundle interactif » :
 > un viewer envoie un cadeau pendant un live → l'app Hou.la Connect déclenche une action
 > réelle dans le jeu du streamer (RCON, clavier, manette, OBS, HTTP…).
 > Repos : `houla-connect-app` (app Electron) + `MikhaelGerbet/hou.la-api` (back, module `bundle-store` + `coin`).
@@ -360,6 +360,101 @@ côté viewer. Le commentaire périmé de `connection.service.ts` sur `reactsTo`
 sans profiles inchangé »), 3 TU (`test/manifest-lib.test.js`), 6 e2e
 (`e2e/renderer/control-profiles.spec.js`, dont **le joueur clavier à qui on ne demande jamais
 le jeu**, doublé du contre-témoin « le pack est bien installé »).
+
+## 18. Multi-manettes : CAPACITÉ (machine) vs EFFECTIF (pack) (2026-09-11)
+
+**Le trou.** L'effectif des joueurs vivait **par machine** (`localStorage`) et se
+publiait **à la main** (bouton « Appliquer et publier », dans Réglages). Un
+diffuseur qui déclarait huit manettes une fois pour toutes, puis activait un pack
+Minecraft joué **en solo**, laissait **huit cibles** au spectateur. Celui-ci en
+choisissait une, **payait**, et le cadeau partait sur une manette virtuelle que le
+jeu ne lit même pas. Rien ne le signalait, ni côté spectateur ni côté diffuseur.
+
+**La correction n'est pas de tout mettre par pack.** Deux choses différentes
+étaient confondues, et elles n'ont pas la même durée de vie :
+
+| | Où | Pourquoi |
+|---|---|---|
+| **CAPACITÉ** — combien de manettes ce poste sait fournir, et de quel type | Réglages, **globale** (`padCapacity` / `padKind`) | Propriété du **matériel**. Elle ne bouge presque jamais. |
+| **EFFECTIF** — qui joue ce soir, sous quel nom | Capture, **par pack** (`PackOverlay.players`) | Propriété de la **partie**. Tomb Raider à deux avec toujours les mêmes personnes, Mario Kart à quatre le lendemain avec d'autres. |
+
+~~« Les joueurs sont des personnes devant la machine, elles ne changent pas quand
+on change de pack »~~ — **PÉRIMÉ, réfuté le 2026-09-11** par le contre-exemple
+Tomb Raider / Mario Kart. L'effectif suit le **jeu**, pas le poste.
+
+### Ce qui publie, et quand
+
+Plus aucun geste à ne pas oublier : c'est le **démarrage du pack** qui publie.
+
+- `engine:start` → `appliquerEffectif(slug, usesGamepad)` :
+  - pack **sans manette** (clavier, RCON, OBS, HTTP) → publie `[]`. Un clavier
+    envoie ses touches à la **fenêtre active**, pas à une personne : aucune cible
+    ne peut exister. C'est ce qui efface les cibles du pack précédent.
+  - pack **manette** → crée les manettes (`vigem-pads`), puis publie **ce qui
+    existe réellement** (`pads[].player`), jamais ce qui a été demandé.
+  - échec de création → publie `[]` + une ligne de journal. Annoncer des cibles
+    inertes ferait payer un cadeau pour rien.
+- `engine:stop` → publie `[]`, en même temps que le retrait du pack visuel.
+- Édition en plein direct (`gamepad:setRoster`) → republie **immédiatement** si ce
+  pack est celui qui tourne.
+
+⚠️ **Ordre imposé dans `engine:start`** : la publication passe **après** le
+démarrage du passthrough. Le passthrough crée le joueur 1 **sans type**, donc en
+Xbox 360, et c'est lui que la DLL proxy fait passer pour la manette du jeu — un
+mécanisme purement XInput. Créer les manettes d'abord avec `kind:'ds4'` ferait
+naître le joueur 1 en DualShock 4, que le proxy ne saurait pas présenter : le jeu
+ne lirait plus rien, sans le moindre message.
+
+### Côté serveur : le miroir du connecteur
+
+Le diffuseur démarre presque toujours son pack **avant** de lancer son direct. La
+publication ne trouvait alors aucun direct où atterrir et l'effectif était perdu
+en silence. Il est donc mémorisé dans `live:connector-players:<workspaceId>`
+(TTL 24 h), exactement comme `live:connector-bundle:<ws>` porte le pack lui-même :
+
+- `PUT /api/manager/event-key/:id/players` → écrit le miroir **puis** applique aux
+  directs en cours (`GiftService.setDeclaredPlayers`, puis `setInteractivePlayers`).
+- `GiftService.setActiveBundle` lit `players` **dans le miroir**, plus dans l'état
+  du direct. C'était le second visage du bug : le pack suivant **héritait** de
+  l'effectif du précédent.
+
+Le nettoyage des libellés (24 caractères, sans caractère de contrôle, repli
+`Contrôleur N`) est **factorisé** dans `GiftService.normaliserJoueurs` : les deux
+chemins d'entrée s'affichent chez tous les spectateurs, aucun n'est un champ de
+confiance.
+
+### Mémoire des noms
+
+`PackOverlay.playerLabels` retient le nom de **chaque** manette du pack, jouante ou
+non. Sans elle, réduire l'effectif de 4 à 2 (« ce soir ils ne sont que deux »)
+effaçait définitivement le nom des joueurs 3 et 4 : une perte de données
+silencieuse pour un geste anodin. `players` dit **qui** joue et c'est ce qu'on
+publie ; `playerLabels` dit **comment chacun s'appelle**.
+
+⚠️ `setPackOverlay` **préserve** `players` et `playerLabels` quand l'appelant ne les
+envoie pas — même piège que `profile` et `keyBindings` : la modale de
+personnalisation n'envoie que `disabled`/`cooldownMs`, et sans cette précaution,
+l'enregistrer effacerait l'effectif en plein direct, sans aucun message.
+
+### Double garde côté viewer
+
+1. **Le pack dit s'il est ciblable** : `GiftService.packCiblable(slug)` dérive
+   `targeting` des `capabilities` de la version approuvée (`'gamepad'`), et
+   `getInteractiveBundle` retire `players` quand `targeting` est faux — y compris
+   sur un blob de cache antérieur au correctif (fail-closed).
+2. **L'effectif suit le pack**, décrit ci-dessus.
+
+Les clients (Flutter, Angular) n'affichent le sélecteur « À qui ? » qu'à partir de
+**deux** joueurs : à un seul, il n'y a rien à viser.
+
+### Tests
+
+- `api` : `gift.service.players.spec.ts` — 24 tests, dont le miroir
+  (`setDeclaredPlayers`/`getDeclaredPlayers`, étanchéité entre workspaces) et le
+  non-report de l'effectif du pack précédent, avec contre-témoin.
+- `houla-connect-app` : `e2e/renderer/pads-players.spec.js` — 13 tests, dont
+  « pack clavier : aucune cible » + son contre-témoin, la mémorisation par pack,
+  et la non-destruction des noms quand on change le nombre.
 
 ## 12. État du dépôt (2026-08-24)
 Commits **locaux non poussés** (dev d'abord, prod après validation) :

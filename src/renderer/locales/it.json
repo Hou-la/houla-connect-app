@@ -33,7 +33,6 @@
   "chronologie": "Timeline",
   "clavier": "Tastiera",
   "clavier-normal": "tastiera normale",
-  "code-en-ligne": "Codice inline",
   "code-en-ligne-un-mot": "Codice in linea (una parola)",
   "combo-ensemble": "Combo (insieme)",
   "combo-simultane": "Combo simultanea",
@@ -172,5 +171,16 @@
   "version-beta-des-fonctions-sont-encore-incompl": "Versione beta: alcune funzioni sono ancora incomplete o in fase di port.",
   "versions-en-attente-d-une-decision-humaine-tant-": "Versioni in attesa di una decisione umana. Finché una versione non è approvata, il creatore non può pubblicarla e nessun altro può installarla.",
   "visibilite-de-cette-version": "Visibilità di questa versione",
-  "websocket": "WebSocket"
+  "websocket": "WebSocket",
+  "manettes-de-la-machine": "Controller della macchina",
+  "combien-de-manettes-ce-poste-sait-fournir-qui-joue": "Quanti controller questa postazione sa fornire. È una proprietà del tuo hardware: CHI gioca, e con quale nome, si imposta pack per pack in Cattura.",
+  "manettes-disponibles": "Controller disponibili",
+  "aucune-un-seul-joueur": "Nessuno (un solo giocatore)",
+  "type-de-manette-virtuelle": "Tipo di controller",
+  "xbox-360-compatible-partout-2-joueurs-maximum": "Xbox 360 — compatibile ovunque, massimo 2 giocatori",
+  "dualshock-4-jusqu-a-8-joueurs-emulateurs": "DualShock 4 — fino a 8 giocatori (emulatori)",
+  "windows-n-a-que-4-emplacements-de-manette-xbox-pa": "Windows ha solo 4 slot per controller Xbox, condivisi con i tuoi controller fisici: oltre 2 giocatori bisogna passare a DualShock 4. Gli emulatori li vedono; un gioco che legge solo XInput no.",
+  "qui-joue-sur-ce-pack": "Chi gioca su questo pack",
+  "nombre-de-joueurs": "Numero di giocatori",
+  "ces-noms-s-affichent-chez-tes-spectateurs-et-sont": "Questi nomi compaiono dai tuoi spettatori e restano memorizzati per questo pack: li ritroverai identici al prossimo avvio."
 }

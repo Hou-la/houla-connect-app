@@ -6,10 +6,20 @@ import { randomUUID } from 'crypto';
 // RCON/OBS, clé d'événement) chiffrés via safeStorage (DPAPI Windows / Keychain).
 // Le renderer n'accède JAMAIS aux secrets en lecture (bridge write-only).
 
+import { MAX_JOUEURS } from '../engine/joueurs';
+
 export interface InstalledBundle {
     slug: string;
     version: string;
     contentHash: string;
+    /**
+     * Ce pack pilote-t-il une MANETTE (dans la configuration de commandes choisie) ?
+     *
+     * Mémorisé à l'installation et rafraîchi à chaque lecture réussie du manifeste :
+     * c'est le repli HORS LIGNE. Sans lui, ouvrir l'app sans réseau cacherait
+     * l'effectif du pack au lieu de le montrer. Absent = jamais déterminé.
+     */
+    usesGamepad?: boolean;
 }
 
 /** Réglages LOCAUX d'un pack installé. Ne touchent jamais le manifeste signé. */
@@ -33,6 +43,33 @@ export interface PackOverlay {
      * clavier en appel HTTP ou en commande RCON : ce serait détourner un pack signé.
      */
     keyBindings?: Record<string, { keys?: string; button?: string }>;
+    /**
+     * EFFECTIF de ce pack : qui joue, sous quel nom, et dans quel ordre.
+     *
+     * ⚠️ C'est une propriété du PACK, pas de la machine. Un streamer joue à Tomb
+     * Raider à deux avec toujours les mêmes personnes, puis fait un Mario Kart à
+     * quatre le lendemain avec d'autres. La CAPACITÉ (combien de manettes la
+     * machine sait fournir, et de quel type) reste globale, dans les Réglages :
+     * elle décrit le matériel. L'effectif, lui, se mémorise ici et revient tel
+     * quel quand le pack est relancé.
+     *
+     * Absent = jamais configuré (on proposera la capacité). Tableau vide = le
+     * diffuseur a explicitement dit « personne » : aucun choix de cible chez le
+     * spectateur. Les deux ne se lisent pas pareil.
+     */
+    players?: Array<{ id: number; label?: string }>;
+    /**
+     * MÉMOIRE DES NOMS, indépendante de l'effectif actif.
+     *
+     * Sans elle, réduire l'effectif de 4 à 2 (ce soir ils ne sont que deux)
+     * EFFACERAIT définitivement le nom des joueurs 3 et 4 : le diffuseur devrait
+     * les ressaisir à chaque partie complète. Une perte de données silencieuse,
+     * pour un geste qui a l'air anodin.
+     *
+     * `players` dit QUI joue (et c'est ça qu'on publie) ; ceci dit COMMENT chaque
+     * manette s'appelle sur ce pack, jouante ou non.
+     */
+    playerLabels?: Record<string, string>;
 }
 
 interface Schema {
@@ -49,6 +86,11 @@ interface Schema {
     // Jeu piloté PAR PACK (le jeu appartient au pack, pas au connecteur : la manette sert à
     // tous les jeux). Demandé UNE fois au 1er démarrage du pack, puis automatique.
     gameByPack?: Record<string, { exe: string; dir: string }>;
+    // CAPACITÉ manettes de la MACHINE (globale, Réglages) : combien de manettes
+    // virtuelles le poste sait fournir, et de quel type. L'effectif qui joue
+    // réellement se décide PAR PACK (`packOverlays[slug].players`).
+    padCapacity?: number;
+    padKind?: string; // 'x360' | 'ds4'
     capabilities?: Record<string, boolean>; // par exécuteur
     hostAllowlist?: string[];
     secrets?: Record<string, string>; // valeurs chiffrées (rconHost, rconPassword, obsUrl, ...)
@@ -353,6 +395,7 @@ export class StoreService {
         cooldownMs: Record<string, number>;
         profile?: string;
         keyBindings: Record<string, { keys?: string; button?: string }>;
+        players?: Array<{ id: number; label?: string }>;
     } {
         const all = this.store.get('packOverlays', {} as Record<string, PackOverlay>);
         const o = all[slug] || {};
@@ -360,8 +403,9 @@ export class StoreService {
             disabled: o.disabled || [],
             cooldownMs: o.cooldownMs || {},
             keyBindings: o.keyBindings || {},
-        } as { disabled: string[]; cooldownMs: Record<string, number>; profile?: string; keyBindings: Record<string, { keys?: string; button?: string }> };
+        } as { disabled: string[]; cooldownMs: Record<string, number>; profile?: string; keyBindings: Record<string, { keys?: string; button?: string }>; players?: Array<{ id: number; label?: string }> };
         if (o.profile) out.profile = o.profile;
+        if (o.players) out.players = o.players;
         return out;
     }
     setPackOverlay(slug: string, overlay: PackOverlay): void {
@@ -377,8 +421,102 @@ export class StoreService {
         // ne doit pas les EFFACER. Le joueur perdrait ses touches sans avoir rien demandé.
         const kb = overlay.keyBindings !== undefined ? overlay.keyBindings : prev.keyBindings;
         if (kb && Object.keys(kb).length) next.keyBindings = kb;
+        // MÊME PIÈGE que `profile` et `keyBindings`, et il coûterait encore plus cher :
+        // la modale de personnalisation n'envoie que disabled/cooldownMs. Sans cette
+        // ligne, ouvrir puis enregistrer la personnalisation EFFACERAIT l'effectif du
+        // pack, et le diffuseur perdrait les noms de ses joueurs sans rien avoir
+        // demandé — en plein direct, sans aucun message.
+        const pl = overlay.players !== undefined ? overlay.players : prev.players;
+        if (pl) next.players = pl;
+        const nl = overlay.playerLabels !== undefined ? overlay.playerLabels : prev.playerLabels;
+        if (nl && Object.keys(nl).length) next.playerLabels = nl;
         all[slug] = next;
         this.store.set('packOverlays', all);
+    }
+
+    /**
+     * EFFECTIF d'un pack, borné par la CAPACITÉ de la machine.
+     *
+     * Le bornage se fait à la LECTURE, pas seulement à l'écriture : le diffuseur
+     * peut avoir configuré quatre joueurs sur son PC de salon puis ouvert l'app sur
+     * un poste qui n'en fournit que deux. Publier quatre cibles là ferait payer un
+     * cadeau qui n'agirait nulle part.
+     *
+     * `null` = jamais configuré pour ce pack (l'appelant proposera un défaut) ;
+     * `[]` = le diffuseur a dit « personne ».
+     */
+    getPackPlayers(slug: string): Array<{ id: number; label?: string }> | null {
+        const o = this.store.get('packOverlays', {} as Record<string, PackOverlay>)[slug];
+        if (!o || o.players === undefined) return null;
+        const cap = this.getPadCapacity().count;
+        const noms = o.playerLabels || {};
+        return (o.players || [])
+            .filter((p) => Number.isInteger(p?.id) && p.id >= 1 && p.id <= Math.min(cap, MAX_JOUEURS))
+            .map((p) => {
+                const label = p.label || noms[String(p.id)] || '';
+                return label ? { id: p.id, label } : { id: p.id };
+            })
+            .sort((a, b) => a.id - b.id);
+    }
+
+    /** Noms mémorisés pour ce pack, manettes non jouantes comprises. */
+    getPackPlayerLabels(slug: string): Record<string, string> {
+        const o = this.store.get('packOverlays', {} as Record<string, PackOverlay>)[slug];
+        return { ...(o?.playerLabels || {}) };
+    }
+
+    /** Écrit l'effectif d'un pack SANS toucher au reste de son calque. */
+    setPackPlayers(slug: string, players: Array<{ id: number; label?: string }>): void {
+        const all = this.store.get('packOverlays', {} as Record<string, PackOverlay>);
+        const prev = all[slug] || {};
+        const vus = new Set<number>();
+        const propres: Array<{ id: number; label?: string }> = [];
+        for (const p of Array.isArray(players) ? players : []) {
+            const id = Number(p?.id);
+            if (!Number.isInteger(id) || id < 1 || id > MAX_JOUEURS || vus.has(id)) continue;
+            vus.add(id);
+            // Le libellé est renvoyé tel quel au serveur, qui le renettoie de son
+            // côté : on borne déjà ici pour que le champ affiche ce qui sera vu.
+            const label = typeof p?.label === 'string' ? p.label.trim().slice(0, 24) : '';
+            propres.push(label ? { id, label } : { id });
+        }
+        // Les noms sont MUSÉES : on fusionne au lieu de remplacer, pour qu'une
+        // manette retirée de l'effectif retrouve son nom si elle y revient.
+        const noms = { ...(prev.playerLabels || {}) };
+        for (const p of propres) {
+            if (p.label) noms[String(p.id)] = p.label;
+        }
+        all[slug] = {
+            ...prev,
+            players: propres.sort((a, b) => a.id - b.id),
+            playerLabels: noms,
+        };
+        this.store.set('packOverlays', all);
+    }
+
+    /**
+     * CAPACITÉ manettes de la machine : combien de manettes virtuelles ce poste sait
+     * fournir, et de quel type. Propriété du MATÉRIEL, donc globale.
+     *
+     * Au-delà de deux joueurs le type DOIT être 'ds4' : Windows n'a que quatre
+     * emplacements XInput, partagés avec les manettes physiques, donc les Xbox 360
+     * virtuelles suivantes sont acceptées par ViGEm tout en restant INVISIBLES du
+     * jeu. On corrige à la lecture plutôt que de servir une capacité qui ne peut
+     * pas exister.
+     */
+    getPadCapacity(): { count: number; kind: string } {
+        const n = Number(this.store.get('padCapacity', 0));
+        const count = Number.isInteger(n) ? Math.max(0, Math.min(MAX_JOUEURS, n)) : 0;
+        let kind = this.store.get('padKind', 'x360');
+        if (kind !== 'x360' && kind !== 'ds4') kind = 'x360';
+        if (count > 2) kind = 'ds4';
+        return { count, kind };
+    }
+    setPadCapacity(count: number, kind?: string): { count: number; kind: string } {
+        const n = Number(count);
+        this.store.set('padCapacity', Number.isInteger(n) ? Math.max(0, Math.min(MAX_JOUEURS, n)) : 0);
+        if (kind === 'x360' || kind === 'ds4') this.store.set('padKind', kind);
+        return this.getPadCapacity();
     }
 
     // ── Liaisons bundle -> rôle -> connecteur ──
