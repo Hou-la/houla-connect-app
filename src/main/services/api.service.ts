@@ -234,6 +234,7 @@ export class ApiService {
      */
     async setInteractivePlayers(
         players: Array<{ id: number; label?: string; connected?: boolean }>,
+        packSlug?: string,
     ): Promise<{ ok: boolean; reason?: string }> {
         const keyId = await this.resolveEventKeyId();
         if (!keyId) {
@@ -245,7 +246,11 @@ export class ApiService {
                 {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ players }),
+                    // `packSlug` ANCRE l'effectif sur SON pack. Sans lui, un effectif
+                    // publié pour Mario Kart restait applicable au pack solo suivant
+                    // si la publication de ce dernier échouait : le spectateur voyait
+                    // quatre cibles, en payait une, et rien ne bougeait.
+                    body: JSON.stringify(packSlug ? { players, packSlug } : { players }),
                 },
             );
             if (!r.ok) return { ok: false, reason: `Le serveur a refusé (${r.status}).` };

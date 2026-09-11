@@ -182,5 +182,6 @@
   "windows-n-a-que-4-emplacements-de-manette-xbox-pa": "Windows only has 4 Xbox controller slots, shared with your physical pads: past 2 players you must switch to DualShock 4. Emulators see them; a game that only reads XInput does not.",
   "qui-joue-sur-ce-pack": "Who plays on this pack",
   "nombre-de-joueurs": "Number of players",
-  "ces-noms-s-affichent-chez-tes-spectateurs-et-sont": "These names show up for your viewers and are remembered for this pack: you will find them unchanged next time you launch it."
+  "ces-noms-s-affichent-chez-tes-spectateurs-et-sont": "These names show up for your viewers and are remembered for this pack: you will find them unchanged next time you launch it.",
+  "beta": "BETA"
 }

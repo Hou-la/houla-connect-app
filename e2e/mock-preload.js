@@ -97,9 +97,13 @@
                     padCap.count = Math.max(0, Math.min(8, Math.round(req.count)));
                     if (req.kind === 'x360' || req.kind === 'ds4') padCap.kind = req.kind;
                 }
-                if (padCap.count > 2) padCap.kind = 'ds4';
+                // Le type n'est PLUS force ici : c'est une PREFERENCE. Le type
+                // reellement cree depend de l'effectif du soir (typeManettes).
+                // Forcer sur la capacite creait des manettes DS4 invisibles d'un
+                // jeu XInput alors qu'on ne jouait qu'a deux.
                 return R({ count: padCap.count, kind: padCap.kind });
             }),
+            seedLabels: rec('seedLabels', () => R({ ok: true })),
             // EFFECTIF (par pack) : memorise en memoire pour la duree du test,
             // pour que « je regle, je change de pack, je reviens » se teste.
             roster: rec('roster', (slug) => {
@@ -128,6 +132,10 @@
             listLinked: () => R(cfg.gameLinked || []),
             unlinkPack: rec('gameUnlinkPack', () => R({ ok: true })),
         },
+        // Catalogues de langue : servis par le MAIN dans l'app reelle. Le harnais
+        // e2e sert la page en http, ou `fetch` marcherait -- ce qui masquait
+        // justement que l'i18n ne marche PAS dans l'app packagee.
+        i18nCatalog: (lang) => R((cfg.catalogs || {})[lang] || {}),
         language: () => R(), autoLaunch: () => R(false),
         legal: { text: () => R(''), status: () => R({ accepted: true }), accept: () => R() },
         update: { check: () => R(), install: () => R() },

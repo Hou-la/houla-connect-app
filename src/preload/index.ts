@@ -112,6 +112,8 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         // EFFECTIF d'un pack : qui joue, sous quel nom. Mémorisé par pack, parce
         // qu'il suit le JEU (Tomb Raider à 2, Mario Kart à 4) et pas le matériel.
         roster: (slug: string) => invoke('gamepad:roster', slug),
+        // Reprise UNIQUE des noms de l'ancienne configuration globale.
+        seedLabels: (noms: Record<string, string>) => invoke('gamepad:seedLabels', noms),
         setRoster: (slug: string, players: Array<{ id: number; label?: string }>) =>
             invoke('gamepad:setRoster', slug, players),
     },
@@ -126,6 +128,9 @@ contextBridge.exposeInMainWorld('houlaConnect', {
         unlinkPack: (slug: string) => invoke('game:unlinkPack', slug),
     },
     language: (lang?: string) => invoke('prefs:language', lang),
+    // Catalogue de langue : lu par le MAIN sur le disque. Le renderer ne peut pas
+    // aller le chercher lui-même (page servie en `file:`, et `connect-src 'none'`).
+    i18nCatalog: (lang: string) => invoke('i18n:catalog', lang),
     autoLaunch: (enabled?: boolean) => invoke('prefs:autolaunch', enabled),
     legal: {
         text: () => invoke('legal:text'),

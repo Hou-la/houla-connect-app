@@ -182,5 +182,6 @@
   "windows-n-a-que-4-emplacements-de-manette-xbox-pa": "Windows solo tiene 4 ranuras de mando Xbox, compartidas con tus mandos físicos: a partir de 2 jugadores hay que pasar a DualShock 4. Los emuladores los ven; un juego que solo lee XInput, no.",
   "qui-joue-sur-ce-pack": "Quién juega en este pack",
   "nombre-de-joueurs": "Número de jugadores",
-  "ces-noms-s-affichent-chez-tes-spectateurs-et-sont": "Estos nombres se muestran a tus espectadores y se guardan para este pack: los encontrarás igual la próxima vez que lo inicies."
+  "ces-noms-s-affichent-chez-tes-spectateurs-et-sont": "Estos nombres se muestran a tus espectadores y se guardan para este pack: los encontrarás igual la próxima vez que lo inicies.",
+  "beta": "BETA"
 }

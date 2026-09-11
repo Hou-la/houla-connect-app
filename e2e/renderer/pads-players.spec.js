@@ -19,8 +19,9 @@ const { boot } = require('./_boot');
 // Ce que ces tests protègent, dans l'ordre du coût :
 //   1. Un pack qui ne pilote PAS de manette ne propose AUCUNE cible.
 //   2. L'effectif est mémorisé par pack et revient tel quel.
-//   3. Au-delà de 2 manettes, les Xbox 360 virtuelles sont invisibles du jeu :
-//      on bascule en DualShock 4 et on le DIT.
+//   3. Le TYPE de manette est une PRÉFÉRENCE, jamais écrasée en silence : c'est
+//      l'effectif du soir qui décide (au-delà de 2 joueurs, DualShock 4
+//      obligatoire, sinon le jeu ne les voit pas), et on PRÉVIENT.
 //   4. La carte reste lisible : mêmes largeurs, aucun libellé sur deux lignes.
 
 const PACKS = [
@@ -147,22 +148,37 @@ test('jamais réglé : on propose la capacité, et on le DIT', async ({ page }) 
 
 // ── 3. Capacité : la bascule XInput -> DualShock 4 ──────────────────────────
 
-test('au-delà de 2 manettes : bascule en DualShock 4, et on le DIT', async ({ page }) => {
+test('le type est une PRÉFÉRENCE : il n’est plus écrasé en silence', async ({ page }) => {
+    // À l'origine, choisir 4 manettes basculait le select en DualShock 4 et
+    // réécrivait le choix du diffuseur. C'ÉTAIT UN BUG, corrigé le 2026-09-11 :
+    // le type doit suivre l'EFFECTIF du soir, pas la capacité de la machine.
+    // Une machine déclarée à 4 mais jouée à 2 sur un jeu XInput créait sinon le
+    // joueur 2 en DualShock 4 : invisible du jeu, et pourtant publié comme cible.
     await ouvrirReglages(page);
     await expect(page.locator('#pads-kind')).toHaveValue('x360');
     await page.locator('#pads-count').selectOption('4');
 
-    await expect(page.locator('#pads-kind')).toHaveValue('ds4');
-    // Basculer en silence laisserait le diffuseur croire qu'il joue en Xbox.
+    await expect(page.locator('#pads-kind')).toHaveValue('x360'); // choix RESPECTÉ
+    // Mais on PRÉVIENT, en toutes lettres : au-delà de 2 joueurs sur un pack, les
+    // manettes passeront en DualShock 4 ou le jeu ne les verrait pas.
     await expect(page.locator('#pads-status')).toContainText(/DualShock 4/);
 });
 
-test('CONTRE-TÉMOIN : à 2 manettes, aucune bascule', async ({ page }) => {
-    // Sans lui, « ça passe en DS4 » serait vrai quel que soit le nombre, et on
-    // priverait de XInput des configurations qui en ont besoin.
+test('CONTRE-TÉMOIN : à 2 manettes, aucun avertissement', async ({ page }) => {
+    // Sans lui, « ça prévient » serait vrai quel que soit le nombre, et
+    // l'avertissement deviendrait du bruit qu'on n'a plus lit.
     await ouvrirReglages(page);
     await page.locator('#pads-count').selectOption('2');
     await expect(page.locator('#pads-kind')).toHaveValue('x360');
+    await expect(page.locator('#pads-status')).toBeHidden();
+});
+
+test('DualShock 4 choisi à 4 manettes : aucun avertissement non plus', async ({ page }) => {
+    // Le diffuseur a fait le bon choix : rien à lui signaler.
+    await ouvrirReglages(page, { padCapacity: { count: 0, kind: 'ds4' } });
+    await page.locator('#pads-kind').selectOption('ds4');
+    await page.locator('#pads-count').selectOption('4');
+    await expect(page.locator('#pads-kind')).toHaveValue('ds4');
     await expect(page.locator('#pads-status')).toBeHidden();
 });
 

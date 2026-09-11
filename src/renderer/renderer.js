@@ -3404,9 +3404,14 @@ const I18N_CATALOGS = {}; // lang -> catalogue (charge une fois, garde en memoir
 async function loadCatalog(lang) {
     if (I18N_CATALOGS[lang]) return I18N_CATALOGS[lang];
     try {
-        const res = await fetch(`locales/${lang}.json`);
-        if (!res.ok) throw new Error(String(res.status));
-        I18N_CATALOGS[lang] = await res.json();
+        // Par le MAIN, PAS par `fetch`. La page est servie par `loadFile()`, donc
+        // depuis une origine `file:` opaque ou Chromium refuse tout fetch, et la
+        // CSP porte en plus `connect-src 'none'`. L'ancien appel echouait donc
+        // TOUJOURS, le catch rendait un catalogue vide, et l'app restait en
+        // francais quelle que soit la langue choisie. Sans un message.
+        const cat = await api.i18nCatalog(lang);
+        if (!cat || typeof cat !== 'object') throw new Error('catalogue vide');
+        I18N_CATALOGS[lang] = cat;
     } catch {
         // Catalogue absent ou illisible : on n'a RIEN a afficher de casse, le repli francais
         // du runtime prend le relais. Mieux vaut une interface en francais qu'une interface
@@ -3467,38 +3472,67 @@ function statutEffectif(texte) {
     el.classList.toggle('hidden', !texte);
 }
 
+/**
+ * REPRISE des reglages d'avant la separation capacite / effectif.
+ *
+ * La capacite vivait dans le localStorage du renderer ; elle vit maintenant dans
+ * le stockage principal. Sans cette reprise, un diffuseur qui met l'app a jour
+ * retrouvait « Aucune manette » et perdait les noms de ses joueurs, sans un mot.
+ * Une seule fois : des que la capacite principale existe, on ne relit plus rien.
+ */
+async function reprendreAnciensReglages() {
+    let vu;
+    try { vu = localStorage.getItem('houla.padCount'); } catch { return; }
+    if (vu === null) return;
+    try {
+        const n = Number(vu) || 0;
+        const kind = localStorage.getItem('houla.padKind') || 'x360';
+        if (n > 0 && !capaciteManettes.count) {
+            capaciteManettes = await api.driver.capacity({ count: n, kind });
+            $('pads-count').value = String(capaciteManettes.count);
+            $('pads-kind').value = capaciteManettes.kind;
+            statutManettes(`Tes ${n} manettes ont été reprises de la version précédente. Les NOMS des joueurs se règlent maintenant pack par pack, dans Capture.`);
+        }
+        // Les anciens noms etaient GLOBAUX ; ils servent desormais de proposition
+        // pour un pack jamais configure. Mieux vaut les proposer que les jeter.
+        const noms = JSON.parse(localStorage.getItem('houla.padLabels') || '{}');
+        if (noms && Object.keys(noms).length) await api.driver.seedLabels(noms);
+        localStorage.removeItem('houla.padCount');
+        localStorage.removeItem('houla.padKind');
+        localStorage.removeItem('houla.padLabels');
+    } catch { /* reprise best-effort : jamais bloquante */ }
+}
+
 async function chargerCapacite() {
     capaciteManettes = (await api.driver.capacity()) || { count: 0, kind: 'x360' };
     $('pads-count').value = String(capaciteManettes.count);
     $('pads-kind').value = capaciteManettes.kind;
+    await reprendreAnciensReglages();
+}
+
+/** Enregistre la capacite telle qu'elle est affichee, et rafraichit l'effectif. */
+async function enregistrerCapacite() {
+    capaciteManettes = await api.driver.capacity({
+        count: Number($('pads-count').value) || 0,
+        kind: $('pads-kind').value,
+    });
+    // Le main ne CORRIGE plus le type : c'est une PREFERENCE. Le type reellement
+    // cree depend de l'effectif du soir (au-dela de 2 joueurs, DualShock 4
+    // obligatoire). On le rappelle ici au lieu d'ecraser le choix en silence,
+    // ce que l'ancienne version faisait sans le dire quand on choisissait
+    // Xbox 360 avec plus de deux manettes.
+    $('pads-count').value = String(capaciteManettes.count);
+    $('pads-kind').value = capaciteManettes.kind;
+    statutManettes(capaciteManettes.count > 2 && capaciteManettes.kind === 'x360'
+        ? 'Retenu. Attention : sur un pack joué à plus de 2 joueurs, les manettes passeront automatiquement en DualShock 4, sinon le jeu ne les verrait pas.'
+        : '');
+    await chargerEffectif(); // la capacite borne l'effectif de chaque pack
 }
 
 if ($('pads-count')) {
     chargerCapacite();
-
-    $('pads-count').onchange = async () => {
-        const voulu = $('pads-kind').value;
-        capaciteManettes = await api.driver.capacity({
-            count: Number($('pads-count').value) || 0,
-            kind: voulu,
-        });
-        // Au-delà de 2, le Xbox 360 ne peut PAS marcher (4 emplacements XInput
-        // partagés avec les manettes physiques). Le main corrige ; on le DIT ici
-        // plutôt que de laisser le diffuseur découvrir un choix changé en silence.
-        $('pads-kind').value = capaciteManettes.kind;
-        statutManettes(capaciteManettes.kind !== voulu
-            ? 'Passé en DualShock 4 : au-delà de 2 manettes, les Xbox 360 virtuelles seraient invisibles du jeu.'
-            : '');
-        await chargerEffectif(); // la capacité borne l'effectif de chaque pack
-    };
-
-    $('pads-kind').onchange = async () => {
-        capaciteManettes = await api.driver.capacity({
-            count: Number($('pads-count').value) || 0,
-            kind: $('pads-kind').value,
-        });
-        $('pads-kind').value = capaciteManettes.kind;
-    };
+    $('pads-count').onchange = enregistrerCapacite;
+    $('pads-kind').onchange = enregistrerCapacite;
 }
 
 // ── EFFECTIF DU PACK ACTIF (vue Capture) ────────────────────────────────────

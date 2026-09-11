@@ -398,6 +398,64 @@ Plus aucun geste à ne pas oublier : c'est le **démarrage du pack** qui publie.
 - Édition en plein direct (`gamepad:setRoster`) → republie **immédiatement** si ce
   pack est celui qui tourne.
 
+### Le TYPE de manette suit l'EFFECTIF, pas la capacité
+
+~~La capacité force le type : au-delà de deux manettes, `getPadCapacity()` renvoie
+`ds4`~~ — **PÉRIMÉ, corrigé le 2026-09-11 avant déploiement** (revue adversariale).
+C'était un défaut : une machine déclarée à quatre manettes, jouée un soir à **deux**
+sur un jeu PC qui ne lit que XInput, créait le joueur 2 en DualShock 4. Le jeu ne le
+voyait pas, et il était pourtant publié comme cible : le spectateur payait dans le
+vide, exactement le mode de panne que tout ce chantier cherche à fermer.
+
+- `padKind` est une **préférence**, plus jamais réécrite en silence.
+- `typeManettes(nbJoueurs, pref)` (`src/main/engine/joueurs.ts`) tranche au moment de
+  créer : `nbJoueurs > 2 ? 'ds4' : pref`.
+- `creerManettes` **relâche d'abord** les manettes 2..N dont le type ne correspond pas :
+  le sidecar rend un joueur déjà créé tel quel (`_get_joueur` sort avant l'allocation),
+  donc un changement de type en cours de session laissait sinon des manettes inertes.
+- Les manettes dont le type obtenu ne correspond pas sont **écartées des cibles**.
+
+### À l'arrêt : toutes les manettes, pas seulement la première
+
+~~`engine:stop` débranche la manette~~ — **incomplet, corrigé le 2026-09-11** :
+`vigem-passthrough {enable:false}` ne rend **que le joueur 1** (sans clé `player`, le
+sidecar prend 1 par défaut). Les manettes 2..N créées au démarrage restaient branchées
+jusqu'à la fermeture complète de l'app, qui n'arrive pas non plus quand on ferme la
+fenêtre (elle continue dans le tray). Le jeu suivant voyait des contrôleurs fantômes,
+et en Xbox 360 la manette abandonnée squattait un emplacement XInput. `engine:stop`
+appelle désormais `release-pad` **sans `player`**, qui relâche tout et attend la
+dépublication Windows.
+
+⚠️ `{player: 0}` ne marche PAS pour dire « tout sauf le premier » : le sidecar lit
+`int(args.get("player", 1) or 1)`, donc zéro retombe sur 1. D'où
+`relacherManettesSupplementaires()`, qui énumère et relâche une par une.
+
+### L'effectif est ancré sur SON pack (côté serveur)
+
+Le miroir porte `{ packSlug, players }`, et `setActiveBundle` ne l'applique que si le
+slug correspond. Sans cet ancrage il était **fail-open** : si la publication d'un
+nouveau pack échouait (502, réseau, jeton en renouvellement), l'effectif du pack
+précédent restait en place et s'appliquait au suivant. Un miroir **sans** slug vient
+d'une version de Connect antérieure : il garde l'ancien comportement.
+
+Son TTL (24 h) est **rafraîchi à chaque lecture** : un setup allumé en continu (chaîne
+loop, direct long) ne réécrit jamais le miroir, et son effectif s'évaporait en silence.
+
+### L'i18n de Hou.la Connect n'avait JAMAIS fonctionné
+
+Constaté le 2026-09-11. Le renderer faisait `fetch('locales/en.json')`, et deux verrous
+le bloquaient : la page est servie par `win.loadFile()`, donc depuis une **origine
+`file:` opaque** où Chromium refuse tout `fetch`, **et** la CSP de la page porte
+`connect-src 'none'`. Le `catch` de `loadCatalog` retombait sur un catalogue vide et le
+repli français prenait la main : l'app restait en français quelle que soit la langue
+choisie, **sans le moindre message**. Les tests e2e ne l'ont jamais vu parce que le
+harnais sert la page en `http`, où `fetch` marche.
+
+Correction : le **main** lit le fichier (il a le disque) et le sert par
+`ipcMain.handle('i18n:catalog')`, sur une liste fermée de langues (`lang` finit dans un
+chemin de fichier). La CSP n'est pas assouplie. Le mock e2e expose désormais
+`i18nCatalog`, pour refléter l'app réelle et non le harnais.
+
 ⚠️ **Ordre imposé dans `engine:start`** : la publication passe **après** le
 démarrage du passthrough. Le passthrough crée le joueur 1 **sans type**, donc en
 Xbox 360, et c'est lui que la DLL proxy fait passer pour la manette du jeu — un

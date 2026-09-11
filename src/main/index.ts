@@ -8,7 +8,7 @@ import { ApiService } from './services/api.service';
 import { AuthService } from './services/auth.service';
 import { ConnectionService, ConnState } from './services/connection.service';
 import { TriggerRouter } from './engine/trigger-router';
-import { MAX_JOUEURS } from './engine/joueurs';
+import { MAX_JOUEURS, typeManettes } from './engine/joueurs';
 import { Engine, AuditEntry } from './engine/engine';
 import { PythonSidecar } from './engine/python-sidecar';
 import { BundleManifest } from './engine/types';
@@ -313,6 +313,36 @@ async function releaseGamepad(): Promise<void> {
 }
 
 /**
+ * Relâche les manettes SUPPLÉMENTAIRES (joueurs 2 et suivants), en épargnant la
+ * première. `filtre` permet de ne viser que certaines d'entre elles.
+ *
+ * ⚠️ Il n'existe pas de primitive « tout sauf le joueur 1 » côté sidecar, et
+ * `{player: 0}` ne marche PAS : le sidecar lit `int(args.get("player", 1) or 1)`,
+ * donc zéro retombe sur 1 et débrancherait justement celle qu'on veut garder.
+ * On énumère donc, et on relâche une par une.
+ *
+ * Le joueur 1 est épargné parce qu'il porte le passthrough (recopie de la manette
+ * physique) et que la DLL proxy le fait passer pour la manette du jeu.
+ */
+async function relacherManettesSupplementaires(
+    filtre?: (p: { player: number; kind?: string }) => boolean,
+): Promise<number> {
+    let n = 0;
+    try {
+        const inv = (await sidecar().call('vigem-pads', {}, 10000)) as {
+            pads?: Array<{ player: number; kind?: string }>;
+        };
+        for (const p of inv.pads || []) {
+            if (p.player < 2) continue;
+            if (filtre && !filtre(p)) continue;
+            await sidecar().call('release-pad', { player: p.player }, 10000);
+            n++;
+        }
+    } catch { /* sidecar indisponible : rien à relâcher de toute façon */ }
+    return n;
+}
+
+/**
  * Crée / inventorie les manettes virtuelles, et TRADUIT les refus attendus.
  *
  * Un message brut du sidecar ne dirait rien au diffuseur, et « ça n'a pas
@@ -323,10 +353,18 @@ async function creerManettes(
     kind: string,
 ): Promise<{ ok: boolean; reason?: string; code?: string; pads?: Array<{ player: number }>; devices?: number }> {
     try {
-        const args: Record<string, unknown> = {
-            // Borné ici AUSSI, pas seulement dans le sidecar.
-            count: Math.max(1, Math.min(MAX_JOUEURS, Math.round(count))),
-        };
+        const n = Math.max(1, Math.min(MAX_JOUEURS, Math.round(count)));
+        // ⚠️ LE TYPE D'UNE MANETTE EXISTANTE NE CHANGE PAS. Le sidecar rend le joueur
+        // déjà créé tel quel (`_get_joueur` sort avant l'allocation), donc passer de
+        // DualShock 4 à Xbox 360 en cours de session laisserait des manettes du
+        // mauvais type, invisibles du jeu et pourtant publiées comme cibles. On
+        // relâche donc celles qui ne correspondent pas AVANT de recréer.
+        //
+        // Le joueur 1 est ÉPARGNÉ : il est créé par le passthrough, reste en Xbox 360
+        // par construction, et c'est lui que la DLL proxy fait passer pour la manette
+        // du jeu. Le débrancher ici couperait la recopie de la manette physique.
+        await relacherManettesSupplementaires((p) => !!p.kind && p.kind !== kind);
+        const args: Record<string, unknown> = { count: n };
         if (kind === 'ds4' || kind === 'x360') args.kind = kind;
         const r = await sidecar().call('vigem-pads', args, 30000);
         return { ok: true, ...(r as object) };
@@ -380,7 +418,7 @@ async function appliquerEffectif(
     piloteManette: boolean,
 ): Promise<{ ok: boolean; reason?: string; players: number }> {
     const effacer = async (raison?: string) => {
-        const r = await api.setInteractivePlayers([]);
+        const r = await api.setInteractivePlayers([], slug);
         return { ok: !!r?.ok, reason: raison ?? r?.reason, players: 0 };
     };
     // Pack CLAVIER / RCON / OBS : rien ne s'adresse à un joueur en particulier.
@@ -390,19 +428,42 @@ async function appliquerEffectif(
     const cap = store.getPadCapacity();
     const configure = store.getPackPlayers(slug);
     const effectif = configure ?? effectifParDefaut(cap.count);
-    if (!effectif.length) return await effacer();
+    if (!effectif.length) {
+        // Effectif ramené à zéro : les manettes supplémentaires n'ont plus lieu
+        // d'exister. Les laisser branchées ferait voir au jeu des contrôleurs que
+        // plus personne ne pilote. Le joueur 1 reste : c'est la manette du pack.
+        await relacherManettesSupplementaires();
+        return await effacer();
+    }
 
-    const pads = await creerManettes(effectif.length, cap.kind);
+    // Le TYPE vient de l'effectif du soir, pas de la capacité de la machine.
+    const kind = typeManettes(effectif.length, cap.kind);
+    const pads = await creerManettes(effectif.length, kind);
     if (!pads.ok) return await effacer(pads.reason);
+    // On vérifie le type OBTENU, pas celui demandé : une manette du mauvais type est
+    // invisible d'un jeu XInput, et l'annoncer comme cible ferait payer pour rien.
+    const mauvaisType = (pads.pads || []).filter(
+        (p: { player: number; kind?: string }) => p.player >= 2 && p.kind && p.kind !== kind,
+    );
     // On n'annonce que les manettes RÉELLEMENT énumérées par le système : promettre
     // une cible que Windows n'a pas créée ferait payer un cadeau pour rien.
-    const vivantes = new Set((pads.pads || []).map((x) => x.player));
+    const rejetees = new Set(mauvaisType.map((p: { player: number }) => p.player));
+    const vivantes = new Set(
+        (pads.pads || []).map((x) => x.player).filter((n: number) => !rejetees.has(n)),
+    );
     const cibles = effectif
         .filter((p) => vivantes.has(p.id))
         .map((p) => ({ id: p.id, label: (p.label || '').trim(), connected: true }));
     if (!cibles.length) return await effacer("Aucune manette virtuelle n'a pu être créée.");
-    const r = await api.setInteractivePlayers(cibles);
-    return { ok: !!r?.ok, reason: r?.reason, players: cibles.length };
+    const r = await api.setInteractivePlayers(cibles, slug);
+    return {
+        ok: !!r?.ok,
+        reason: r?.reason
+            || (rejetees.size
+                ? `${rejetees.size} manette(s) du mauvais type, écartée(s) des cibles.`
+                : undefined),
+        players: cibles.length,
+    };
 }
 
 // Traduit un verdict de test en message ACTIONNABLE + un CODE que le renderer utilise pour
@@ -1062,7 +1123,24 @@ function registerIpc(): void {
         stopFocusPoll();
         // Coupe le mode « une seule manette » (sinon le thread de mirroring tourne encore et
         // garde la manette virtuelle active après l'arrêt du pack).
-        if (sidecarInstance) { try { await sidecar().call('vigem-passthrough', { enable: false }); } catch { /* noop */ } }
+        if (sidecarInstance) {
+            try { await sidecar().call('vigem-passthrough', { enable: false }); } catch { /* noop */ }
+            // ⚠️ RELACHER TOUTES LES MANETTES, pas seulement la premiere.
+            //
+            // `vigem-passthrough {enable:false}` ne rend QUE le joueur 1 : sans clef
+            // `player`, le sidecar prend 1 par defaut. Les manettes 2..N creees au
+            // démarrage restaient donc branchées jusqu'a la fermeture complete de
+            // l'app, qui n'arrive pas non plus quand on ferme la fenetre (elle
+            // continue dans le tray). Le jeu suivant voyait des contrôleurs
+            // fantômes : un couch-coop demarrait a quatre joueurs, et en Xbox 360
+            // la manette abandonnée squattait en plus un emplacement XInput — le mode
+            // de panne que `_release_pad` qualifie lui-même de CRUCIAL (« la manette
+            // du joueur semble ne plus marcher »).
+            //
+            // Sans `player`, `release-pad` relâche TOUT et attend la dépublication
+            // Windows : c'est le sens attendu d'un arrêt de pack.
+            try { await sidecar().call('release-pad', {}, 10000); } catch { /* noop */ }
+        }
         gamepadSessionOn = false; // la virtuelle a disparu : le prochain test devra re-patienter
         // Retire le pack visuel côté viewer : plus de pack actif -> plus rien à montrer.
         await api.setActivePackBundle(null).catch(() => {});
@@ -1102,6 +1180,32 @@ function registerIpc(): void {
     // `activeSlug` : le pack qui TOURNE. Le menu Capture le présélectionne, sinon
     // revenir sur la vue en plein direct afficherait l'effectif d'un autre pack
     // que celui qui reçoit réellement les cadeaux.
+    // ── CATALOGUES DE LANGUE ──────────────────────────────────────
+    //
+    // L'INTERNATIONALISATION N'A JAMAIS FONCTIONNÉ, et l'échec était MUET.
+    //
+    // Le renderer faisait `fetch('locales/en.json')`. Deux verrous le bloquaient :
+    // la page est servie par `win.loadFile()`, donc depuis une origine `file:`
+    // opaque où Chromium refuse tout `fetch`, ET la CSP de la page porte
+    // `connect-src 'none'`. Le `catch` de `loadCatalog` retombait sur un
+    // catalogue vide, et le repli français du runtime prenait la main : l'app
+    // restait en français quelle que soit la langue choisie, sans un message.
+    //
+    // On lit donc le fichier dans le MAIN, qui a le disque, et on le sert par
+    // IPC. Aucun assouplissement de la CSP : la surface du renderer ne bouge pas.
+    ipcMain.handle('i18n:catalog', async (_e, lang: string) => {
+        // Liste FERMÉE : `lang` vient du renderer et finit dans un chemin de
+        // fichier. Un nom libre ouvrirait une traversée de répertoires.
+        const LANGUES = ['fr', 'en', 'it', 'es', 'pt'];
+        if (!LANGUES.includes(lang)) return {};
+        try {
+            const f = path.join(__dirname, '..', 'renderer', 'locales', `${lang}.json`);
+            return JSON.parse(fs.readFileSync(f, 'utf8'));
+        } catch (e) {
+            console.error('[i18n] catalogue', lang, (e as Error)?.message || e);
+            return {};
+        }
+    });
     ipcMain.handle('engine:status', () => ({
         running: engineRunning,
         connected: conn.connected,
@@ -1172,6 +1276,10 @@ function registerIpc(): void {
     ipcMain.handle('gamepad:capacity', (_e, req?: { count?: number; kind?: string }) => {
         if (req && typeof req.count === 'number') return store.setPadCapacity(req.count, req.kind);
         return store.getPadCapacity();
+    });
+    ipcMain.handle('gamepad:seedLabels', (_e, noms: unknown) => {
+        store.seedPadLabels((noms || {}) as Record<string, string>);
+        return { ok: true };
     });
     ipcMain.handle('gamepad:roster', async (_e, slug: string) => {
         const cap = store.getPadCapacity();

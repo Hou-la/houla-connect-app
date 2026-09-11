@@ -90,7 +90,11 @@ interface Schema {
     // virtuelles le poste sait fournir, et de quel type. L'effectif qui joue
     // réellement se décide PAR PACK (`packOverlays[slug].players`).
     padCapacity?: number;
-    padKind?: string; // 'x360' | 'ds4'
+    padKind?: string; // 'x360' | 'ds4' (PREFERENCE : le type reel suit l'effectif)
+    // Noms repris de l'ancienne configuration GLOBALE (avant l'effectif par pack).
+    // Servent de PROPOSITION a un pack jamais configure : les jeter en silence
+    // ferait perdre au diffuseur un travail de saisie qu'il a deja fait.
+    padLabelsDefaut?: Record<string, string>;
     capabilities?: Record<string, boolean>; // par exécuteur
     hostAllowlist?: string[];
     secrets?: Record<string, string>; // valeurs chiffrées (rconHost, rconPassword, obsUrl, ...)
@@ -459,10 +463,32 @@ export class StoreService {
             .sort((a, b) => a.id - b.id);
     }
 
-    /** Noms mémorisés pour ce pack, manettes non jouantes comprises. */
+    /**
+     * Noms mémorisés pour ce pack, manettes non jouantes comprises.
+     *
+     * Un pack jamais configuré hérite des noms repris de l'ancienne configuration
+     * globale : c'est une proposition, que le premier enregistrement remplace.
+     */
     getPackPlayerLabels(slug: string): Record<string, string> {
         const o = this.store.get('packOverlays', {} as Record<string, PackOverlay>)[slug];
-        return { ...(o?.playerLabels || {}) };
+        const propres = o?.playerLabels;
+        if (propres && Object.keys(propres).length) return { ...propres };
+        return { ...this.store.get('padLabelsDefaut', {} as Record<string, string>) };
+    }
+
+    /** Reprise unique des noms de l'ancienne configuration globale. */
+    seedPadLabels(noms: Record<string, string>): void {
+        // Déjà repris : une reprise qui rejouerait écraserait des noms édités depuis.
+        if (Object.keys(this.store.get('padLabelsDefaut', {} as Record<string, string>)).length) return;
+        const propres: Record<string, string> = {};
+        for (const [k, v] of Object.entries(noms || {})) {
+            const id = Number(k);
+            if (!Number.isInteger(id) || id < 1 || id > MAX_JOUEURS) continue;
+            if (typeof v !== 'string') continue;
+            const label = v.trim().slice(0, 24);
+            if (label) propres[String(id)] = label;
+        }
+        this.store.set('padLabelsDefaut', propres);
     }
 
     /** Écrit l'effectif d'un pack SANS toucher au reste de son calque. */
@@ -496,20 +522,21 @@ export class StoreService {
 
     /**
      * CAPACITÉ manettes de la machine : combien de manettes virtuelles ce poste sait
-     * fournir, et de quel type. Propriété du MATÉRIEL, donc globale.
+     * fournir, et quel type le joueur PRÉFÈRE. Propriété du MATÉRIEL, donc globale.
      *
-     * Au-delà de deux joueurs le type DOIT être 'ds4' : Windows n'a que quatre
-     * emplacements XInput, partagés avec les manettes physiques, donc les Xbox 360
-     * virtuelles suivantes sont acceptées par ViGEm tout en restant INVISIBLES du
-     * jeu. On corrige à la lecture plutôt que de servir une capacité qui ne peut
-     * pas exister.
+     * ⚠️ `kind` est une PRÉFÉRENCE, pas une décision. ~~Au-delà de deux joueurs le
+     * type DOIT être 'ds4', on corrige donc à la lecture~~ — PÉRIMÉ, corrigé le
+     * 2026-09-11 : forcer sur la CAPACITÉ cassait le cas courant. Une machine
+     * déclarée à quatre manettes, jouée un soir à DEUX sur un jeu qui ne lit que
+     * XInput, créait le joueur 2 en DualShock 4 : invisible du jeu, et pourtant
+     * publié comme cible. C'est l'EFFECTIF du soir qui décide du type, via
+     * `typeManettes()` ; la capacité ne dit que ce que la machine peut fournir.
      */
     getPadCapacity(): { count: number; kind: string } {
         const n = Number(this.store.get('padCapacity', 0));
         const count = Number.isInteger(n) ? Math.max(0, Math.min(MAX_JOUEURS, n)) : 0;
         let kind = this.store.get('padKind', 'x360');
         if (kind !== 'x360' && kind !== 'ds4') kind = 'x360';
-        if (count > 2) kind = 'ds4';
         return { count, kind };
     }
     setPadCapacity(count: number, kind?: string): { count: number; kind: string } {
