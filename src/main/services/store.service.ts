@@ -471,9 +471,14 @@ export class StoreService {
      */
     getPackPlayerLabels(slug: string): Record<string, string> {
         const o = this.store.get('packOverlays', {} as Record<string, PackOverlay>)[slug];
-        const propres = o?.playerLabels;
-        if (propres && Object.keys(propres).length) return { ...propres };
-        return { ...this.store.get('padLabelsDefaut', {} as Record<string, string>) };
+        // Le repli ne vaut que pour un pack JAMAIS configuré (`players` absent).
+        // Se fonder sur « playerLabels vide » ferait réapparaître les anciens noms
+        // globaux chez un diffuseur qui vient justement de tous les EFFACER, à
+        // chaque lecture : son effacement serait annulé sans qu'il comprenne.
+        if (!o || o.players === undefined) {
+            return { ...this.store.get('padLabelsDefaut', {} as Record<string, string>) };
+        }
+        return { ...(o.playerLabels || {}) };
     }
 
     /** Reprise unique des noms de l'ancienne configuration globale. */

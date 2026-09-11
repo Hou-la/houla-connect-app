@@ -351,7 +351,13 @@ async function relacherManettesSupplementaires(
 async function creerManettes(
     count: number,
     kind: string,
-): Promise<{ ok: boolean; reason?: string; code?: string; pads?: Array<{ player: number }>; devices?: number }> {
+): Promise<{
+    ok: boolean;
+    reason?: string;
+    code?: string;
+    pads?: Array<{ player: number; kind?: string; xinputIndex?: number | null }>;
+    devices?: number;
+}> {
     try {
         const n = Math.max(1, Math.min(MAX_JOUEURS, Math.round(count)));
         // ⚠️ LE TYPE D'UNE MANETTE EXISTANTE NE CHANGE PAS. Le sidecar rend le joueur
@@ -364,6 +370,21 @@ async function creerManettes(
         // par construction, et c'est lui que la DLL proxy fait passer pour la manette
         // du jeu. Le débrancher ici couperait la recopie de la manette physique.
         await relacherManettesSupplementaires((p) => !!p.kind && p.kind !== kind);
+        // ⚠️ LE JOUEUR 1 NE REÇOIT JAMAIS DE TYPE EXPLICITE.
+        //
+        // `vigem-pads {kind}` applique ce type À TOUS les joueurs créés, joueur 1
+        // compris : côté sidecar, `k = kind or (TYPE_X360 if num == 1 ...)` fait
+        // gagner le type explicite. Or le joueur 1 doit rester en Xbox 360 : c'est
+        // lui que la DLL proxy fait passer pour la manette du jeu, et le proxy est
+        // un mécanisme purement XInput — qu'une DualShock 4 n'alimente pas.
+        //
+        // En régime normal il existe déjà (le passthrough l'a créé sans type), et
+        // `_get_joueur` rend un joueur existant TEL QUEL. Mais après un PANIC ou un
+        // redémarrage du sidecar, `_joueurs` est VIDE : un appel à quatre joueurs en
+        // DualShock 4 ferait alors naître le joueur 1 en DS4, et le jeu ne lirait
+        // plus rien, sans le moindre message. On le fait donc naître d'abord, sans
+        // type ; l'appel suivant le retrouvera inchangé.
+        try { await sidecar().call('vigem-pads', { count: 1 }, 30000); } catch { /* traité ci-dessous */ }
         const args: Record<string, unknown> = { count: n };
         if (kind === 'ds4' || kind === 'x360') args.kind = kind;
         const r = await sidecar().call('vigem-pads', args, 30000);
@@ -442,8 +463,19 @@ async function appliquerEffectif(
     if (!pads.ok) return await effacer(pads.reason);
     // On vérifie le type OBTENU, pas celui demandé : une manette du mauvais type est
     // invisible d'un jeu XInput, et l'annoncer comme cible ferait payer pour rien.
+    // Deux façons pour une manette d'exister sans que le jeu la voie, et les deux
+    // feraient payer un cadeau pour rien :
+    //   - le mauvais TYPE (une DualShock 4 là où le jeu ne lit que XInput) ;
+    //   - une Xbox 360 virtuelle SANS emplacement XInput libre. Windows n'en a que
+    //     quatre, partagés avec les manettes physiques : sur un poste où trois
+    //     manettes sont branchées, la virtuelle est acceptée par ViGEm et reste
+    //     invisible. Le sidecar le dit : `xinputIndex` vaut alors `null`.
+    const inutilisable = (p: { player: number; kind?: string; xinputIndex?: number | null }) =>
+        (!!p.kind && p.kind !== kind)
+        || (p.kind === 'x360' && (p.xinputIndex === null || p.xinputIndex === undefined));
     const mauvaisType = (pads.pads || []).filter(
-        (p: { player: number; kind?: string }) => p.player >= 2 && p.kind && p.kind !== kind,
+        (p: { player: number; kind?: string; xinputIndex?: number | null }) =>
+            p.player >= 2 && inutilisable(p),
     );
     // On n'annonce que les manettes RÉELLEMENT énumérées par le système : promettre
     // une cible que Windows n'a pas créée ferait payer un cadeau pour rien.
@@ -493,6 +525,35 @@ function withDriverCode(res: { ok: boolean; reason?: string }): { ok: boolean; r
                 + 'Son installation demande un redémarrage. En attendant, bascule cette interaction sur le mode clavier « normal ».',
         };
     return res;
+}
+
+/**
+ * PANIC : tout arrêter. UN SEUL endroit, partagé par les TROIS déclencheurs
+ * (bouton du renderer, menu du tray, raccourci global Ctrl+Alt+Pause).
+ *
+ * ⚠️ Ils divergeaient, et ça se payait. Le tray et le raccourci coupaient la
+ * connexion et tuaient le sidecar, mais laissaient `engineRunning` à vrai et
+ * laissaient l'effectif PUBLIÉ : les spectateurs continuaient de voir « À qui ? »
+ * et de payer des cadeaux alors que plus rien n'écoutait, et une édition
+ * d'effectif recréait des manettes sur un moteur censé être à l'arrêt.
+ *
+ * Un PANIC doit être indiscernable d'un arrêt, vu du spectateur.
+ */
+async function toutArreter(): Promise<void> {
+    conn.disconnect();
+    try { await engine.panic(); } catch { /* on continue : arrêter prime */ }
+    stopFocusPoll();
+    if (sidecarInstance) {
+        try { await sidecar().call('vigem-passthrough', { enable: false }); } catch { /* noop */ }
+    }
+    gamepadSessionOn = false;
+    sidecarInstance?.kill(); // le kill propre relance `_cleanup_pad` : tous les pads tombent
+    engineRunning = false;
+    await api.setActivePackBundle(null).catch(() => {});
+    // Les CIBLES disparaissent avec le reste : sans ça, le spectateur garde un
+    // choix de joueur qui ne mène plus nulle part, et paie dans le vide.
+    await api.setInteractivePlayers([]).catch(() => {});
+    send('onState', { connected: false });
 }
 
 function send(channel: string, payload: unknown): void {
@@ -636,12 +697,7 @@ function createTray(): void {
         { type: 'separator' },
         {
             label: 'PANIC (tout arrêter)',
-            click: () => {
-                conn.disconnect();
-                engine.panic();
-                sidecarInstance?.kill();
-                send('onState', { connected: false });
-            },
+            click: () => { void toutArreter(); },
         },
         { type: 'separator' },
         { label: 'Quitter', click: () => { isQuitting = true; app.quit(); } },
@@ -1150,15 +1206,7 @@ function registerIpc(): void {
         return { ok: true };
     });
     ipcMain.handle('engine:panic', async () => {
-        conn.disconnect();
-        await engine.panic();
-        stopFocusPoll();
-        if (sidecarInstance) { try { await sidecar().call('vigem-passthrough', { enable: false }); } catch { /* noop */ } }
-        gamepadSessionOn = false;
-        sidecarInstance?.kill();
-        engineRunning = false;
-        await api.setActivePackBundle(null).catch(() => {});
-        send('onState', { connected: false });
+        await toutArreter();
         return { ok: true };
     });
     // Test manuel d'UNE règle depuis le Lab (déclaratif : trigger + effet, joué via
@@ -1464,10 +1512,7 @@ if (!app.requestSingleInstanceLock()) {
         setupAutoUpdate();
         // PANIC global : Ctrl+Alt+Pause.
         globalShortcut.register('Control+Alt+Pause', () => {
-            conn.disconnect();
-            engine.panic();
-            sidecarInstance?.kill();
-            send('onState', { connected: false });
+            void toutArreter();
             send('onLog', { ts: Date.now(), ruleId: 'PANIC', trigger: 'panic', sender: '', executor: 'keyboard', allowed: false, reason: 'PANIC déclenché' });
         });
         app.on('activate', () => {
