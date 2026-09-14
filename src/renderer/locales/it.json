@@ -70,7 +70,7 @@
   "ex-mon-pack-minecraft": "es. mio-pack-minecraft",
   "fermer": "Chiudi",
   "fermer-la-fenetre-reduit-l-app-dans-la-zone-de-n": "Chiudere la finestra riduce l'app nell'area di notifica (continua a funzionare). «Esci» dall'icona nella tray la ferma davvero.",
-  "format-schema-2-rules-evenements-gift-giftslug-n": "Formato: { \"schema\": 2, \"rules\": [ … ] }. Eventi: gift(giftSlug : un regalo qualsiasi, es. \"licorne\", oppure uno slot ix_slot_01..30), follow, comment(contains O every), hearts(milestone O every), share(every opzionale), viewer(every). «every» = ogni N (es. ogni 100 like/messaggi/condivisioni/spettatori). Effetti: keyboard(keys, backend), gamepad(button/buttons/sequence/randomFrom/steps/analog), rcon(command), obs(request), http(method,url), mqtt(topic,payload), osc(address,args), ws(url,message).",
+  "format-schema-2-rules-evenements-gift-giftslug-n": "Formato: { \"schema\": 2, \"rules\": [ … ] }. Eventi: gift(giftSlug : un regalo qualsiasi, es. \"licorne\", oppure uno slot ix_slot_01..99), follow, comment(contains O every), hearts(milestone O every), share(every opzionale), viewer(every). «every» = ogni N (es. ogni 100 like/messaggi/condivisioni/spettatori). Effetti: keyboard(keys, backend), gamepad(button/buttons/sequence/randomFrom/steps/analog), rcon(command), obs(request), http(method,url), mqtt(topic,payload), osc(address,args), ws(url,message).",
   "format-technique": "Formato tecnico",
   "francais": "Français",
   "gras-ctrl-b": "Grassetto (Ctrl+B)",
@@ -183,5 +183,16 @@
   "qui-joue-sur-ce-pack": "Chi gioca su questo pack",
   "nombre-de-joueurs": "Numero di giocatori",
   "ces-noms-s-affichent-chez-tes-spectateurs-et-sont": "Questi nomi compaiono dai tuoi spettatori e restano memorizzati per questo pack: li ritroverai identici al prossimo avvio.",
-  "beta": "BETA"
+  "beta": "BETA",
+  "public": "Pubblico",
+  "editer-le-pack": "Modifica: {slug}",
+  "mode-simplifie": "Modalità semplice",
+  "editer-le-connecteur": "Modifica connettore",
+  "n-pourcent-des-etoiles": "{n} % delle stelle",
+  "vis-hint-public": "✔ Pubblico: dopo l’approvazione, questo pack comparirà nello store e chiunque potrà installarlo.",
+  "vis-hint-prive": "🔒 Privato: questo pack NON comparirà nello store e nessuno tranne te potrà installarlo. Passalo a Pubblico per pubblicarlo.",
+  "joueurs-simultanes": "Giocatori simultanei",
+  "non-precise": "Non specificato",
+  "1-solo-aucun-choix-de-joueur": "1 (solo, nessuna scelta del giocatore)",
+  "uniquement-pour-un-pack-qui-pilote-une-manette-le": "Solo per un pack che pilota un controller. «1»: gli spettatori non potranno mai scegliere a quale giocatore inviare il regalo, anche se il broadcaster ha più controller. «Non specificato»: decide il broadcaster."
 }

@@ -113,6 +113,9 @@
                     capacity: padCap.count,
                     kind: padCap.kind,
                     usesGamepad: cfg.rosterUsesGamepad === undefined ? true : cfg.rosterUsesGamepad,
+                    // Plafond DECLARE par le createur du pack (absent = non precise).
+                    maxPlayers: cfg.rosterMaxPlayers,
+                    labels: {},
                     configured: memo !== undefined,
                     players: memo === undefined
                         ? Array.from({ length: padCap.count }, (_, i) => ({ id: i + 1 }))

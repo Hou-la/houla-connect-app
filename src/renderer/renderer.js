@@ -398,6 +398,15 @@ function slugifyRole(s) {
     return String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'connecteur';
 }
 let myConnectors = []; // [{id,name,type,config,hasSecret}]
+// La modale connecteur édite-t-elle un connecteur existant ? (sert à re-rendre son titre)
+let connecteurEnEdition = false;
+function syncConnectorModalTitle() {
+    const el = $('connector-modal-title');
+    if (!el) return;
+    el.textContent = connecteurEnEdition
+        ? tr('editer-le-connecteur', 'Éditer le connecteur')
+        : tr('nouveau-connecteur-2', 'Nouveau connecteur');
+}
 async function loadConnectors() { try { myConnectors = (await api.connectors.list()) || []; } catch { myConnectors = []; } }
 
 // ── Window controls ──
@@ -1597,6 +1606,8 @@ const PROFILE_PRESETS = [
     { id: 'manette', label: 'Manette', effect: 'gamepad' },
 ];
 let labProfiles = [];
+// Joueurs simultanés déclarés ('' = non précisé). Voir le select #lab-max-players.
+let labMaxPlayers = '';
 let labActiveProfile = ''; // id affiché ; '' = toutes les interactions
 // « Sale » = des modifs Lab non enregistrées. Mis à true par toute saisie utilisateur dans
 // la vue (listener délégué), remis à false à l'entrée du Lab et après un enregistrement réussi.
@@ -2295,8 +2306,14 @@ function buildRule(r, i) {
 function buildManifest() {
     const m = { schema: 2, rules: labRules.map((r, i) => buildRule(r, i)) };
     if (labProfiles.length) m.profiles = labProfiles.map((p) => (p.default ? { id: p.id, label: p.label, default: true } : { id: p.id, label: p.label }));
+    // Lu dans le select au moment de construire : c'est la seule source de vérité de
+    // l'édition. On le TRANSMET même sur un pack sans manette : le validateur le dira
+    // en clair, plutôt que de jeter en silence un réglage que le créateur a fait.
+    const mp = $('lab-max-players') ? $('lab-max-players').value : labMaxPlayers;
+    if (mp) m.maxPlayers = Number(mp);
     return m;
 }
+function syncLabMaxPlayers() { if ($('lab-max-players')) $('lab-max-players').value = labMaxPlayers; }
 // validateManifestClient / manifestToRules / canonicalize vivent dans le module PARTAGÉ
 // et TESTÉ src/renderer/manifest-lib.js (chargé avant renderer.js). On les alias ici pour
 // que le renderer et les tests exécutent EXACTEMENT le même code.
@@ -2868,18 +2885,20 @@ $('lab-mode').onchange = () => {
         $('lab-manifest').value = JSON.stringify(buildManifest(), null, 2);
         $('lab-builder').classList.add('hidden');
         $('lab-json-mode').classList.remove('hidden');
-        $('lab-mode-label').textContent = 'Mode simplifié';
+        syncLabModeLabel();
     } else {
         try {
             const parsed = JSON.parse($('lab-manifest').value);
             labRules = manifestToRules(parsed);
             labProfiles = manifestToProfiles(parsed);
+            labMaxPlayers = HoulaManifest.manifestToMaxPlayers(parsed);
+            syncLabMaxPlayers();
             labActiveProfile = '';
         } catch { /* garde l'existant */ }
         renderRules();
         $('lab-builder').classList.remove('hidden');
         $('lab-json-mode').classList.add('hidden');
-        $('lab-mode-label').textContent = 'Mode avancé (JSON)';
+        syncLabModeLabel();
     }
 };
 
@@ -2913,14 +2932,14 @@ async function loadDictionaries() {
 // ── Visibilité par version (toggle : position + texte, daltonien-safe) ──
 function syncVisHint() {
     const pub = $('lab-vis').checked;
-    $('lab-vis-label').textContent = pub ? 'Public' : 'Privé';
+    $('lab-vis-label').textContent = pub ? tr('public', 'Public') : tr('prive', 'Privé');
     // On dit la CONSEQUENCE, pas l'etat : « Privé » ne signifie rien pour un créateur qui
     // attend de voir son pack dans le store.
     const el = $('lab-vis-hint');
     if (el) {
         el.textContent = pub
-            ? '✔ Public : après approbation, ce pack apparaîtra dans le store et tout le monde pourra l’installer.'
-            : '🔒 Privé : ce pack n’apparaîtra PAS dans le store et personne d’autre que toi ne pourra l’installer. Passe-le en Public pour le publier.';
+            ? tr('vis-hint-public', '✔ Public : après approbation, ce pack apparaîtra dans le store et tout le monde pourra l’installer.')
+            : tr('vis-hint-prive', '🔒 Privé : ce pack n’apparaîtra PAS dans le store et personne d’autre que toi ne pourra l’installer. Passe-le en Public pour le publier.');
     }
 }
 $('lab-vis').onchange = syncVisHint;
@@ -2929,18 +2948,29 @@ $('lab-vis').onchange = syncVisHint;
 function setLabMode(mode) {
     labMode = mode;
     const create = mode === 'create';
-    $('lab-mode-title').textContent = create ? 'Créer un pack' : 'Éditer : ' + (labCurrentSlug || '');
+    $('lab-mode-title').textContent = create
+        ? tr('creer-un-pack', 'Créer un pack')
+        : tr('editer-le-pack', 'Éditer : {slug}', { slug: labCurrentSlug || '' });
     $('lab-slug').readOnly = !create;
     $('lab-bump').classList.toggle('hidden', create);
     $('lab-changelog-field').classList.toggle('hidden', create); // changelog = nouvelle version (édition)
     $('lab-new-btn').classList.toggle('hidden', create);
-    $('lab-submit-btn').textContent = create ? 'Créer le pack' : 'Enregistrer';
+    $('lab-submit-btn').textContent = create ? tr('creer-le-pack', 'Créer le pack') : tr('enregistrer', 'Enregistrer');
     $('lab-changelog').value = ''; // une nouvelle version démarre avec un changelog vierge
 }
 // Libellé vivant du curseur de commission (0 = gratuit, sinon N % des étoiles).
+/** Libellé de l'interrupteur de mode : il annonce le mode vers lequel on bascule. */
+function syncLabModeLabel() {
+    $('lab-mode-label').textContent = labJsonMode
+        ? tr('mode-simplifie', 'Mode simplifié')
+        : tr('mode-avance-json', 'Mode avancé (JSON)');
+}
 function syncFeeLabel() {
     const v = Number($('lab-fee').value) || 0;
-    $('lab-fee-val').innerHTML = v > 0 ? v + ' % des étoiles' : '0 % · gratuit';
+    // textContent et non innerHTML : un libellé traduit n'a rien à interpréter.
+    $('lab-fee-val').textContent = v > 0
+        ? tr('n-pourcent-des-etoiles', '{n} % des étoiles', { n: v })
+        : tr('0-nbsp-gratuit', '0 % · gratuit');
 }
 // Curseur de commission CUSTOM : reflète la valeur (input caché #lab-fee) sur --pct.
 function renderFeeSlider() {
@@ -3077,6 +3107,7 @@ function setupLabMarkdownEditor() {
 function enterCreateMode() {
     labCurrentSlug = null; labLatestVersion = null; labTags = [];
     labProfiles = [];
+    labMaxPlayers = ''; syncLabMaxPlayers();
     labActiveProfile = '';
     labRules = [newRule()];
     $('lab-slug').value = ''; $('lab-title').value = ''; $('lab-game').value = '';
@@ -3112,8 +3143,10 @@ async function enterEditMode(slug) {
         : '<span class="lab-sub">Versions</span><p class="muted small">Aucune version encore.</p>';
     $('lab-msg').textContent = ''; $('lab-msg2').textContent = '';
     const lastVis = versions.length ? versions[0].visibility : b.visibility;
-    $('lab-vis').checked = lastVis === 'public'; $('lab-vis-label').textContent = lastVis === 'public' ? 'Public' : 'Privé';
+    $('lab-vis').checked = lastVis === 'public'; $('lab-vis-label').textContent = lastVis === 'public' ? tr('public', 'Public') : tr('prive', 'Privé');
     labProfiles = versions.length ? manifestToProfiles(versions[0].manifestJson) : [];
+    labMaxPlayers = versions.length ? HoulaManifest.manifestToMaxPlayers(versions[0].manifestJson) : '';
+    syncLabMaxPlayers();
     labActiveProfile = '';
     labRules = versions.length ? manifestToRules(versions[0].manifestJson) : [newRule()];
     // Restaure le connecteur choisi par rôle (liaisons locales du pack).
@@ -3140,6 +3173,7 @@ async function loadLab(opts) {
         $('lab-slug').value = ''; $('lab-title').value = ''; $('lab-desc').value = '';
         $('lab-instructions').value = ''; showLabInstrTab('edit'); syncLabCounters();
         $('lab-versions').innerHTML = ''; labRules = []; labProfiles = []; labActiveProfile = '';
+        labMaxPlayers = ''; syncLabMaxPlayers();
         if (!labJsonMode) renderRules();
     }
     await Promise.all([loadGiftCatalog(), loadDictionaries(), loadConnectors()]);
@@ -3420,11 +3454,38 @@ async function loadCatalog(lang) {
     }
     return I18N_CATALOGS[lang];
 }
+/**
+ * Libellé TRADUIT posé par le code (et non par `data-i18n`).
+ *
+ * ⚠️ Pourquoi ce n'est pas `HoulaI18n.apply` qui s'en charge : `apply()` réécrit chaque
+ * élément depuis sa clé HTML et son texte d'ORIGINE, sans variables. Pour un libellé qui
+ * dépend de l'état (« Éditer : mon-pack », « 5 % des étoiles », Public / Privé), il
+ * rétablirait la valeur du démarrage. Ces libellés sont donc rendus par leur propre
+ * code, et re-rendus après chaque changement de langue (`rafraichirLibellesDynamiques`).
+ *
+ * Avant ce correctif, ils étaient écrits en français en dur : l'interface passait bien en
+ * anglais au démarrage, puis le premier geste (ouvrir le Lab, basculer la visibilité)
+ * la ramenait en français.
+ */
+function tr(cle, fr, vars) {
+    return (typeof HoulaI18n !== 'undefined' && HoulaI18n.t) ? HoulaI18n.t(cle, vars || null, fr) : fr;
+}
+
+/** Re-rend les libellés dépendants de l'état, après un changement de langue. */
+function rafraichirLibellesDynamiques() {
+    try { setLabMode(labMode); } catch { /* Lab pas encore initialisé */ }
+    try { syncVisHint(); } catch { /* noop */ }
+    try { syncFeeLabel(); } catch { /* noop */ }
+    try { syncLabModeLabel(); } catch { /* noop */ }
+    try { if (typeof syncConnectorModalTitle === 'function') syncConnectorModalTitle(); } catch { /* noop */ }
+}
+
 async function applyLanguage(lang) {
     const fr = await loadCatalog('fr');
     const cat = lang === 'fr' ? fr : await loadCatalog(lang);
     HoulaI18n.setCatalogs(fr, cat, lang);
     HoulaI18n.apply(document);
+    rafraichirLibellesDynamiques(); // apply() vient de rétablir les libellés du démarrage
     document.documentElement.setAttribute('lang', lang);
 }
 $('lang').onchange = async (e) => {
@@ -3615,6 +3676,14 @@ async function chargerEffectif() {
     }
     bloc.classList.remove('hidden');
     capaciteManettes = { count: r.capacity, kind: r.kind };
+    // Pack SOLO déclaré par son créateur. On le DIT au lieu de cacher le bloc : un
+    // diffuseur qui a huit manettes et ne voit plus rien chercherait une panne.
+    if (r.maxPlayers === 1) {
+        $('roster-count').innerHTML = '<option value="0">Aucun</option>';
+        $('roster-list').innerHTML = '';
+        statutEffectif('Pack solo : son créateur l’a conçu pour un seul joueur. Les spectateurs n’auront pas de choix de joueur, même avec plusieurs manettes branchées.');
+        return;
+    }
     if (!r.capacity) {
         // Capacité à zéro : il n'y a rien à répartir. On le DIT au lieu
         // d'afficher un sélecteur vide, qui donnerait une carte qui semble cassée.
@@ -3624,14 +3693,21 @@ async function chargerEffectif() {
         return;
     }
     effectifNoms = Object.assign({}, r.labels || {});
-    effectifJoueurs = (r.players || []).map((p) => ({
+    // Le sélecteur s'arrête au plus petit des deux : ce que la machine fournit, et ce
+    // que le créateur a prévu.
+    const plafond = r.maxPlayers ? Math.min(r.capacity, r.maxPlayers) : r.capacity;
+    capaciteManettes = { count: plafond, kind: r.kind };
+    effectifJoueurs = (r.players || []).filter((p) => p.id <= plafond).map((p) => ({
         id: p.id,
         label: p.label || effectifNoms[String(p.id)] || '',
     }));
-    rendreEffectif(r.capacity);
+    rendreEffectif(plafond);
+    const borne = r.maxPlayers && r.maxPlayers < r.capacity
+        ? ` Son créateur l’a prévu pour ${r.maxPlayers} joueurs au plus.`
+        : '';
     statutEffectif(r.configured
-        ? ''
-        : `Jamais réglé pour ce pack : on propose tes ${r.capacity} manettes. Ajuste si tu joues à moins.`);
+        ? borne.trim()
+        : `Jamais réglé pour ce pack : on propose ${plafond} manettes. Ajuste si tu joues à moins.${borne}`);
 }
 
 /** Écrit l'effectif du pack. Republie tout de suite si le pack tourne. */
@@ -3702,7 +3778,8 @@ function readConnectorForm(container) {
 let connectorOnSaved = null;
 function openConnectorModal(connector, onSaved, presetType) {
     connectorOnSaved = onSaved || null;
-    $('connector-modal-title').textContent = connector ? 'Éditer le connecteur' : 'Nouveau connecteur';
+    connecteurEnEdition = !!connector;
+    syncConnectorModalTitle();
     $('connector-msg').textContent = '';
     buildConnectorForm($('connector-form'), connector, presetType);
     $('connector-modal').classList.remove('hidden');

@@ -140,6 +140,12 @@ export interface BundleManifest {
     game?: string;
     profiles?: BundleControlProfile[];
     rules: BundleRule[];
+    /**
+     * Joueurs simultanés DÉCLARÉS par le créateur (1..8). `1` = pack solo : aucune
+     * cible n'est jamais proposée, même si le diffuseur a huit manettes branchées.
+     * Absent = non précisé, l'effectif ne dépend que de la capacité de la machine.
+     */
+    maxPlayers?: number;
 }
 
 /** Contexte d'un événement live résolu, passé aux exécuteurs pour la substitution. */

@@ -437,6 +437,7 @@ function effectifParDefaut(capacite: number): Array<{ id: number; label?: string
 async function appliquerEffectif(
     slug: string,
     piloteManette: boolean,
+    maxPlayers?: number,
 ): Promise<{ ok: boolean; reason?: string; players: number }> {
     const effacer = async (raison?: string) => {
         const r = await api.setInteractivePlayers([], slug);
@@ -445,10 +446,20 @@ async function appliquerEffectif(
     // Pack CLAVIER / RCON / OBS : rien ne s'adresse à un joueur en particulier.
     // Un clavier envoie ses touches à la fenêtre active, pas à une personne.
     if (!piloteManette) return await effacer();
+    // Pack SOLO déclaré par son créateur : aucune cible, quelle que soit la machine.
+    // Le serveur applique la même règle à la sortie ; on ne crée même pas les manettes
+    // supplémentaires, qui n'auraient personne à servir.
+    if (maxPlayers === 1) {
+        await relacherManettesSupplementaires();
+        return await effacer();
+    }
 
     const cap = store.getPadCapacity();
     const configure = store.getPackPlayers(slug);
-    const effectif = configure ?? effectifParDefaut(cap.count);
+    // Borné par le plafond du CRÉATEUR : huit manettes branchées ne donnent pas huit
+    // joueurs sur un pack pensé pour quatre.
+    const plafond = maxPlayers && maxPlayers >= 1 ? maxPlayers : Infinity;
+    const effectif = (configure ?? effectifParDefaut(cap.count)).filter((p) => p.id <= plafond);
     if (!effectif.length) {
         // Effectif ramené à zéro : les manettes supplémentaires n'ont plus lieu
         // d'exister. Les laisser branchées ferait voir au jeu des contrôleurs que
@@ -1152,7 +1163,7 @@ function registerIpc(): void {
         // Mario Kart à 4 puis un pack solo laissait sinon quatre cibles au spectateur,
         // qui en choisissait une, PAYAIT, et ne voyait rien bouger.
         try {
-            const eff = await appliquerEffectif(slug, usesGamepad);
+            const eff = await appliquerEffectif(slug, usesGamepad, overlaid.maxPlayers);
             send('onLog', {
                 ts: Date.now(), ruleId: 'JOUEURS', trigger: 'gamepad', sender: '', executor: 'gamepad',
                 allowed: eff.ok,
@@ -1337,10 +1348,12 @@ function registerIpc(): void {
         // manifeste SIGNÉ et sa configuration de commandes ACTIVE : un pack qui propose
         // clavier ET manette n'est ciblable que si le joueur a choisi la manette.
         let piloteManette: boolean | null = null;
+        let maxPlayers: number | undefined;
         try {
             const d = await api.fetchVerifiedManifest(slug);
             const m = applyPackOverlay(d.manifest as BundleManifest, store.getPackOverlay(slug));
             piloteManette = m.rules.some((r) => (r.effect as { type?: string })?.type === 'gamepad');
+            maxPlayers = Number.isInteger(m.maxPlayers) ? m.maxPlayers : undefined;
             const list = store.getInstalled();
             const e = list.find((b) => b.slug === slug);
             // Mémorisé pour pouvoir répondre HORS LIGNE : sans ce repli, ouvrir l'app
@@ -1358,6 +1371,10 @@ function registerIpc(): void {
             capacity: cap.count,
             kind: cap.kind,
             usesGamepad: piloteManette,
+            // Plafond DÉCLARÉ par le créateur (absent = non précisé). Hors ligne il est
+            // inconnu : le sélecteur n'est alors borné que par la capacité, et le serveur
+            // applique quand même le plafond à la sortie.
+            maxPlayers,
             // `configured: false` = jamais réglé pour ce pack. On propose alors toute
             // la capacité, mais on le DIT, pour que le diffuseur sache que ce nombre
             // est une proposition et pas un choix qu'il aurait déjà fait.
@@ -1374,7 +1391,7 @@ function registerIpc(): void {
         // plein direct doit se voir chez les spectateurs sans redémarrer le pack.
         if (engineRunning && store.getActiveBundleSlug() === slug) {
             const e = store.getInstalled().find((b) => b.slug === slug);
-            const r = await appliquerEffectif(slug, e?.usesGamepad !== false);
+            const r = await appliquerEffectif(slug, e?.usesGamepad !== false, activeManifest?.maxPlayers);
             return { ok: r.ok, reason: r.reason, players: r.players, published: true };
         }
         return { ok: true, published: false };

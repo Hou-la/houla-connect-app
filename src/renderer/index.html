@@ -234,6 +234,25 @@
                             <!-- Configurations de commandes : un même jeu se joue au clavier OU
                                  à la manette. Le créateur décrit son pack une fois par matériel ;
                                  le joueur choisit la sienne à l'installation. -->
+                            <!-- Joueurs simultanés : c'est le CRÉATEUR qui sait que son pack ne
+                                 pilote qu'un personnage. Sans lui, le ciblage se déduisait de la
+                                 seule présence d'une manette, et un pack solo proposait des
+                                 cibles qui ne mènent nulle part. -->
+                            <div class="form__row lab-max-players">
+                                <label class="form__lbl" for="lab-max-players" data-i18n="joueurs-simultanes">Joueurs simultanés</label>
+                                <select id="lab-max-players" class="form__ctl">
+                                    <option value="" data-i18n="non-precise">Non précisé</option>
+                                    <option value="1" data-i18n="1-solo-aucun-choix-de-joueur">1 (solo, aucun choix de joueur)</option>
+                                    <option value="2">2</option>
+                                    <option value="3">3</option>
+                                    <option value="4">4</option>
+                                    <option value="5">5</option>
+                                    <option value="6">6</option>
+                                    <option value="7">7</option>
+                                    <option value="8">8</option>
+                                </select>
+                            </div>
+                            <p class="note" data-i18n="uniquement-pour-un-pack-qui-pilote-une-manette-le">Uniquement pour un pack qui pilote une manette. « 1 » : les spectateurs ne pourront jamais choisir à quel joueur envoyer leur cadeau, même si le diffuseur a plusieurs manettes. « Non précisé » : c'est le diffuseur qui décide.</p>
                             <div id="lab-profiles" class="lab-profiles"></div>
                             <div id="lab-rules"></div>
                             <button id="lab-add-rule" class="btn btn--ghost" data-i18n="ajouter-une-interaction">+ Ajouter une interaction</button>
@@ -241,7 +260,7 @@
 
                         <div id="lab-json-mode" class="hidden">
                             <textarea id="lab-manifest" rows="12" spellcheck="false"></textarea>
-                            <p class="hint" data-i18n="format-schema-2-rules-evenements-gift-giftslug-n">Format : { "schema": 2, "rules": [ … ] }. Événements : gift(giftSlug, n'importe quel cadeau, ex. "licorne", ou un slot ix_slot_01..30), follow, comment(contains OU every), hearts(milestone OU every), share(every optionnel), viewer(every). « every » = tous les N (ex. tous les 100 likes/messages/partages/spectateurs). Effets : keyboard(keys, backend), gamepad(button/buttons/sequence/randomFrom/steps/analog), rcon(command), obs(request), http(method,url), mqtt(topic,payload), osc(address,args), ws(url,message).</p>
+                            <p class="hint" data-i18n="format-schema-2-rules-evenements-gift-giftslug-n">Format : { "schema": 2, "rules": [ … ] }. Événements : gift(giftSlug, n'importe quel cadeau, ex. "licorne", ou un slot ix_slot_01..99), follow, comment(contains OU every), hearts(milestone OU every), share(every optionnel), viewer(every). « every » = tous les N (ex. tous les 100 likes/messages/partages/spectateurs). Effets : keyboard(keys, backend), gamepad(button/buttons/sequence/randomFrom/steps/analog), rcon(command), obs(request), http(method,url), mqtt(topic,payload), osc(address,args), ws(url,message).</p>
                         </div>
 
                         <div id="lab-changelog-field" class="hidden" style="margin-top: 14px">

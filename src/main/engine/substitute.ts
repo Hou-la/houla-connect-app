@@ -47,8 +47,19 @@ function v4Blocked(ip: string): boolean {
 }
 
 /**
- * Vérifie qu'un host est autorisé : dans l'allowlist utilisateur ET pas une IP
- * privée/loopback/metadata (sauf host LAN ajouté explicitement par l'utilisateur).
+ * Vérifie qu'un host est autorisé.
+ *
+ * ~~« dans l'allowlist utilisateur ET pas une IP privée »~~ — PÉRIMÉ, constaté faux le
+ * 2026-09-14 en lisant le code : ce n'est PAS une allowlist. La règle réelle est :
+ *   - host présent dans l'allowlist utilisateur -> autorisé, même privé (LAN approuvé) ;
+ *   - sinon, IP privée / loopback / metadata / `localhost` -> refusé ;
+ *   - sinon -> AUTORISÉ. Tout host PUBLIC passe, qu'il soit dans l'allowlist ou non.
+ *
+ * ⚠️ Conséquence à connaître : ce garde bloque le SSRF vers le réseau local, pas
+ * l'envoi de données vers un serveur public quelconque. La protection contre un pack
+ * qui exfiltrerait des variables vers l'extérieur repose sur la MODÉRATION du pack
+ * (statique + IA + humaine) et sur sa signature, pas sur cette fonction.
+ * Re-vérifier : `hostAllowed('exemple-public.com', [])` rend `true`.
  */
 export function hostAllowed(hostname: string, userAllowlist: string[]): boolean {
     const h = (hostname || '').trim().toLowerCase().replace(/\.$/, '');

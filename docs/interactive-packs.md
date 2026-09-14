@@ -1,6 +1,6 @@
 # Hou.la Connect — Packs interactifs (référence)
 
-> État au **2026-09-11** (multi-manettes : capacité machine vs effectif par pack, voir §18 ; configurations de commandes §17 ; manette v2 + Instructions + test hors live §13). Doc de référence de la fonctionnalité « Pack Bundle interactif » :
+> État au **2026-09-14** (exécuteurs réseau : ce qu'ils savent faire §19 ; `maxPlayers` déclaré par le créateur et multi-manettes : capacité machine vs effectif par pack, voir §18 ; configurations de commandes §17 ; manette v2 + Instructions + test hors live §13). Doc de référence de la fonctionnalité « Pack Bundle interactif » :
 > un viewer envoie un cadeau pendant un live → l'app Hou.la Connect déclenche une action
 > réelle dans le jeu du streamer (RCON, clavier, manette, OBS, HTTP…).
 > Repos : `houla-connect-app` (app Electron) + `MikhaelGerbet/hou.la-api` (back, module `bundle-store` + `coin`).
@@ -513,6 +513,73 @@ Les clients (Flutter, Angular) n'affichent le sélecteur « À qui ? » qu'à pa
 - `houla-connect-app` : `e2e/renderer/pads-players.spec.js` — 13 tests, dont
   « pack clavier : aucune cible » + son contre-témoin, la mémorisation par pack,
   et la non-destruction des noms quand on change le nombre.
+
+### Joueurs simultanés DÉCLARÉS par le créateur : `maxPlayers` (2026-09-14)
+
+Promis à un créateur de packs, et absent jusqu'ici : le ciblage se **déduisait** de la
+seule présence d'une règle manette (`packCiblable` lisait `capabilities`). Un pack
+Minecraft joué seul, à la manette, proposait donc des cibles qui ne mènent nulle part.
+
+- **Manifeste** : `maxPlayers` à la racine, entier `1..8`. Absent = non précisé (le
+  diffuseur décide). `1` = pack **solo** : aucune cible, jamais, même avec huit manettes.
+- **Validateur serveur** : refusé hors bornes, et refusé sur un pack **sans règle manette**
+  (un clavier envoie ses touches à la fenêtre active, pas à une personne ; l'accepter
+  laisserait croire au créateur qu'il a réglé quelque chose). Le validateur client du Lab
+  (`manifest-lib.js`) porte la même règle, dite en clair avant tout envoi.
+- **Ciblage** : `packCiblable` lit `JSON_EXTRACT(manifest_json, '$.maxPlayers')` et rend
+  `{ ciblable, maxPlayers }`. `getInteractiveBundle` borne les joueurs exposés à
+  `id <= maxPlayers` ; la garde de paiement `verifierCible` lit cette même vue.
+- **Connect** : `appliquerEffectif` ne crée ni ne publie rien au-delà du plafond ; en
+  solo, il relâche les manettes supplémentaires. Capture affiche « Pack solo » au lieu de
+  cacher le bloc, et le sélecteur s'arrête au plus petit de (capacité, plafond).
+- **Lab** : select « Joueurs simultanés » au-dessus des configurations de commandes.
+
+⚠️ **Ordre de déploiement imposé : API AVANT Connect.** L'API en production rejette toute
+clé de manifeste inconnue (`hasUnknownKeys` → `INVALID_MANIFEST`). Un Connect qui
+enverrait `maxPlayers` à une API qui ne le connaît pas ferait refuser la version.
+
+### Libellés dynamiques : le Lab retombait en français au premier geste (2026-09-14)
+
+Une fois les catalogues réellement chargés, sept éléments restaient faux : le code les
+réécrivait en français en dur (titre « Éditer : … », bouton « Enregistrer », Public /
+Privé et sa phrase d'aide, bascule du mode JSON, commission « N % des étoiles », titre de
+la modale connecteur). `tr(cle, fr, vars)` les traduit ; `rafraichirLibellesDynamiques()`
+les re-rend après chaque changement de langue, parce que `HoulaI18n.apply()` réécrit
+depuis la clé HTML et le texte **d'origine**, sans variables, et rétablirait sinon le
+libellé du démarrage. Couverture mesurée (clés HTML + appels `tr()` du code) : 0 manquante,
+0 orpheline, dans les 4 langues. Test : `e2e/renderer/i18n-dynamique.spec.js`.
+
+## 19. Ce que chaque exécuteur réseau sait faire, et ne sait pas (2026-09-14)
+
+Établi en lisant `src/main/engine/executors/*.ts`, `substitute.ts` et le validateur serveur
+`api/src/bundle-store/manifest/bundle-manifest.validator.ts`. **Les deux bouts comptent** :
+ce que le serveur refuse ne peut pas être publié, ce que Connect n'implémente pas ne
+s'exécute pas. Re-vérifier en relisant ces fichiers avant de s'appuyer sur ce tableau.
+
+| | Fait | Ne fait PAS |
+|---|---|---|
+| **RCON** | Protocole **Source RCON en TCP** (`rcon-client`) ; connexion réutilisée par `host:port` ; une commande par action | **WebRCON** (Rust `rcon.web 1`, WebSocket + JSON) ; verbes refusés en dur : `stop`, `restart`, `op`, `deop`, `ban`, `kick`, `whitelist`, `gamemode`, `save-off`, `save-all`… |
+| **OSC** | UDP vers `host:port` du connecteur (défaut `127.0.0.1:9000`) ; adresse + jusqu'à 16 arguments `string` / `number` / `boolean` | **Entiers** : `osc-min` encode TOUT nombre JS en `float32` (`argToTypeCode` : `number → 'f'`). `/input/Jump 1` part en `1.0`. **Chronologie** : un seul message par action, aucun délai possible |
+| **HTTP** | `GET`, `POST`, `PUT` ; `baseUrl` du connecteur + `path`, ou `url` complète ; corps `json` (Content-Type imposé), variables substituées récursivement ; délai 5 s | `PATCH` / `DELETE` ; **en-têtes** (donc pas de `Authorization: Bearer`) ; paramètres d'URL **encodés** (une variable avec `&`, `#` ou espace casse la query) ; corps non JSON ; variable **numérique** (`"{quantity}"` donne la chaîne `"3"`, jamais le nombre `3` ; un nombre écrit en dur reste un nombre) ; lecture de la réponse |
+| **WebSocket** | Un message texte libre (JSON possible, écrit à la main) ; connexion réutilisée par URL | **Plusieurs messages** ; **délais** ; échappement JSON des variables ; lecture des réponses |
+
+**Variables** (`resolveVars`) : `{sender}`, `{quantity}`, `{coins}`, `{name}` (nom du
+cadeau), plus **chaque champ du connecteur lié sauf `password`** (`applyConnectorVars`),
+plus les variables locales du streamer. `{player}` est donc le champ « pseudo en jeu » du
+connecteur RCON. ⚠️ Ce n'est **pas** la manette ciblée par le spectateur : `targetPlayer`
+n'est exposé comme variable nulle part.
+
+⚠️ **Deux angles morts de sécurité**, constatés en établissant ce tableau, non corrigés :
+
+1. `getVars()` → `store.resolveVars()` injecte les **secrets déchiffrés** (ancien magasin
+   `secrets` : `rconPassword`…) dans les variables substituables, alors que
+   `applyConnectorVars` exclut soigneusement `password` au nom de « jamais de secret dans
+   les substitutions ». Combiné à `hostAllowed`, qui laisse passer **tout host public**
+   (voir sa docstring, corrigée le même jour), un pack pourrait envoyer `{rconPassword}`
+   vers un serveur externe. Le seul rempart est la modération du pack.
+2. Aucune variable n'est **échappée** selon l'exécuteur, alors que l'en-tête de
+   `substitute.ts` promet « sanitize() par exécuteur ». Un pseudo contenant `"` casse un
+   message WebSocket JSON, et un `&` casse une query HTTP.
 
 ## 12. État du dépôt (2026-08-24)
 Commits **locaux non poussés** (dev d'abord, prod après validation) :

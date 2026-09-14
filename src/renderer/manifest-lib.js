@@ -25,6 +25,14 @@
             const used = rules.some(function (r) { return r && r.profile === profiles[p].id; });
             if (!used) return 'La configuration « ' + profiles[p].label + ' » n’a aucune interaction : ajoutes-en une, ou supprime la configuration.';
         }
+        // Nombre de joueurs : miroir EXACT de la regle serveur, dit en clair. Un refus
+        // serveur opaque apres l'envoi apprendrait moins au createur que cette phrase.
+        if (m && m.maxPlayers !== undefined) {
+            const mp = m.maxPlayers;
+            if (!Number.isInteger(mp) || mp < 1 || mp > 8) return 'Le nombre de joueurs doit aller de 1 à 8.';
+            const manette = rules.some(function (r) { return r && r.effect && r.effect.type === 'gamepad'; });
+            if (!manette) return 'Le nombre de joueurs ne vaut que pour un pack qui pilote une manette : ajoute une interaction manette, ou remets « Non précisé ».';
+        }
         for (let i = 0; i < rules.length; i++) {
             const e = (rules[i] && rules[i].effect) || {};
             const n = 'Interaction ' + (i + 1);
@@ -65,6 +73,12 @@
 
     // Manifeste -> configurations de commandes du Lab (tableau vide si le pack n'en a pas :
     // c'est le cas historique, un pack a configuration unique).
+    /** Nombre de joueurs declare, ou '' (non precise) : la valeur du select du Lab. */
+    function manifestToMaxPlayers(m) {
+        const n = m && m.maxPlayers;
+        return Number.isInteger(n) && n >= 1 && n <= 8 ? String(n) : '';
+    }
+
     function manifestToProfiles(m) {
         return ((m && m.profiles) || []).map(function (p) {
             const out = { id: p.id, label: p.label };
@@ -119,5 +133,5 @@
         return k.toLowerCase();
     }
 
-    return { validateManifestClient: validateManifestClient, manifestToRules: manifestToRules, manifestToProfiles: manifestToProfiles, canonicalize: canonicalize, kbToken: kbToken };
+    return { validateManifestClient: validateManifestClient, manifestToRules: manifestToRules, manifestToProfiles: manifestToProfiles, manifestToMaxPlayers: manifestToMaxPlayers, canonicalize: canonicalize, kbToken: kbToken };
 });

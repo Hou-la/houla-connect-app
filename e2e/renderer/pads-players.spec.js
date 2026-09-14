@@ -211,3 +211,32 @@ test('tous les contrôles ont la MÊME largeur, aucun libellé sur deux lignes',
     );
     expect(Math.max(...hauteurs) - Math.min(...hauteurs)).toBeLessThanOrEqual(2);
 });
+
+// ── 5. Le plafond DÉCLARÉ par le créateur du pack ───────────────────────────
+
+test('pack déclaré SOLO par son créateur : aucune cible, et on le DIT', async ({ page }) => {
+    // Le cas exact de Minecraft à la manette joué seul. Cacher le bloc sans un mot
+    // ferait chercher une panne à un diffuseur qui a quatre manettes branchées.
+    await ouvrirCapture(page, { rosterMaxPlayers: 1 });
+    await expect(page.locator('#roster-block')).toBeVisible();
+    await expect(page.locator('#roster-list .roster-label')).toHaveCount(0);
+    await expect(page.locator('#roster-status')).toContainText(/solo/i);
+});
+
+test('pack déclaré à 2 sur une machine à 4 : le sélecteur s’arrête à 2', async ({ page }) => {
+    // Huit manettes branchées ne donnent pas huit joueurs sur un pack pensé pour deux.
+    await ouvrirCapture(page, { rosterMaxPlayers: 2 });
+    const valeurs = await page.locator('#roster-count option').evaluateAll((els) => els.map((e) => e.value));
+    expect(valeurs).toEqual(['0', '2']);
+    await expect(page.locator('#roster-list .roster-label')).toHaveCount(2);
+    // Et on dit POURQUOI le choix s'arrête là.
+    await expect(page.locator('#roster-status')).toContainText(/2 joueurs au plus/);
+});
+
+test('CONTRE-TÉMOIN : plafond déclaré au-dessus de la capacité, la machine décide', async ({ page }) => {
+    // Un pack prévu pour 8 sur une machine à 4 : on ne peut pas inventer 4 manettes.
+    await ouvrirCapture(page, { rosterMaxPlayers: 8 });
+    const valeurs = await page.locator('#roster-count option').evaluateAll((els) => els.map((e) => e.value));
+    expect(valeurs).toEqual(['0', '2', '3', '4']);
+    await expect(page.locator('#roster-status')).not.toContainText(/au plus/);
+});
