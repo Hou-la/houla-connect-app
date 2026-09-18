@@ -24,6 +24,15 @@ const auth = new AuthService(api, store);
 // Version des CGU : à incrémenter à chaque révision substantielle -> re-acceptation.
 const LEGAL_VERSION = '1.0';
 
+// Marqueur d'un refus de manifeste LOCALISÉ, transporté dans le message d'une
+// Error parce qu'`ipcMain.handle` ne sérialise rien d'autre. Le renderer porte
+// LE MÊME littéral (`renderer.js`, `friendlyRejection`) : main et renderer n'ont
+// aucun module commun (le renderer est du JS nu servi sous CSP stricte), donc la
+// seule alternative serait de le passer par le preload pour rien.
+// ⚠️ Changer cette chaîne des deux côtés à la fois, sinon le détail du refus
+// redevient muet sans la moindre erreur.
+const REJECTION_MARKER = '[[houla-rejection]]';
+
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false; // vrai seulement quand on quitte VRAIMENT (menu tray)
@@ -860,7 +869,22 @@ function registerIpc(): void {
     ipcMain.handle('lab:detail', (_e, slug: string) => api.myBundleDetail(slug));
     ipcMain.handle('lab:stats', (_e, slug: string) => api.getBundleStats(slug));
     ipcMain.handle('lab:topbroadcasters', (_e, slug: string) => api.getTopBroadcasters(slug));
-    ipcMain.handle('lab:version', (_e, slug: string, dto) => api.submitVersion(slug, dto));
+    // `ipcMain.handle` ne sérialise QUE `message` et `stack` d'une Error : les
+    // propriétés attachées (ici `rejection`, qui LOCALISE la règle fautive) sont
+    // silencieusement perdues en route. On les fait donc voyager DANS le message,
+    // derrière un marqueur que seul le renderer lit (`friendlyRejection`).
+    // Re-vérifier : soumettre un manifeste refusé et constater que le toast nomme
+    // l'interaction, pas seulement « une commande a été jugée dangereuse ».
+    ipcMain.handle('lab:version', async (_e, slug: string, dto) => {
+        try {
+            return await api.submitVersion(slug, dto);
+        } catch (e: any) {
+            if (e && e.rejection) {
+                throw new Error(REJECTION_MARKER + JSON.stringify(e.rejection));
+            }
+            throw e;
+        }
+    });
     ipcMain.handle('lab:publish', (_e, slug: string) => api.publishBundle(slug));
     // Choisir la bannière SANS uploader : renvoie le chemin + un data-URL pour un
     // aperçu IMMÉDIAT (l'upload — qui peut prendre un instant — est déclenché après,

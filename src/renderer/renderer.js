@@ -370,10 +370,73 @@ const REJECTION_FR = {
     EXFILTRATION_SUSPECTED: 'Fuite de données suspectée.',
     ABUSE_SUSPECTED: 'Contenu jugé abusif.',
 };
-function friendlyRejection(e) {
+// Ce qu'il faut FAIRE, par code. Le code dit ce qui ne va pas ; sans ça, le
+// créateur sait qu'il est refusé mais pas par où commencer.
+const REJECTION_HINTS = {
+    INVALID_MANIFEST: 'Vérifie la structure du pack (slug, version, interactions).',
+    INVALID_TRIGGER: 'Vérifie le cadeau, le palier ou le mot-clé du déclencheur.',
+    INVALID_EFFECT: 'Un champ obligatoire de l’action manque, ou dépasse la longueur permise.',
+    FORBIDDEN_EXECUTOR: 'Remplace cette action par un type autorisé (clavier, manette, OBS, HTTP, MQTT, OSC, WebSocket, RCON).',
+    TOO_MANY_RULES: 'Scinde ce pack en deux, ou retire des interactions.',
+    MALICIOUS_COMMAND: 'Renomme ou reformule le contenu de ce champ : il ressemble à une commande système.',
+    SSRF_HOST: 'Utilise une adresse publique, ou déclare ton serveur local dans un connecteur.',
+    UNSAFE_URL_SCHEME: 'Utilise une URL en http:// ou https://.',
+    RCE_SUSPECTED: 'Retire tout ce qui ressemble à du code exécutable.',
+    EXFILTRATION_SUSPECTED: 'Retire l’envoi de données vers un service extérieur non déclaré.',
+    ABUSE_SUSPECTED: 'Revois le texte et les visuels du pack.',
+};
+
+// ⚠️ MÊME littéral que `REJECTION_MARKER` dans src/main/index.ts. Aucun module
+// n'est partagé entre main et renderer (JS nu, CSP stricte) : c'est volontaire.
+const REJECTION_MARKER = '[[houla-rejection]]';
+
+/** Décode la charge localisée d'un refus, ou null si le message n'en porte pas. */
+function parseRejection(e) {
     const raw = e && e.message != null ? String(e.message) : String(e || '');
-    const found = Object.keys(REJECTION_FR).filter((c) => raw.includes(c));
-    if (found.length) return found.map((c) => REJECTION_FR[c]).join(' ');
+    const at = raw.indexOf(REJECTION_MARKER);
+    if (at < 0) return null;
+    try { return JSON.parse(raw.slice(at + REJECTION_MARKER.length)); } catch { return null; }
+}
+
+/** Désigne une interaction dans les mots du créateur : « n° 13 « Tempête » ». */
+function nommerRegle(issue) {
+    const n = typeof issue.ruleIndex === 'number' ? `n° ${issue.ruleIndex + 1}` : null;
+    const nom = issue.ruleLabel || issue.ruleId || null;
+    if (n && nom) return `interaction ${n} « ${nom} »`;
+    if (n) return `interaction ${n}`;
+    if (nom) return `interaction « ${nom} »`;
+    return null;
+}
+
+function friendlyRejection(e) {
+    const r = parseRejection(e);
+    const raw = e && e.message != null ? String(e.message) : String(e || '');
+
+    // Chemin riche : le serveur a localisé le refus.
+    if (r && r.issues && r.issues.length) {
+        // Au plus trois : au-delà, la liste devient un mur qu'on ne lit plus.
+        const lignes = r.issues.slice(0, 3).map((i) => {
+            const ou = nommerRegle(i);
+            const quoi = REJECTION_FR[i.code] || i.message || 'Refusé.';
+            return ou ? `${ou} : ${quoi}` : quoi;
+        });
+        const reste = r.issues.length - lignes.length;
+        if (reste > 0) lignes.push(`… et ${reste} autre${reste > 1 ? 's' : ''} problème${reste > 1 ? 's' : ''}.`);
+        const hint = REJECTION_HINTS[r.issues[0].code];
+        return lignes.join('\n') + (hint ? `\n\n${hint}` : '');
+    }
+
+    // Chemin dégradé : ancien serveur, ou refus sans aucune règle désignée.
+    // On lit les codes dans la charge quand elle existe, JAMAIS dans `raw` :
+    // celui-ci contient alors le JSON du marqueur, qu'on ne montre à personne.
+    const codes = r && r.rejectionCodes && r.rejectionCodes.length
+        ? r.rejectionCodes.filter((c) => REJECTION_FR[c])
+        : Object.keys(REJECTION_FR).filter((c) => raw.includes(c));
+    if (codes.length) {
+        const hint = REJECTION_HINTS[codes[0]];
+        return codes.map((c) => REJECTION_FR[c]).join(' ') + (hint ? `\n\n${hint}` : '');
+    }
+    if (r) return r.message || 'Version refusée.';
     return friendlyError(e, 'Version refusée.');
 }
 
@@ -3331,7 +3394,7 @@ async function submitLab() {
             labDirty = false;
             return true;
         } catch (e) {
-            showToast('lab-save', { kind: 'error', title: 'Création échouée', msg: friendlyRejection(e) });
+            showToast('lab-save', { kind: 'error', title: 'Création échouée', msg: friendlyRejection(e), persist: true });
             return false;
         } finally { setBtnBusy(btn, false); }
     }
@@ -3356,7 +3419,7 @@ async function submitLab() {
         labDirty = false;
         return true;
     } catch (e) {
-        showToast('lab-save', { kind: 'error', title: 'Enregistrement échoué', msg: friendlyRejection(e) });
+        showToast('lab-save', { kind: 'error', title: 'Enregistrement échoué', msg: friendlyRejection(e), persist: true });
         return false;
     } finally { setBtnBusy(btn, false); }
 }

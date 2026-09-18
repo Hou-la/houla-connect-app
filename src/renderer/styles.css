@@ -464,7 +464,11 @@ input[readonly] { opacity: .6; cursor: not-allowed; }
 .toast--info .toast__ic { color: var(--accent); }
 .toast__body { grid-area: body; min-width: 0; }
 .toast__title { font-weight: 700; font-size: 13.5px; margin-bottom: 2px; }
-.toast__msg { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+/* `pre-line` : un refus localisé tient sur plusieurs lignes (« interaction n° 13
+   « Tempête » : … » puis quoi faire). Sans ça les sauts de ligne se collapsent en
+   espaces et tout se retrouve en un seul pavé. Le contenu est échappé (`esc`)
+   avant insertion : `pre-line` ne fait que préserver les retours. */
+.toast__msg { font-size: 12.5px; color: var(--muted); line-height: 1.45; white-space: pre-line; }
 .toast__actions { grid-area: actions; display: flex; gap: 8px; margin-top: 8px; }
 .toast__actions:empty { display: none; }
 .toast__btn { padding: 6px 12px; border: 1px solid var(--accent); border-radius: 8px;

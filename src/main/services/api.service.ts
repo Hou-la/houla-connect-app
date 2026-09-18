@@ -362,7 +362,22 @@ export class ApiService {
         });
         if (!res.ok) {
             const e = await res.json().catch(() => ({}));
-            throw new Error((e.rejectionCodes ? e.rejectionCodes.join(', ') + ' : ' : '') + (e.message || `version ${res.status}`));
+            const err: any = new Error(
+                (e.rejectionCodes ? e.rejectionCodes.join(', ') + ' : ' : '') + (e.message || `version ${res.status}`),
+            );
+            // Le serveur LOCALISE désormais le refus (`issues[]` : index, id et
+            // libellé de la règle fautive). Sans ça, un pack de 34 règles refusé
+            // pour une seule d'entre elles se relit à la main, ligne par ligne.
+            // ⚠️ Ces propriétés ne survivent PAS à `ipcMain.handle`, qui ne
+            // sérialise que `message`/`stack` : c'est le handler `lab:version`
+            // qui les fait voyager (voir main/index.ts).
+            err.rejection = {
+                message: e.message || null,
+                errors: Array.isArray(e.errors) ? e.errors : [],
+                rejectionCodes: Array.isArray(e.rejectionCodes) ? e.rejectionCodes : [],
+                issues: Array.isArray(e.issues) ? e.issues : [],
+            };
+            throw err;
         }
         return res.json();
     }
