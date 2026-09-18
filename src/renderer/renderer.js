@@ -257,7 +257,10 @@ function mdToSafeHtml(src) {
         if (/^\s*>\s?/.test(line)) {
             const buf = [];
             while (i < lines.length && /^\s*>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^\s*>\s?/, '')); i++; }
-            out.push(`<blockquote>${mdInline(buf.join(' '))}</blockquote>`); continue;
+            // Aligné sur le paragraphe (mode « breaks ») : une citation de trois
+            // lignes en gardait UNE, jointe par des espaces, alors que le même
+            // texte hors citation gardait ses trois lignes. Incohérence résiduelle.
+            out.push(`<blockquote>${buf.map((l) => mdInline(l)).join('<br>')}</blockquote>`); continue;
         }
         if (!line.trim()) { i++; continue; }
         const para = [];
@@ -282,6 +285,16 @@ async function copyToClipboard(text) {
 // Pose du Markdown rendu dans un conteneur + câblage des boutons « Copier ».
 function renderMarkdownInto(el, src) {
     if (!el) return;
+    // ⚠️ `md-body` posé ICI, pas dans le HTML. Toute la typographie Markdown est
+    // scopée `.md-body` (styles.css), et le reset global `* { margin: 0 }`
+    // écrase les marges par défaut. Les quatre conteneurs d'aperçu ne portaient
+    // PAS cette classe : un double saut de ligne y rendait exactement comme un
+    // simple, tout arrivait collé, et le créateur en concluait que le saut était
+    // ignoré — alors que le rendu FINAL, lui, était correct. L'aperçu mentait.
+    // Le poser dans la fonction rend tous les appelants cohérents par
+    // construction ; patcher les `class=` du HTML laisserait le piège ouvert au
+    // prochain conteneur ajouté.
+    el.classList.add('md-body');
     const text = String(src || '').trim();
     if (!text) { el.innerHTML = ''; el.classList.add('hidden'); return; }
     el.classList.remove('hidden');
