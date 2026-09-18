@@ -3473,6 +3473,9 @@ function growthChip(g) {
 // ── Mes bundles (cliquables -> édition dans le Lab) ──
 const MINE_PAGE = 24;
 let mineAll = [], mineFiltered = [], mineRendered = 0, mineQuery = '', mineSearchTimer = null;
+// Slugs déjà installés sur CETTE machine : décide du libellé « Utiliser » vs
+// « Installé ✓ » sur les cartes de « Mes bundles ».
+let mineInstalled = new Set();
 
 function buildMineCard(b) {
     const card = document.createElement('div');
@@ -3488,17 +3491,37 @@ function buildMineCard(b) {
             <div class="mine-earn"><span>Généré&nbsp;: <b>${Number(b.earnedStars || 0)}</b>&nbsp;⭐</span><span>Gagné&nbsp;: <b>${Number(b.earnedCreatorStars || 0)}</b>&nbsp;⭐</span>${growthChip(b.growthPct)}</div>
             <div class="row gap wrap mine-foot">
                 <button class="btn btn--ghost stats">Voir les stats</button>
+                ${b.version ? `<button class="btn btn--ghost use">${mineInstalled.has(b.slug) ? 'Installé ✓' : 'Utiliser'}</button>` : ''}
                 <button class="btn btn--primary edit">Éditer</button>
             </div>
         </div>`;
     card.querySelector('.edit').onclick = () => { pendingEditSlug = b.slug; switchView('lab'); };
     card.querySelector('.stats').onclick = () => openStats(b.slug, b.title || b.slug);
+    // « Utiliser » : installe SON PROPRE pack, exactement comme le Store le fait
+    // pour un pack public. Aucune ligne d'API : `installBundle` est réutilisé tel
+    // quel, avec sa liaison de connecteurs, sa configuration et son jeu.
+    // Absent tant qu'aucune version n'existe : il n'y aurait rien à installer.
+    const use = card.querySelector('.use');
+    if (use) {
+        use.onclick = async () => {
+            if (mineInstalled.has(b.slug)) { switchView('capture'); return; }
+            await installBundle(b.slug, use);
+            mineInstalled.add(b.slug);
+        };
+    }
     return card;
 }
 async function loadMyBundles() {
     $('mine-list').innerHTML = skeletonCardsHtml(6); $('mine-more').textContent = ''; // le temps du fetch
     try { mineAll = (await api.lab.myBundles()) || []; }
     catch { mineAll = []; }
+    // Un créateur doit pouvoir UTILISER ses propres packs, privés compris. Le
+    // serveur l'autorise depuis toujours (`getManifest` laisse passer le
+    // propriétaire, y compris sur un brouillon jamais approuvé) ; il manquait
+    // seulement un chemin dans l'UI. Le Store, lui, ne liste QUE le public
+    // approuvé, et ça ne doit pas bouger.
+    try { mineInstalled = new Set(((await api.store.installed()) || []).map((b) => b.slug)); }
+    catch { mineInstalled = new Set(); }
     renderMine();
 }
 // Recherche (client) + rendu par CHUNKS (scroll infini) : prêt pour un créateur qui

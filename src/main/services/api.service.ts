@@ -443,12 +443,22 @@ export class ApiService {
         const qs = version ? `?version=${encodeURIComponent(version)}` : '';
         const res = await this.authFetch(`/api/manager/bundles/${encodeURIComponent(slug)}/manifest${qs}`);
         if (!res.ok) {
-            // 404/403 = le pack n'existe pas (ou pas publié) SUR CET ENVIRONNEMENT.
-            // Un pack installé en Production n'a pas de manifeste en Développement.
-            if (res.status === 404 || res.status === 403) {
+            // 404 = le pack n'existe pas SUR CET ENVIRONNEMENT. Un pack installé
+            // en Production n'a pas de manifeste en Développement.
+            if (res.status === 404) {
                 throw new Error(
                     `Le pack « ${slug} » est introuvable sur l'environnement ${this.envLabel()}. ` +
                         `Il n'existe peut-être que sur un autre environnement — bascule d'environnement dans les Réglages, ou (re)crée-le dans le Lab.`,
+                );
+            }
+            // 403 SÉPARÉ du 404 : le pack existe, mais il ne nous est pas servi.
+            // Les deux étaient fondus dans « introuvable sur l'environnement… »,
+            // ce qui envoyait chercher un problème d'environnement là où il n'y
+            // en a pas, et rendait un vrai refus de droits indiagnosticable.
+            if (res.status === 403) {
+                throw new Error(
+                    `Le pack « ${slug} » existe, mais il ne t'est pas accessible : il est privé et appartient à quelqu'un d'autre, ` +
+                        `ou sa version n'a pas encore été validée. Tes propres packs privés, eux, restent utilisables depuis « Mes bundles ».`,
                 );
             }
             throw new Error(`Impossible de récupérer le pack « ${slug} » (${res.status}). Réessaie dans un instant.`);
@@ -474,7 +484,21 @@ export class ApiService {
     private async verifySignature(d: any): Promise<void> {
         const recomputed = createHash('sha256').update(canonicalize(d.manifest)).digest('hex');
         if (recomputed !== d.contentHash) throw new Error('contentHash ne correspond pas au manifeste');
-        if (!d.signature) return; // pas signé (dev / clé absente) : on n'exécute pas de bundle communautaire non signé en prod
+        // ~~« on n'exécute pas de bundle communautaire non signé en prod »~~ —
+        // PÉRIMÉ, constaté faux le 2026-09-18 en lisant le code : ce `return`
+        // ACCEPTE le manifeste, il ne le refuse pas. Rien ici ne distingue la
+        // prod du dev.
+        //
+        // Ce qui protège réellement, et qui rend ce passage acceptable : c'est
+        // le SERVEUR qui décide à qui il sert quoi. `getManifest` ne renvoie une
+        // version à un NON-propriétaire que si elle est publique ET approuvée —
+        // or l'approbation est précisément ce qui pose la signature. Un manifeste
+        // non signé ne peut donc être que le brouillon privé du propriétaire
+        // lui-même, récupéré sur son propre compte authentifié.
+        // Le refuser casserait l'essai de ses propres packs, qui est voulu.
+        // Re-vérifier : `bundle-store.service.ts`, branche non-propriétaire de
+        // `getManifest` (statut APPROVED exigé).
+        if (!d.signature) return;
         const pub = await this.getSigningPublicKey();
         if (!pub) throw new Error('clé publique de signature indisponible');
         const ok = verify(null, Buffer.from(d.contentHash, 'utf8'), pub, Buffer.from(d.signature, 'base64'));
