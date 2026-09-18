@@ -3275,9 +3275,10 @@ $('lab-banner-btn').onclick = async () => {
         $('lab-banner-btn').disabled = false;
     }
 };
-/** true s'il reste un « cadeau personnalisé » sans icône (uploadée OU en mémoire). */
-function missingCustomIcon() {
-    return labRules.some((r) => r.event.type === 'gift-custom' && !r.event.iconUrl && !r.event._iconFile);
+/** Nombre de « cadeaux personnalisés » encore sans illustration (posée OU en mémoire).
+ *  N'est PLUS bloquant : sert à inciter après un enregistrement réussi. */
+function missingCustomIconCount() {
+    return labRules.filter((r) => r.event.type === 'gift-custom' && !r.event.iconUrl && !r.event._iconFile).length;
 }
 /** Première règle dont le déclencheur « tous les N » (ou contient/palier) est vide :
  *  sinon la règle part MORTE (le routeur l'ignore) ou le serveur refuse la version. */
@@ -3325,16 +3326,28 @@ function manifestHasCustomIcons(m) {
 }
 /** Toast de confirmation, HONNÊTE sur la modération : public ou icônes -> validation avant diffusion. */
 function saveVersionToast(version, visibility, inReview) {
+    // L'illustration n'est plus un péage : on enregistre, PUIS on dit ce qu'il
+    // reste. Le pack fonctionne déjà, les tuiles sans art portent l'éclair.
+    const sansArt = missingCustomIconCount();
+    const reste = sansArt > 0
+        ? `\n\nIl reste ${sansArt} illustration${sansArt > 1 ? 's' : ''} à ajouter. Sans elle${sansArt > 1 ? 's' : ''}, ${sansArt > 1 ? 'ces cadeaux s’affichent' : 'ce cadeau s’affiche'} avec le médaillon à l’éclair.`
+        : '';
     if (inReview) {
         showToast('lab-save', {
             kind: 'ok',
             title: `Version ${version} enregistrée`,
-            msg: visibility === 'public'
+            msg: (visibility === 'public'
                 ? "Elle passe en validation avant d'être publiée. Toi, tu peux déjà la tester."
-                : "Bien enregistrée. Tes icônes passent en validation avant d'être vues par les viewers — ton pack, lui, les utilise déjà.",
+                : "Bien enregistrée. Tes icônes passent en validation avant d'être vues par les viewers — ton pack, lui, les utilise déjà.") + reste,
+            persist: sansArt > 0,
         });
     } else {
-        showToast('lab-save', { kind: 'ok', title: `Version ${version} enregistrée`, msg: 'Tes modifications sont enregistrées.' });
+        showToast('lab-save', {
+            kind: 'ok',
+            title: `Version ${version} enregistrée`,
+            msg: 'Tes modifications sont enregistrées.' + reste,
+            persist: sansArt > 0,
+        });
     }
 }
 // Enregistre le pack (création ou nouvelle version). Retourne true si ENREGISTRÉ, false si
@@ -3346,9 +3359,19 @@ async function submitLab() {
     if (!labJsonMode && missingConnector()) {
         showToast('lab-save', { kind: 'warn', title: 'Connecteur manquant', msg: 'Chaque interaction réseau doit avoir un connecteur — choisis-en un ou crée-en un (+ Nouveau…).' }); return false;
     }
-    if (!labJsonMode && missingCustomIcon()) {
-        showToast('lab-save', { kind: 'warn', title: 'Icône manquante', msg: 'Chaque « cadeau personnalisé » doit avoir une icône avant l’enregistrement.' }); return false;
-    }
+    // ~~Garde bloquant « chaque cadeau personnalisé doit avoir une icône »~~ —
+    // RETIRÉ le 2026-09-18. On ne réclame JAMAIS un travail d'illustration avant
+    // d'avoir jugé la logique. Le garde était l'étape 2 sur 13, et le refus
+    // serveur l'étape 12 : un créateur fabriquait 34 icônes, puis découvrait que
+    // son pack était refusé pour une raison sans rapport.
+    //
+    // L'icône est FACULTATIVE, et ça ne relâche aucune garde :
+    //   - le serveur ne l'a jamais exigée (`on.iconUrl` est optionnel dans le
+    //     validateur ; vérifié par exécution) ;
+    //   - `buildRule` omet simplement la clé quand elle manque ;
+    //   - le repli existe déjà (médaillon à l'éclair côté Flutter, et désormais
+    //     côté web où un `<img>` nu donnait une image cassée).
+    // Ce qui remplace le blocage : un décompte à l'enregistrement, plus bas.
     if (!labJsonMode) {
         const bad = incompleteTrigger();
         if (bad) {
