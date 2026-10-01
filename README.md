@@ -15,6 +15,13 @@ La dernière version est toujours ici : **[Releases, dernière version](https://
 
 Une fois installée, l'application se met à jour toute seule.
 
+## Développeurs
+
+Créer le plugin d'un jeu (mod, RCON, WebSocket ou HTTP), écrire un pack (format JSON, schéma 3),
+relier un programme compagnon par une API locale, connaître les règles de sécurité, et télécharger
+un kit (exemples vérifiés, guide pour une IA, gabarit de bannière) :
+**https://hou.la/apps/houla-connect/developpeurs** (en français et en anglais).
+
 ## Aide
 
 - Site : https://hou.la
